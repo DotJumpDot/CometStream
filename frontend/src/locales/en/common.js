@@ -722,6 +722,21 @@ const TRANSLATIONS = {
         },
       },
     },
+    skill_files: {
+      title: "Skill Files",
+      description:
+        "Point CometStream at a folder of SKILL.md skills (like Claude/ZCode skills). Skills load live from disk and appear to the agent as tools with their instructions.",
+      "directory-placeholder": "C:\\Code\\AiSKill\\skills",
+      "save-directory": "Save",
+      "directory-saved": "Skills directory saved.",
+      "save-failed": "Failed to save skill files setting.",
+      loading: "Loading skill files",
+      "none-configured":
+        "No skills directory configured yet. Enter a folder path above to load SKILL.md skills.",
+      "none-found":
+        "No SKILL.md skills found in this directory. Each skill is a subfolder containing a SKILL.md file.",
+      "tool-name": "Agent tool name",
+    },
     mcp: {
       title: "MCP Servers",
       "loading-from-config": "Loading MCP Servers from configuration file",
@@ -733,11 +748,30 @@ const TRANSLATIONS = {
       "stop-server": "Stop MCP Server",
       "start-server": "Start MCP Server",
       "delete-server": "Delete MCP Server",
+      "add-server": "Add MCP Server",
+      "edit-server": "Edit MCP Server",
+      "add-server-subtitle":
+        "Define a local (stdio) or remote (http) MCP server. It is saved to the config file and started immediately.",
+      presets: "Quick Add",
+      "server-name": "Server Name",
+      "name-locked-when-editing":
+        "The server name cannot be changed after creation.",
+      "transport-type": "Transport Type",
+      command: "Command",
+      arguments: "Arguments",
+      "args-hint": "Space-separated. Quote values containing spaces.",
+      "env-vars": "Environment Variables",
+      "server-url": "Server URL",
+      headers: "Headers",
+      "create-server": "Create Server",
+      "save-changes": "Save Changes",
+      cancel: "Cancel",
+      "save-failed": "Failed to save MCP server.",
+      "create-success": "MCP server {{name}} created.",
+      "update-success": "MCP server {{name}} updated.",
       "tool-count-warning":
         "This MCP server has <b>{{count}} tools enabled</b> that will consume context in every chat.<br />Consider disabling unwanted tools to conserve context.",
       "startup-command": "Startup Command",
-      command: "Command",
-      arguments: "Arguments",
       "not-running-warning":
         "This MCP server is not running - it may be stopped or experiencing an error on startup.",
       "tool-call-arguments": "Tool call arguments",
@@ -1591,6 +1625,7 @@ const TRANSLATIONS = {
     manage_agent_skills: "Manage Agent Skills",
     app_integrations: "App Integrations",
     custom_skills: "Custom Skills",
+    skill_files: "Skill Files",
     agent_flows: "Agent Flows",
     sub_skills: "Sub-skills",
     no_tools_found: "No matching tools found",

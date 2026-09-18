@@ -1,6 +1,7 @@
 const AIbitat = require("./aibitat");
 const AgentPlugins = require("./aibitat/plugins");
 const ImportedPlugin = require("./imported");
+const SkillFiles = require("./skillFiles");
 const MCPCompatibilityLayer = require("../MCP");
 const { AgentFlows } = require("../agentFlows");
 const { httpSocket } = require("./aibitat/plugins/http-socket.js");
@@ -359,6 +360,27 @@ class EphemeralAgentHandler extends AgentHandler {
             `Attached MCP::${plugin.toolName} MCP tool to Agent cluster`
           );
         });
+        continue;
+      }
+
+      // Load SKILL.md skill file plugin. This is marked by `@@skill_` in the
+      // array of functions to load and resolves to the skill's registered tool
+      // name (`skill_<name>`, or `skill-file-read` for the shared reader).
+      if (name.startsWith("@@skill_")) {
+        const plugin = await SkillFiles.loadSkillFilePlugin(name);
+        if (!plugin) {
+          this.log(
+            `Skill file ${name} not found in skills directory. Skipping inclusion to agent cluster.`
+          );
+          continue;
+        }
+
+        this.aibitat.agents.get("@agent").functions = this.aibitat.agents
+          .get("@agent")
+          .functions.filter((f) => f !== name);
+        this.aibitat.agents.get("@agent").functions.push(plugin.name);
+        this.aibitat.use(plugin.plugin());
+        this.log(`Attached ${plugin.name} skill file to Agent cluster`);
         continue;
       }
 

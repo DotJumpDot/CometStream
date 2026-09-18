@@ -104,6 +104,10 @@ const SystemSettings = {
     // Memory/Personalization
     "memory_enabled",
     "memory_auto_extraction",
+
+    // SKILL.md skill files
+    "agent_skill_files_directory",
+    "active_skill_files",
   ],
   validations: {
     footer_data: (updates) => {

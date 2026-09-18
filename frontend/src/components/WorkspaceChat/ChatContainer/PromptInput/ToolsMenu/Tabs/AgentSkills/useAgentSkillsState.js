@@ -4,6 +4,7 @@ import System from "@/models/system";
 import AgentPlugins from "@/models/experimental/agentPlugins";
 import AgentFlows from "@/models/agentFlows";
 import MCPServers from "@/models/mcpServers";
+import SkillFiles from "@/models/skillFiles";
 import { getSubSkillPreferenceKeys } from "./skillRegistry";
 import useSubSkillPreferences from "./useSubSkillPreferences";
 import { toggleAgentSessionTool } from "@/utils/chat/agent";
@@ -24,6 +25,7 @@ export default function useAgentSkillsState(defaultSkills) {
   const [importedSkills, setImportedSkills] = useState([]);
   const [flows, setFlows] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
+  const [skillFiles, setSkillFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mcpLoading, setMcpLoading] = useState(true);
 
@@ -34,6 +36,7 @@ export default function useAgentSkillsState(defaultSkills) {
   useEffect(() => {
     fetchSkillSettings();
     fetchMcpServers();
+    fetchSkillFiles();
   }, []);
 
   async function fetchSkillSettings() {
@@ -83,6 +86,15 @@ export default function useAgentSkillsState(defaultSkills) {
       console.error(e);
     } finally {
       setMcpLoading(false);
+    }
+  }
+
+  async function fetchSkillFiles() {
+    try {
+      const { skills = [] } = await SkillFiles.list();
+      setSkillFiles(skills);
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -145,6 +157,17 @@ export default function useAgentSkillsState(defaultSkills) {
     toggleAgentSessionTool(`@@flow_${flow.uuid}`, newActive);
   }, []);
 
+  const toggleSkillFile = useCallback(async (skill) => {
+    const newActive = !skill.active;
+    setSkillFiles((prev) =>
+      prev.map((s) =>
+        s.folder === skill.folder ? { ...s, active: newActive } : s
+      )
+    );
+    await SkillFiles.toggle(skill.folder, newActive);
+    toggleAgentSessionTool(skill.toolName, newActive);
+  }, []);
+
   const toggleMcpTool = useCallback(
     async (serverName, toolName, currentlyEnabled) => {
       const newEnabled = !currentlyEnabled;
@@ -188,6 +211,7 @@ export default function useAgentSkillsState(defaultSkills) {
     importedSkills,
     flows,
     mcpServers,
+    skillFiles,
     loading,
     mcpLoading,
 
@@ -199,6 +223,7 @@ export default function useAgentSkillsState(defaultSkills) {
     toggleImportedSkill,
     toggleFlow,
     toggleMcpTool,
+    toggleSkillFile,
 
     // Sub-skill preferences (delegated)
     isSubSkillEnabled: subSkillPrefs.isSubSkillEnabled,

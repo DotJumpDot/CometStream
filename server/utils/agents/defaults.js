@@ -3,6 +3,7 @@ const { SystemSettings } = require("../../models/systemSettings");
 const { safeJsonParse } = require("../http");
 const Provider = require("./aibitat/providers/ai-provider");
 const ImportedPlugin = require("./imported");
+const SkillFiles = require("./skillFiles");
 const { AgentFlows } = require("../agentFlows");
 const MCPCompatibilityLayer = require("../MCP");
 
@@ -91,6 +92,7 @@ const WORKSPACE_AGENT = {
         ...clarifyingQuestionsSkills,
         ...ImportedPlugin.activeImportedPlugins(),
         ...AgentFlows.activeFlowPlugins(),
+        ...(await SkillFiles.activeSkillFilePlugins()),
         ...(await new MCPCompatibilityLayer().activeMCPServers()),
       ],
     };
@@ -201,14 +203,14 @@ async function agentSkillsFromSystemSettings() {
  * resulting `aibitat.functions` Map keys to delete when disabling.
  *
  * Handles flows (`@@flow_<uuid>`), multi-stage parents (e.g. sql-agent -> each
- * child), imported hubIds, MCP server tools, single built-ins, and sub-skill
- * child names.
+ * child), imported hubIds, MCP server tools, SKILL.md skill files, single
+ * built-ins, and sub-skill child names.
  * @param {string} skill - Skill key, `@@flow_<uuid>`, MCP `<server>-<tool>`, hubId, or sub-skill name.
  * @param {object} [opts]
  * @param {string|null} [opts.serverName] - MCP server name; required to enable an MCP tool.
- * @returns {{ loadable: string[], registered: string[] }}
+ * @returns {Promise<{ loadable: string[], registered: string[] }>}
  */
-function resolveAgentSkill(skill = "", { serverName = null } = {}) {
+async function resolveAgentSkill(skill = "", { serverName = null } = {}) {
   // Flow tool: loaded by `@@flow_<uuid>`, registered under its sanitized tool name.
   if (skill.startsWith("@@flow_")) {
     const uuid = skill.replace("@@flow_", "");
@@ -224,6 +226,21 @@ function resolveAgentSkill(skill = "", { serverName = null } = {}) {
   // Enabling reloads the server so the current suppression state is respected.
   if (serverName)
     return { loadable: [`@@mcp_${serverName}`], registered: [skill] };
+
+  // SKILL.md skill file tool (`skill_<name>`): look up the folder so the
+  // loadable `@@skill_<folder>` id resolves even when the folder name needed
+  // sanitizing. The shared reader registers under its own tool name.
+  if (skill === "skill-file-read")
+    return { loadable: ["@@skill_file_read"], registered: ["skill-file-read"] };
+  if (skill.startsWith("skill_")) {
+    const { skills } = await SkillFiles.listSkillFiles();
+    const skillFile = skills.find((s) => s.toolName === skill);
+    if (skillFile)
+      return {
+        loadable: [`@@skill_${skillFile.folder}`],
+        registered: [skillFile.toolName],
+      };
+  }
 
   // Top-level built-in skill.
   const plugin = AgentPlugins[skill];

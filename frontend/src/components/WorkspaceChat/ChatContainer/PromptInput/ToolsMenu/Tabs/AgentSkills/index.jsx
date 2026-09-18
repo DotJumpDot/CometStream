@@ -37,6 +37,7 @@ export default function AgentSkillsTab({
     importedSkills,
     flows,
     mcpServers,
+    skillFiles,
     loading,
     mcpLoading,
     isSkillEnabled,
@@ -44,6 +45,7 @@ export default function AgentSkillsTab({
     toggleImportedSkill,
     toggleFlow,
     toggleMcpTool,
+    toggleSkillFile,
     isMultiUser,
     isSubSkillEnabled,
     toggleSubSkill,
@@ -71,6 +73,7 @@ export default function AgentSkillsTab({
     importedSkills,
     flows,
     mcpServers,
+    skillFiles,
     isMultiUser,
     isSkillEnabled,
     toggleSkill,
@@ -79,6 +82,7 @@ export default function AgentSkillsTab({
     toggleImportedSkill,
     toggleFlow,
     toggleMcpTool,
+    toggleSkillFile,
     disabledSubSkills,
   });
 

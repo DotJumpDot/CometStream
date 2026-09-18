@@ -51,6 +51,7 @@ export default function useSkillSections({
   importedSkills,
   flows,
   mcpServers,
+  skillFiles,
   isMultiUser,
   isSkillEnabled,
   toggleSkill,
@@ -59,6 +60,7 @@ export default function useSkillSections({
   toggleImportedSkill,
   toggleFlow,
   toggleMcpTool,
+  toggleSkillFile,
   disabledSubSkills,
 }) {
   return useMemo(() => {
@@ -133,6 +135,22 @@ export default function useSkillSections({
       });
     }
 
+    // Skill Files (SKILL.md folders loaded from disk)
+    if (skillFiles.length > 0) {
+      const items = skillFiles.map((skill) => ({
+        id: skill.toolName,
+        name: skill.name || skill.folder,
+        enabled: skill.active,
+        onToggle: () => toggleSkillFile(skill),
+      }));
+      sectionList.push({
+        id: "skill-files",
+        name: t("chat_window.skill_files"),
+        items,
+        enabledCount: items.filter((i) => i.enabled).length,
+      });
+    }
+
     // Agent Flows
     if (flows.length > 0) {
       const items = flows.map((flow) => ({
@@ -182,6 +200,7 @@ export default function useSkillSections({
     importedSkills,
     flows,
     mcpServers,
+    skillFiles,
     isMultiUser,
     isSkillEnabled,
     toggleSkill,
@@ -190,6 +209,7 @@ export default function useSkillSections({
     toggleImportedSkill,
     toggleFlow,
     toggleMcpTool,
+    toggleSkillFile,
     disabledSubSkills,
   ]);
 }

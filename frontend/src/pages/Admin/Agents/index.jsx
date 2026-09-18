@@ -29,8 +29,10 @@ import ImportedSkillConfig from "./Imported/ImportedSkillConfig";
 import { Tooltip } from "react-tooltip";
 import AgentFlowsList from "./AgentFlows";
 import FlowPanel from "./AgentFlows/FlowPanel";
+import SkillFilesSection from "./SkillFiles";
 import { MCPServersList, MCPServerHeader } from "./MCPServers";
 import ServerPanel from "./MCPServers/ServerPanel";
+import AddServerModal from "./MCPServers/AddServerModal";
 import { Link } from "react-router-dom";
 import paths from "@/utils/paths";
 import AgentFlows from "@/models/agentFlows";
@@ -64,6 +66,7 @@ export default function AdminAgents() {
   // MCP Servers are lazy loaded to not block the UI thread
   const [mcpServers, setMcpServers] = useState([]);
   const [selectedMcpServer, setSelectedMcpServer] = useState(null);
+  const [editingMcpServer, setEditingMcpServer] = useState(null);
 
   const [fileSystemAgentAvailable, setFileSystemAgentAvailable] =
     useState(false);
@@ -292,6 +295,16 @@ export default function AdminAgents() {
     );
   };
 
+  // Reload the list after an edit so the panel reflects the new config/tools
+  const handleMCPServerEdited = async () => {
+    setEditingMcpServer(null);
+    const { servers = [] } = await MCPServers.listServers();
+    setMcpServers(servers);
+    setSelectedMcpServer((prev) =>
+      prev ? (servers.find((s) => s.name === prev.name) ?? null) : null
+    );
+  };
+
   const handleMCPToolToggle = async (serverName, toolName, enabled) => {
     const { success, error, suppressedTools } = await MCPServers.toggleTool(
       serverName,
@@ -420,6 +433,7 @@ export default function AdminAgents() {
               selectedSkill={selectedSkill}
               handleClick={handleSkillClick}
             />
+            <SkillFilesSection />
 
             <div className="text-theme-text-primary flex items-center gap-x-2 mt-6">
               <FlowArrow size={24} />
@@ -483,6 +497,7 @@ export default function AdminAgents() {
                             toggleServer={toggleMCP}
                             onDelete={handleMCPServerDelete}
                             onToggleTool={handleMCPToolToggle}
+                            onEdit={setEditingMcpServer}
                           />
                         ) : selectedFlow ? (
                           <FlowPanel
@@ -557,6 +572,13 @@ export default function AdminAgents() {
                 </div>
               </div>
             </div>
+          )}
+          {editingMcpServer && (
+            <AddServerModal
+              server={editingMcpServer}
+              onClose={() => setEditingMcpServer(null)}
+              onSaved={handleMCPServerEdited}
+            />
           )}
         </form>
       </SkillLayout>
@@ -648,6 +670,7 @@ export default function AdminAgents() {
                 selectedSkill={selectedSkill}
                 handleClick={handleSkillClick}
               />
+              <SkillFilesSection />
 
               <div className="text-theme-text-primary flex items-center justify-between gap-x-2 mt-4">
                 <div className="flex items-center gap-x-2">
@@ -709,6 +732,7 @@ export default function AdminAgents() {
                     toggleServer={toggleMCP}
                     onDelete={handleMCPServerDelete}
                     onToggleTool={handleMCPToolToggle}
+                    onEdit={setEditingMcpServer}
                   />
                 ) : selectedFlow ? (
                   <FlowPanel
@@ -779,6 +803,14 @@ export default function AdminAgents() {
             )}
           </div>
         </div>
+
+        {editingMcpServer && (
+          <AddServerModal
+            server={editingMcpServer}
+            onClose={() => setEditingMcpServer(null)}
+            onSaved={handleMCPServerEdited}
+          />
+        )}
       </form>
     </SkillLayout>
   );

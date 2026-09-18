@@ -14,6 +14,7 @@ const {
   resolveAgentSkill,
 } = require("./defaults");
 const ImportedPlugin = require("./imported");
+const SkillFiles = require("./skillFiles");
 const { AgentFlows } = require("../agentFlows");
 const MCPCompatibilityLayer = require("../MCP");
 const { getAndClearInvocationAttachments } = require("../chats/agents");
@@ -677,6 +678,29 @@ class AgentHandler {
       return;
     }
 
+    // Load SKILL.md skill file plugin. This is marked by `@@skill_` in the array
+    // of functions to load and resolves to the skill's registered tool name
+    // (`skill_<name>`, or `skill-file-read` for the shared support-file reader).
+    if (name.startsWith("@@skill_")) {
+      const plugin = await SkillFiles.loadSkillFilePlugin(name);
+      if (!plugin) {
+        this.log(
+          `Skill file ${name} not found in skills directory. Skipping inclusion to agent cluster.`
+        );
+        return;
+      }
+
+      // Replace the loadable id with the registered tool name so the function
+      // lookup in reply() can find it.
+      this.aibitat.agents.get("@agent").functions = this.aibitat.agents
+        .get("@agent")
+        .functions.filter((f) => f !== name);
+      this.aibitat.agents.get("@agent").functions.push(plugin.name);
+      this.aibitat.use(plugin.plugin());
+      this.log(`Attached ${plugin.name} skill file to Agent cluster`);
+      return;
+    }
+
     // Load imported plugin. This is marked by `@@` in the array of functions to load.
     // and is the @@hubID of the plugin.
     if (name.startsWith("@@")) {
@@ -728,7 +752,9 @@ class AgentHandler {
    */
   async #toggleAgentTool({ skill, enabled = true, serverName = null }) {
     if (!skill || !this.aibitat?.agents.has(WORKSPACE_AGENT.name)) return;
-    const { loadable, registered } = resolveAgentSkill(skill, { serverName });
+    const { loadable, registered } = await resolveAgentSkill(skill, {
+      serverName,
+    });
     const agent = () => this.aibitat.agents.get(WORKSPACE_AGENT.name);
 
     if (enabled) {
