@@ -154,3 +154,107 @@ describe("MCPHypervisor server definition parsing & validation", () => {
     expect(results["bad-args"].message).toMatch(/args must be an array/);
   });
 });
+
+describe("MCPHypervisor validateMCPServerDefinition & upsertMCPServerToConfig", () => {
+  let storageDir;
+  let hypervisor;
+
+  beforeEach(() => {
+    storageDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-hypervisor-"));
+    process.env.STORAGE_DIR = storageDir;
+    MCPHypervisor._instance = undefined;
+    jest.spyOn(console, "log").mockImplementation(() => {});
+    hypervisor = new MCPHypervisor();
+  });
+
+  afterEach(() => {
+    if (hypervisor) hypervisor.pruneMCPServers();
+    MCPHypervisor._instance = undefined;
+    hypervisor = undefined;
+    delete process.env.STORAGE_DIR;
+    fs.rmSync(storageDir, { recursive: true, force: true });
+    jest.restoreAllMocks();
+  });
+
+  it("normalizes a string args field into a quote-aware array", () => {
+    const normalized = hypervisor.validateMCPServerDefinition("my-server", {
+      command: "npx",
+      args: '-y @modelcontextprotocol/server-filesystem "C:\\My Docs"',
+    });
+    expect(normalized.args).toEqual([
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "C:\\My Docs",
+    ]);
+  });
+
+  it("normalizes KEY=VALUE env lines into an object", () => {
+    const normalized = hypervisor.validateMCPServerDefinition("my-server", {
+      command: "node",
+      env: "API_KEY=abc123\nDEBUG=true\n\nEMPTY=",
+    });
+    expect(normalized.env).toEqual({ API_KEY: "abc123", DEBUG: "true", EMPTY: "" });
+  });
+
+  it("normalizes KEY: VALUE header lines into an object", () => {
+    const normalized = hypervisor.validateMCPServerDefinition("my-server", {
+      url: "http://localhost:3000/mcp",
+      type: "sse",
+      headers: "Authorization: Bearer token",
+    });
+    expect(normalized.headers).toEqual({ Authorization: "Bearer token" });
+  });
+
+  it("rejects malformed env lines", () => {
+    expect(() =>
+      hypervisor.validateMCPServerDefinition("my-server", {
+        command: "node",
+        env: "NO_SEPARATOR_HERE",
+      })
+    ).toThrow(/expected KEY=VALUE/);
+  });
+
+  it("rejects invalid server names", () => {
+    expect(() =>
+      hypervisor.validateMCPServerDefinition("bad name", { command: "node" })
+    ).toThrow(/name can only contain/);
+    expect(() =>
+      hypervisor.validateMCPServerDefinition("-leading-dash", {
+        command: "node",
+      })
+    ).toThrow(/name can only contain/);
+    expect(() => hypervisor.validateMCPServerDefinition("", { command: "node" })).toThrow(
+      /name is required/
+    );
+  });
+
+  it("rejects a definition with neither command nor url", () => {
+    expect(() =>
+      hypervisor.validateMCPServerDefinition("my-server", { args: [] })
+    ).toThrow(/command or url is required/);
+  });
+
+  it("upserts a server entry and carries over the anythingllm block", () => {
+    hypervisor.upsertMCPServerToConfig("my-server", {
+      command: "node",
+      args: ["server.js"],
+    });
+    expect(hypervisor.mcpServerConfigs).toEqual([
+      {
+        name: "my-server",
+        server: { command: "node", args: ["server.js"] },
+      },
+    ]);
+
+    hypervisor.updateSuppressedTools("my-server", "some-tool", false);
+    hypervisor.upsertMCPServerToConfig("my-server", {
+      command: "node",
+      args: ["server-v2.js"],
+    });
+    expect(hypervisor.mcpServerConfigs[0].server).toEqual({
+      command: "node",
+      args: ["server-v2.js"],
+      anythingllm: { suppressedTools: ["some-tool"] },
+    });
+  });
+});

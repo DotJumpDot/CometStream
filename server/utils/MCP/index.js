@@ -224,6 +224,63 @@ class MCPCompatibilityLayer extends MCPHypervisor {
   }
 
   /**
+   * Create a new MCP server definition and start it.
+   * Fails when a server with the same name already exists.
+   * @param {string} name - The name of the MCP server
+   * @param {Object} definition - The raw server definition from the caller
+   * @returns {Promise<{success: boolean, error: string | null}>}
+   */
+  async createServer(name, definition) {
+    if (this.mcps[name] || this.mcpServerConfigs.some((s) => s.name === name))
+      return {
+        success: false,
+        error: `MCP server ${name} already exists.`,
+      };
+    return this.writeAndStartServer(name, definition);
+  }
+
+  /**
+   * Update an existing MCP server definition and restart it so the new
+   * definition takes effect immediately. Fails when the server does not exist.
+   * @param {string} name - The name of the MCP server
+   * @param {Object} definition - The raw server definition from the caller
+   * @returns {Promise<{success: boolean, error: string | null}>}
+   */
+  async updateServer(name, definition) {
+    if (!this.mcpServerConfigs.some((s) => s.name === name))
+      return {
+        success: false,
+        error: `MCP server ${name} not found in config file.`,
+      };
+    return this.writeAndStartServer(name, definition);
+  }
+
+  /**
+   * Validate, persist, and (re)start a single MCP server.
+   * Validation failures are returned, not thrown, so endpoints can surface them.
+   * Kept as a plain method (not #private): this class implements the singleton
+   * pattern by returning a cached instance from super(), and private methods
+   * on the subclass would be re-installed on the same object and throw.
+   * @param {string} name - The name of the MCP server
+   * @param {Object} definition - The raw server definition from the caller
+   * @returns {Promise<{success: boolean, error: string | null}>}
+   */
+  async writeAndStartServer(name, definition) {
+    let server;
+    try {
+      server = this.validateMCPServerDefinition(name, definition);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+
+    if (this.mcps[name]) this.pruneMCPServer(name);
+    this.upsertMCPServerToConfig(name, server);
+
+    const startResult = await this.startMCPServer(name);
+    return { success: startResult.success, error: startResult.error ?? null };
+  }
+
+  /**
    * Delete the MCP server - will also remove it from the config file
    * @param {string} name - The name of the MCP server to delete
    * @returns {Promise<{success: boolean, error: string | null}>}

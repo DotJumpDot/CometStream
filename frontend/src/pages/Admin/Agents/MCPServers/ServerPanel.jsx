@@ -7,7 +7,7 @@ import MCPServers from "@/models/mcpServers";
 import { SimpleToggleSwitch } from "@/components/lib/Toggle";
 import { useTranslation, Trans } from "react-i18next";
 
-function ManageServerMenu({ server, toggleServer, onDelete }) {
+function ManageServerMenu({ server, toggleServer, onDelete, onEdit }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [running, setRunning] = useState(server.running);
@@ -82,6 +82,16 @@ function ManageServerMenu({ server, toggleServer, onDelete }) {
         <div className="absolute w-[150px] top-1 left-7 mt-1 border-[1.5px] border-white/40 rounded-lg bg-theme-action-menu-bg flex flex-col shadow-[0_4px_14px_rgba(0,0,0,0.25)] text-white z-99 md:z-10">
           <button
             type="button"
+            onClick={() => {
+              setOpen(false);
+              onEdit?.(server);
+            }}
+            className="border-none flex items-center rounded-lg gap-x-2 hover:bg-theme-action-menu-item-hover py-1.5 px-2 transition-colors duration-200 w-full text-left"
+          >
+            <span className="text-sm">{t("agent.mcp.edit-server")}</span>
+          </button>
+          <button
+            type="button"
             onClick={handleToggleServer}
             className="border-none flex items-center rounded-lg gap-x-2 hover:bg-theme-action-menu-item-hover py-1.5 px-2 transition-colors duration-200 w-full text-left"
           >
@@ -109,6 +119,7 @@ export default function ServerPanel({
   toggleServer,
   onDelete,
   onToggleTool,
+  onEdit,
 }) {
   const { t } = useTranslation();
   const suppressedTools = server.config?.anythingllm?.suppressedTools || [];
@@ -142,6 +153,7 @@ export default function ServerPanel({
               server={server}
               toggleServer={toggleServer}
               onDelete={onDelete}
+              onEdit={onEdit}
             />
           </div>
           <RenderServerConfig config={server.config} />

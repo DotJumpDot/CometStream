@@ -52,6 +52,59 @@ function mcpServersEndpoints(app) {
     }
   );
 
+  // Create a new MCP server entry (fails when the name already exists).
+  // Body: { name, server } where `server` is a loose definition the hypervisor
+  // normalizes (args string, env/header lines) before validating.
+  app.post(
+    "/mcp-servers/create",
+    [validatedRequest, flexUserRoleValid([ROLES.admin])],
+    async (request, response) => {
+      try {
+        const { name, server } = reqBody(request);
+        const result = await new MCPCompatibilityLayer().createServer(
+          name,
+          server
+        );
+        return response.status(result.success ? 200 : 400).json({
+          success: result.success,
+          error: result.error,
+        });
+      } catch (error) {
+        console.error("Error creating MCP server:", error);
+        return response.status(500).json({
+          success: false,
+          error: error.message,
+        });
+      }
+    }
+  );
+
+  // Update an existing MCP server entry and restart it (fails when missing).
+  // The name cannot be changed here - delete + create instead.
+  app.post(
+    "/mcp-servers/update",
+    [validatedRequest, flexUserRoleValid([ROLES.admin])],
+    async (request, response) => {
+      try {
+        const { name, server } = reqBody(request);
+        const result = await new MCPCompatibilityLayer().updateServer(
+          name,
+          server
+        );
+        return response.status(result.success ? 200 : 400).json({
+          success: result.success,
+          error: result.error,
+        });
+      } catch (error) {
+        console.error("Error updating MCP server:", error);
+        return response.status(500).json({
+          success: false,
+          error: error.message,
+        });
+      }
+    }
+  );
+
   app.post(
     "/mcp-servers/toggle",
     [validatedRequest, flexUserRoleValid([ROLES.admin])],

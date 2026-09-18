@@ -37,6 +37,44 @@ const MCPServers = {
   },
 
   /**
+   * Create a new MCP server definition and start it
+   * @param {string} name - The name of the MCP server
+   * @param {Object} server - The server definition ({command, args, env} for stdio or {url, type, headers} for http)
+   * @returns {Promise<{success: boolean, error: string | null}>}
+   */
+  createServer: async (name, server) => {
+    return await fetch(`${API_BASE}/mcp-servers/create`, {
+      method: "POST",
+      headers: baseHeaders(),
+      body: JSON.stringify({ name, server }),
+    })
+      .then((res) => res.json())
+      .catch((e) => ({
+        success: false,
+        error: e.message,
+      }));
+  },
+
+  /**
+   * Update an existing MCP server definition and restart it
+   * @param {string} name - The name of the MCP server
+   * @param {Object} server - The server definition ({command, args, env} for stdio or {url, type, headers} for http)
+   * @returns {Promise<{success: boolean, error: string | null}>}
+   */
+  updateServer: async (name, server) => {
+    return await fetch(`${API_BASE}/mcp-servers/update`, {
+      method: "POST",
+      headers: baseHeaders(),
+      body: JSON.stringify({ name, server }),
+    })
+      .then((res) => res.json())
+      .catch((e) => ({
+        success: false,
+        error: e.message,
+      }));
+  },
+
+  /**
    * Toggle the MCP server (start or stop)
    * @param {string} name - The name of the MCP server to toggle
    * @returns {Promise<{success: boolean, error: string | null}>}

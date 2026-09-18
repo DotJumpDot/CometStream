@@ -109,6 +109,75 @@ class MCPHypervisor {
   }
 
   /**
+   * Validate and normalize an MCP server definition coming from an external
+   * caller (e.g. the admin UI form). Coerces the loose form shapes - args as a
+   * whitespace/quote-aware string, env and headers as KEY=VALUE / KEY: VALUE
+   * lines - into the canonical config shapes, then runs the same validation
+   * boot uses. Throws with a user-safe message when invalid.
+   * @param {string} name - The name of the MCP server
+   * @param {Object} server - The server definition
+   * @returns {Object} The normalized server definition, safe to write to config
+   */
+  validateMCPServerDefinition(name, server) {
+    if (!name || typeof name !== "string")
+      throw new Error("MCP server name is required.");
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name))
+      throw new Error(
+        "MCP server name can only contain letters, numbers, dashes and underscores."
+      );
+    if (!server || typeof server !== "object")
+      throw new Error("MCP server definition is required.");
+
+    const normalized = { ...server };
+    if (typeof normalized.args === "string") {
+      const matches =
+        normalized.args
+          .match(/"([^"]*)"|'([^']*)'|(\S+)/g)
+          ?.map((token) => token.replace(/^["']|["']$/g, "")) || [];
+      normalized.args = matches;
+    }
+
+    if (typeof normalized.env === "string") {
+      const env = {};
+      for (const line of normalized.env.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const separator = trimmed.indexOf("=");
+        if (separator === -1)
+          throw new Error(
+            `Invalid environment line "${trimmed}" - expected KEY=VALUE.`
+          );
+        env[trimmed.slice(0, separator).trim()] = trimmed
+          .slice(separator + 1)
+          .trim();
+      }
+      normalized.env = env;
+    }
+
+    if (typeof normalized.headers === "string") {
+      const headers = {};
+      for (const line of normalized.headers.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const separator = trimmed.indexOf(":");
+        if (separator === -1)
+          throw new Error(
+            `Invalid header line "${trimmed}" - expected KEY: VALUE.`
+          );
+        headers[trimmed.slice(0, separator).trim()] = trimmed
+          .slice(separator + 1)
+          .trim();
+      }
+      normalized.headers = headers;
+    }
+
+    const type = this.#parseServerType(normalized);
+    if (!type) throw new Error("MCP server command or url is required.");
+    this.#validateServerDefinitionByType(name, normalized, type);
+    return normalized;
+  }
+
+  /**
    * Remove the MCP server from the config file
    * @param {string} name - The name of the MCP server to remove
    * @returns {boolean} - True if the MCP server was removed, false otherwise
@@ -127,6 +196,33 @@ class MCPHypervisor {
       "utf8"
     );
     this.log(`MCP server ${name} removed from config file`);
+    return true;
+  }
+
+  /**
+   * Write an MCP server definition to the config file, creating or overwriting
+   * the entry. Carries over the existing `anythingllm` block (autoStart,
+   * suppressedTools) when replacing a server so UI-managed state survives edits.
+   * @param {string} name - The name of the MCP server to write
+   * @param {Object} server - The normalized server definition
+   * @returns {boolean} - True if the MCP server was written
+   */
+  upsertMCPServerToConfig(name, server) {
+    const servers = safeJsonParse(
+      fs.readFileSync(this.mcpServerJSONPath, "utf8"),
+      { mcpServers: {} }
+    );
+
+    const existingBlock = servers.mcpServers[name]?.anythingllm;
+    if (existingBlock) server.anythingllm = existingBlock;
+    servers.mcpServers[name] = server;
+
+    fs.writeFileSync(
+      this.mcpServerJSONPath,
+      JSON.stringify(servers, null, 2),
+      "utf8"
+    );
+    this.log(`MCP server ${name} written to config file`);
     return true;
   }
 

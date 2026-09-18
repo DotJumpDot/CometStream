@@ -1,11 +1,17 @@
 import { useState, useEffect } from "react";
 import { titleCase } from "text-case";
-import { BookOpenText, ArrowClockwise, Warning } from "@phosphor-icons/react";
+import {
+  BookOpenText,
+  ArrowClockwise,
+  PlusCircle,
+  Warning,
+} from "@phosphor-icons/react";
 import { Tooltip } from "react-tooltip";
 import MCPLogo from "@/media/agents/mcp-logo.svg";
 import MCPServers from "@/models/mcpServers";
 import showToast from "@/utils/toast";
 import { useTranslation } from "react-i18next";
+import AddServerModal from "./AddServerModal";
 
 export function MCPServerHeader({
   setMcpServers,
@@ -14,6 +20,7 @@ export function MCPServerHeader({
 }) {
   const { t } = useTranslation();
   const [loadingMcpServers, setLoadingMcpServers] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
   useEffect(() => {
     async function fetchMCPServers() {
       setLoadingMcpServers(true);
@@ -47,6 +54,16 @@ export function MCPServerHeader({
     }
   };
 
+  // Reload the list after a server was created/edited so new tools show up
+  const reloadAfterSave = async () => {
+    setShowAddModal(false);
+    setLoadingMcpServers(true);
+    const { servers = [] } = await MCPServers.listServers();
+    setMcpServers(servers);
+    setSelectedMcpServer(null);
+    setLoadingMcpServers(false);
+  };
+
   return (
     <>
       <div className="text-theme-text-primary flex items-center justify-between gap-x-2 mt-4">
@@ -63,6 +80,14 @@ export function MCPServerHeader({
           >
             <BookOpenText size={16} />
           </a>
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="border-none text-theme-text-secondary hover:text-cta-button flex items-center gap-x-1"
+          >
+            <PlusCircle size={16} />
+            <p className="text-sm">{t("agent.mcp.add-server")}</p>
+          </button>
           <button
             type="button"
             onClick={refreshMCPServers}
@@ -82,6 +107,12 @@ export function MCPServerHeader({
         </div>
       </div>
       {children({ loadingMcpServers })}
+      {showAddModal && (
+        <AddServerModal
+          onClose={() => setShowAddModal(false)}
+          onSaved={reloadAfterSave}
+        />
+      )}
     </>
   );
 }
