@@ -5,17 +5,19 @@ const availableThemes = {
   system: "System",
   light: "Light",
   dark: "Dark",
+  "monokai-night": "Monokai Night",
+  "monokai-dark-soda": "Monokai Dark Soda",
 };
 
 /**
- * @typedef {'system' | 'light' | 'dark'} ThemeOption
+ * @typedef {'system' | 'light' | 'dark' | 'monokai-night' | 'monokai-dark-soda'} ThemeOption
  */
 
 /**
  * @typedef {Object} UseThemeResult
  * @property {ThemeOption} theme - The current theme preference stored in localStorage.
  * @property {(newTheme: ThemeOption) => void} setTheme - Sets the theme preference.
- * @property {{system: string, light: string, dark: string}} availableThemes - Map of theme keys to display names.
+ * @property {Record<string, string>} availableThemes - Map of theme keys to display names.
  * @property {boolean} isLight - Whether the resolved theme is light (explicitly or via system preference).
  */
 
