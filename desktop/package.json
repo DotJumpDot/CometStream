@@ -1,0 +1,35 @@
+{
+  "name": "cometstream-desktop",
+  "version": "1.16.1",
+  "description": "CometStream desktop shell - Electron window around the local server + collector",
+  "main": "src/main.js",
+  "author": "CometStream",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "icon": "node scripts/make-icon.mjs",
+    "start": "electron .",
+    "dist": "electron-builder --win --dir"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0",
+    "sharp": "^0.33.5"
+  },
+  "build": {
+    "appId": "app.cometstream.desktop",
+    "productName": "CometStream",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": ["dir"],
+      "signExecutable": false
+    }
+  }
+}

@@ -36,9 +36,9 @@ docker compose up -d
 
 App: `http://localhost:3001`.
 
-### Portable Windows build (no install, no Node needed)
+### Portable Windows desktop app (no install, no Node needed)
 
-A self-contained zip — bundled runtime, pre-built UI, pre-migrated database — that runs from any folder. Double-click `Start-CometStream.bat` and you're in. See [docs/PORTABLE-BUILD.md](./docs/PORTABLE-BUILD.md) to build one yourself.
+A self-contained zip — desktop app window, bundled runtime, pre-built UI, pre-migrated database — that runs from any folder. Double-click `CometStream.exe` and you're in a native-style app window. See [docs/PORTABLE-BUILD.md](./docs/PORTABLE-BUILD.md) to build one yourself.
 
 ### Development
 
@@ -60,6 +60,7 @@ Requirements: Node 18+, Yarn 1.x. Full walkthrough in [docs/GETTING-STARTED.md](
 | [MCP servers](./docs/MCP-SERVERS.md) | Managing MCP servers (UI + API), config file format |
 | [Skill files](./docs/SKILL-FILES.md) | The SKILL.md loader: format, discovery, security model |
 | [Themes](./docs/THEMES.md) | How theming works and how to add a new theme |
+| [Desktop app](./docs/DESKTOP-APP.md) | The Electron shell: architecture, dev mode, building |
 | [Portable build](./docs/PORTABLE-BUILD.md) | Building the self-contained Windows bundle |
 
 ## Repo layout
@@ -68,6 +69,7 @@ Requirements: Node 18+, Yarn 1.x. Full walkthrough in [docs/GETTING-STARTED.md](
 frontend/   React + Vite + Tailwind UI
 server/     Node/Express API, agents, Prisma (SQLite), MCP client
 collector/  Document processing service (parsing, OCR, scraping)
+desktop/    Electron desktop shell (packaged into the portable build)
 docker/     Docker image & compose files
 docs/       Project documentation
 locales/    README translations from upstream

@@ -1,20 +1,24 @@
 # Portable Windows build
 
-The portable build is a **fully self-contained** CometStream: bundled Node.js runtime, pre-compiled UI, production dependencies, and a pre-migrated database — one folder (or zip) that runs on any Windows 10/11 x64 machine with nothing installed. Move the folder and your data moves with it.
+The portable build is a **fully self-contained** CometStream desktop app: a real app window (Electron shell), bundled Node.js runtime, pre-compiled UI, production dependencies, and a pre-migrated database — one folder (or zip) that runs on any Windows 10/11 x64 machine with nothing installed. Move the folder and your data moves with it.
 
 ## What's in the bundle
 
 ```
 CometStream/
-├── Start-CometStream.bat        ← double-click to run
-├── Stop-CometStream.bat         ← stops both processes
-├── Install-Scrape-Browser.bat   ← optional: Chromium for website scraping (~300 MB)
+├── CometStream.exe             ← double-click: desktop app window
+├── resources/                  ← Electron + shell code (from desktop/)
+├── Start-CometStream.bat       ← console alternative (visible logs)
+├── Stop-CometStream.bat        ← stops processes started by the bat
+├── Install-Scrape-Browser.bat  ← optional: Chromium for website scraping (~300 MB)
 ├── README-PORTABLE.txt
 ├── runtime/
-│   └── node.exe                 ← the entire Node.js runtime (matched to build machine)
-├── server/                      ← app + node_modules (prod) + public/ (compiled UI) + storage/ (your data)
-└── collector/                   ← document processor + node_modules (prod)
+│   └── node.exe                ← Node.js runtime for the bat launchers
+├── server/                     ← app + node_modules (prod) + public/ (compiled UI) + storage/ (your data)
+└── collector/                  ← document processor + node_modules (prod)
 ```
+
+`CometStream.exe` runs the backend in-process and shows the UI in its own window ([DESKTOP-APP.md](./DESKTOP-APP.md)). The batch files remain for console use and for applying migrations after bundle updates.
 
 First boot walks through the normal onboarding (admin account, LLM provider). All data lives in `server/storage` inside the folder — back up the folder, back up the instance.
 
@@ -63,8 +67,12 @@ Then (optionally) seed branding so the app presents as CometStream out of the bo
 
 **Do not ship** anything the app generates per-install: `server/.env` (contains an absolute `STORAGE_DIR` and generated `SIG_KEY`/`SIG_SALT`) or `server/storage/comkey/`. They regenerate on first boot; shipping them leaks your keys to every copy.
 
-### 6. Add launchers + zip
+### 6. Add the desktop app + launchers
 
+- **Desktop exe**: from `desktop/` in the repo, `yarn install && yarn dist`,
+  then copy the contents of `desktop/dist/win-unpacked/` into the bundle root
+  (merge — do not purge bundle-only files). This provides `CometStream.exe`
+  plus its Electron `resources/`. Details in [DESKTOP-APP.md](./DESKTOP-APP.md).
 - `Start-CometStream.bat` — sets `NODE_ENV=production`, `STORAGE_DIR` (absolute, recomputed from `%~dp0` each start so the folder stays movable), runs `prisma generate` + `migrate deploy`, starts collector and server minimized, polls port 3001, then opens the browser.
 - `Stop-CometStream.bat` — kills node processes whose command line references the bundle folder. Match with a **substring** (`-like '*<root>*'`): command lines created via `start` begin with a quote, so prefix matches silently fail.
 - Zip with Windows bsdtar (GNU tar in Git Bash cannot write zip): `C:/Windows/System32/tar.exe -a -c -f CometStream-portable-win64.zip CometStream`
