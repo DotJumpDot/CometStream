@@ -10,3 +10,9 @@ aws_cf_deploy_anything_llm.json
 yarn.lock
 *.bak
 .idea
+
+# Local AI-tooling artifacts (security scanner caches, agent session files)
+.mimosa/
+.zcode/
+.claude/
+.playwright-mcp/
