@@ -173,6 +173,15 @@ class EphemeralAgentHandler extends AgentHandler {
       return { provider: "anythingllm-router", model: null };
     }
 
+    // CometStream custom providers resolve their own default model (first
+    // enabled) lazily, so a system default of "custom:<id>" needs no model.
+    if (
+      typeof systemProvider === "string" &&
+      systemProvider.startsWith("custom:")
+    ) {
+      return { provider: systemProvider, model: null };
+    }
+
     const systemModel = this.providerDefault(systemProvider);
     if (systemProvider && systemModel) {
       return {

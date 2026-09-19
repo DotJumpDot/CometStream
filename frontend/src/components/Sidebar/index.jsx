@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { List, Plus, Plugs } from "@phosphor-icons/react";
+import { List, Plus, Plugs, PushPin } from "@phosphor-icons/react";
 import NewWorkspaceModal, {
   useNewWorkspaceModal,
 } from "../Modals/NewWorkspace";
@@ -15,6 +15,9 @@ import { useSidebarToggle, ToggleSidebarButton } from "./SidebarToggle";
 import SearchBox from "./SearchBox";
 import { Tooltip } from "react-tooltip";
 import { createPortal } from "react-dom";
+import Workspace from "@/models/workspace";
+import { relativeTime } from "@/utils/dates";
+import { PINNED_THREADS_CHANGED_EVENT } from "@/utils/constants";
 
 export const SIDEBAR_SEARCH_INPUT_ID = "sidebar-search-input";
 
@@ -30,17 +33,14 @@ export default function Sidebar() {
     hideModal: hideNewWsModal,
   } = useNewWorkspaceModal();
 
-  // ZCode-style shortcuts: Ctrl+N new workspace, Ctrl+K focuses the search box.
+  // Ctrl+N opens a new workspace. (Ctrl+K is the command palette, which
+  // listens for its own shortcut at the app root.)
   useEffect(() => {
     const onKeyDown = (e) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.key === "n" || e.key === "N") {
         e.preventDefault();
         showNewWsModal();
-      }
-      if (e.key === "k" || e.key === "K") {
-        e.preventDefault();
-        document.getElementById(SIDEBAR_SEARCH_INPUT_ID)?.focus();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -87,6 +87,7 @@ export default function Sidebar() {
                       user={user}
                       showNewWsModal={showNewWsModal}
                     />
+                    <PinnedThreads />
                     <div className="flex flex-col gap-y-[6px]">
                       <p className="text-[10px] uppercase tracking-[0.08em] font-semibold text-theme-text-secondary opacity-60 px-2">
                         {t("sidebar.projects")}
@@ -106,6 +107,83 @@ export default function Sidebar() {
       </div>
       <WorkspaceAndThreadTooltips />
     </>
+  );
+}
+
+/**
+ * Pinned threads across all workspaces (ZCode-style "Pinned" section).
+ * Refetches whenever a thread is (un)pinned anywhere in the app.
+ */
+function PinnedThreads() {
+  const { t } = useTranslation();
+  const [threads, setThreads] = useState(null);
+
+  useEffect(() => {
+    const load = () =>
+      Workspace.threads
+        .pinned()
+        .then(({ threads }) => setThreads(threads))
+        .catch(() => setThreads([]));
+    load();
+    window.addEventListener(PINNED_THREADS_CHANGED_EVENT, load);
+    return () => window.removeEventListener(PINNED_THREADS_CHANGED_EVENT, load);
+  }, []);
+
+  if (!threads || threads.length === 0) return null;
+
+  const unpin = (thread) => {
+    setThreads((prev) => prev.filter((t) => t.slug !== thread.slug));
+    // Refetch notification fires after the persist, not before, so other
+    // listeners never read stale pin state.
+    Workspace.threads
+      .setPinned(thread.workspace.slug, thread.slug, false)
+      .finally(() =>
+        window.dispatchEvent(new Event(PINNED_THREADS_CHANGED_EVENT))
+      );
+  };
+
+  return (
+    <div className="flex flex-col gap-y-[6px]">
+      <p className="text-[10px] uppercase tracking-[0.08em] font-semibold text-theme-text-secondary opacity-60 px-2">
+        {t("sidebar.pinned")}
+      </p>
+      <div className="flex flex-col gap-y-[2px]">
+        {threads.map((thread) => (
+          <div
+            key={`${thread.workspace.slug}/${thread.slug}`}
+            className="group/pinned flex items-center gap-x-2 h-[30px] px-2.5 rounded-[8px] text-[13px] leading-none hover:bg-theme-sidebar-subitem-hover transition-all duration-[200ms]"
+          >
+            <PushPin
+              size={13}
+              weight="fill"
+              className="shrink-0 text-cta-button"
+            />
+            <Link
+              to={paths.workspace.thread(thread.workspace.slug, thread.slug)}
+              className="flex-1 min-w-0 flex items-baseline gap-x-1.5 overflow-hidden"
+            >
+              <span className="truncate text-white light:text-black">
+                {thread.name}
+              </span>
+              <span className="shrink-0 text-[10px] text-theme-text-secondary opacity-70 truncate">
+                {thread.workspace.name}
+              </span>
+            </Link>
+            <span className="shrink-0 text-[10px] text-theme-text-secondary">
+              {relativeTime(thread.lastUpdatedAt)}
+            </span>
+            <button
+              type="button"
+              onClick={() => unpin(thread)}
+              aria-label={t("sidebar.unpin")}
+              className="shrink-0 opacity-0 group-hover/pinned:opacity-100 transition-opacity duration-150 border-none cursor-pointer text-theme-text-secondary hover:text-red-400"
+            >
+              <PushPin size={12} weight="regular" className="rotate-45" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

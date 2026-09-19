@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { userFromStorage } from "./request";
 import { TOGGLE_LLM_SELECTOR_EVENT } from "@/components/WorkspaceChat/ChatContainer/PromptInput/LLMSelector/action";
+import { OPEN_COMMAND_PALETTE_EVENT } from "./constants";
 
 export const KEYBOARD_SHORTCUTS_HELP_EVENT = "keyboard-shortcuts-help";
 export const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
@@ -31,8 +32,16 @@ export const SHORTCUTS = {
     action: ({ navigate }) => navigate(paths.settings.workspaces()),
   },
   "⌘ + K": {
-    translationKey: "apiKeys",
-    action: ({ navigate }) => navigate(paths.settings.apiKeys()),
+    translationKey: "commandPalette",
+    action: () => {
+      window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT));
+    },
+  },
+  "⌘ + Shift + P": {
+    translationKey: "commandPalette",
+    action: () => {
+      window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE_EVENT));
+    },
   },
   "⌘ + L": {
     translationKey: "llmPreferences",

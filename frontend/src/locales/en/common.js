@@ -124,6 +124,21 @@ const TRANSLATIONS = {
     projects: "Projects",
     "new-workspace": "New workspace",
     "agents-mcp": "Agents & MCP",
+    pinned: "Pinned",
+    pin: "Pin to sidebar",
+    unpin: "Unpin from sidebar",
+  },
+  command_palette: {
+    placeholder: "Type a command or search...",
+    no_results: "No results",
+    action_new_workspace: "New workspace",
+    group_actions: "Actions",
+    group_theme: "Theme",
+    group_navigate: "Navigate",
+    group_workspaces: "Workspaces",
+    group_threads: "Threads",
+    nav_home: "Home",
+    active: "active",
   },
   login: {
     "multi-user": {
@@ -1751,6 +1766,7 @@ const TRANSLATIONS = {
       chatSettings: "Chat Settings",
       help: "Show keyboard shortcuts help",
       showLLMSelector: "Show workspace LLM Selector",
+      commandPalette: "Open command palette",
     },
   },
   community_hub: {
@@ -2073,6 +2089,11 @@ const TRANSLATIONS = {
       "Only public http(s) endpoints can be connected. Local and private network addresses are rejected.",
     creating: "Creating...",
     create: "Create provider",
+    set_default: "Set as default",
+    set_default_hint:
+      "Makes this provider's first enabled model the system-wide default for new chats and agents.",
+    default_set: "System default provider updated",
+    default_badge: "Default",
     field_model_id: "Model ID",
     field_display_name: "Display name",
     field_context_window: "Context window (tokens)",

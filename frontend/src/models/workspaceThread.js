@@ -51,6 +51,29 @@ const WorkspaceThread = {
 
     return { thread, message };
   },
+  setPinned: async function (workspaceSlug, threadSlug, pinned = false) {
+    return await fetch(
+      `${API_BASE}/workspace/${workspaceSlug}/thread/${threadSlug}/pin`,
+      {
+        method: "POST",
+        body: JSON.stringify({ pinned }),
+        headers: baseHeaders(),
+      }
+    )
+      .then((res) => res.ok)
+      .catch(() => false);
+  },
+  pinned: async function () {
+    const { threads } = await fetch(`${API_BASE}/pinned-threads`, {
+      method: "GET",
+      headers: baseHeaders(),
+    })
+      .then((res) => res.json())
+      .catch(() => {
+        return { threads: [] };
+      });
+    return { threads };
+  },
   delete: async function (workspaceSlug, threadSlug) {
     return await fetch(
       `${API_BASE}/workspace/${workspaceSlug}/thread/${threadSlug}`,

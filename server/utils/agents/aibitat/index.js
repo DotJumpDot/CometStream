@@ -1532,6 +1532,17 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
       case "vertex":
         return new Providers.VertexProvider({ model: config.model });
       default:
+        // CometStream custom providers ("custom:<id>") resolve their connection
+        // details from the custom_llm_providers table lazily, so they can be
+        // built synchronously here like any ENV-backed provider.
+        if (
+          typeof config.provider === "string" &&
+          config.provider.startsWith("custom:")
+        )
+          return new Providers.CustomOpenAiProvider({
+            provider: config.provider,
+            model: config.model,
+          });
         throw new Error(
           `Unknown provider: ${config.provider}. Please use a valid provider.`
         );

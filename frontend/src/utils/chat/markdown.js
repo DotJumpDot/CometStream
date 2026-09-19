@@ -5,6 +5,7 @@ import Appearance from "@/models/appearance";
 import hljs from "highlight.js";
 import "./themes/github-dark.css";
 import "./themes/github.css";
+import "./themes/monokai.css";
 import { v4 } from "uuid";
 
 // Register custom lanaguages
@@ -16,10 +17,13 @@ const markdown = markdownIt({
   typographer: true,
   highlight: function (code, lang) {
     const uuid = v4();
+    const activeTheme = window.localStorage.getItem("theme");
     const theme =
-      window.localStorage.getItem("theme") === "light"
+      activeTheme === "light"
         ? "github"
-        : "github-dark";
+        : activeTheme?.startsWith("monokai")
+          ? "monokai"
+          : "github-dark";
 
     if (lang && hljs.getLanguage(lang)) {
       try {

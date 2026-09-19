@@ -1,0 +1,94 @@
+/*
+  Theme: Monokai (classic)
+  Applied when a CometStream Monokai theme (monokai-night / monokai-dark-soda)
+  is active, so code blocks match the palette the rest of the UI uses.
+  Selector set mirrors the github themes in this folder.
+*/
+
+.monokai.hljs {
+  color: #f8f8f2;
+  background: #272822;
+}
+
+.monokai .hljs-doctag,
+.monokai .hljs-keyword,
+.monokai .hljs-meta .hljs-keyword,
+.monokai .hljs-template-tag,
+.monokai .hljs-template-variable,
+.monokai .hljs-type,
+.monokai .hljs-variable.language_ {
+  color: #f92672;
+}
+
+.monokai .hljs-title,
+.monokai .hljs-title.class_,
+.monokai .hljs-title.class_.inherited__,
+.monokai .hljs-title.function_ {
+  color: #a6e22e;
+}
+
+.monokai .hljs-attr,
+.monokai .hljs-attribute,
+.monokai .hljs-literal,
+.monokai .hljs-meta,
+.monokai .hljs-number,
+.monokai .hljs-operator,
+.monokai .hljs-selector-attr,
+.monokai .hljs-selector-class,
+.monokai .hljs-selector-id,
+.monokai .hljs-variable {
+  color: #ae81ff;
+}
+
+.monokai .hljs-string,
+.monokai .hljs-regexp,
+.monokai .hljs-meta .hljs-string {
+  color: #e6db74;
+}
+
+.monokai .hljs-built_in,
+.monokai .hljs-symbol {
+  color: #66d9ef;
+}
+
+.monokai .hljs-bullet,
+.monokai .hljs-comment,
+.monokai .hljs-code,
+.monokai .hljs-formula {
+  color: #75715e;
+}
+
+.monokai .hljs-name,
+.monokai .hljs-quote,
+.monokai .hljs-selector-tag,
+.monokai .hljs-selector-pseudo,
+.monokai .hljs-tag {
+  color: #f92672;
+}
+
+.monokai .hljs-subst {
+  color: #f8f8f2;
+}
+
+.monokai .hljs-section {
+  color: #a6e22e;
+  font-weight: bold;
+}
+
+.monokai .hljs-emphasis {
+  font-style: italic;
+}
+
+.monokai .hljs-strong {
+  font-weight: bold;
+}
+
+.monokai .hljs-addition {
+  color: #a6e22e;
+  background:rgba(166, 226, 46, 0.15);
+}
+
+.monokai .hljs-deletion {
+  color: #f92672;
+  background: rgba(249, 38, 114, 0.15);
+}

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import ThreadItem from "./ThreadItem";
 import { useNavigate, useParams } from "react-router-dom";
 import useHoverMetaKey from "./hooks";
+import { PINNED_THREADS_CHANGED_EVENT } from "@/utils/constants";
 export const THREAD_RENAME_EVENT = "renameThread";
 export const THREAD_FORK_EVENT = "forkToThread";
 
@@ -93,8 +94,8 @@ export default function ThreadContainer({
   };
 
   function removeThread(threadId) {
-    setThreads((prev) =>
-      prev.map((_t) => {
+    setThreads((prevThreads) =>
+      prevThreads.map((_t) => {
         if (_t.id !== threadId) return _t;
         return { ..._t, deleted: true };
       })
@@ -103,8 +104,41 @@ export default function ThreadContainer({
     // Show thread was deleted, but then remove from threads entirely so it will
     // not appear in bulk-selection.
     setTimeout(() => {
-      setThreads((prev) => prev.filter((t) => !t.deleted));
+      setThreads((prevThreads) => prevThreads.filter((t) => !t.deleted));
     }, 500);
+  }
+
+  /**
+   * Optimistically flips the local pinned flag (so the pin icon and menu
+   * label update immediately), then persists and notifies the sidebar's
+   * Pinned section to refetch.
+   */
+  function togglePinned(thread) {
+    const pinned = !thread.pinned;
+    setThreads((prevThreads) =>
+      prevThreads.map((_t) => {
+        if (_t.id !== thread.id) return _t;
+        return { ..._t, pinned };
+      })
+    );
+    // Notify the sidebar's Pinned section AFTER the state is persisted - a
+    // pre-flight event would make its refetch race the write and see stale data.
+    Workspace.threads
+      .setPinned(workspace.slug, thread.slug, pinned)
+      .finally(() =>
+        window.dispatchEvent(new Event(PINNED_THREADS_CHANGED_EVENT))
+      )
+      .then((success) => {
+        if (!success) {
+          showToast("Could not update pin", "error");
+          setThreads((prevThreads) =>
+            prevThreads.map((_t) => {
+              if (_t.id !== thread.id) return _t;
+              return { ..._t, pinned: !pinned };
+            })
+          );
+        }
+      });
   }
 
   function getActiveThreadIdx() {
@@ -157,6 +191,7 @@ export default function ThreadContainer({
           idx={i + (defaultThreadHasChats ? 1 : 0)}
           ctrlPressed={ctrlPressed}
           toggleMarkForDeletion={toggleForDeletion}
+          onTogglePinned={togglePinned}
           activeIdx={activeThreadIdx}
           isActive={activeThreadIdx === i + (defaultThreadHasChats ? 1 : 0)}
           workspace={workspace}

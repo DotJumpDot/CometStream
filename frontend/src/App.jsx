@@ -14,6 +14,7 @@ import { PWAModeProvider } from "./PWAContext";
 import KeyboardShortcutsHelp from "@/components/KeyboardShortcutsHelp";
 import ImageLightbox from "@/components/ImageLightbox";
 import DesktopTitleBar from "@/components/DesktopTitleBar";
+import CommandPalette from "@/components/CommandPalette";
 import { ErrorBoundary } from "react-error-boundary";
 import ErrorBoundaryFallback from "./components/ErrorBoundaryFallback";
 
@@ -48,6 +49,7 @@ export default function App() {
                     <ToastContainer />
                     <KeyboardShortcutsHelp />
                     <ImageLightbox />
+                    <CommandPalette />
                   </I18nextProvider>
                 </PfpProvider>
               </LogoProvider>

@@ -313,10 +313,15 @@ export default function PromptInput({
     const value = e.target.value;
     setPromptInput(value);
 
-    // Auto-dismiss the tools menu when the "/" that opened it is modified
-    if (autoOpenedToolsRef.current && showTools && value !== "/") {
-      setShowTools(false);
-      autoOpenedToolsRef.current = false;
+    // Auto-opened via "/": keep the tools menu open while the user is still
+    // typing the command (single token starting with "/") so the list filters
+    // live; close it once they move past the command.
+    if (autoOpenedToolsRef.current && showTools) {
+      const isTypingCommand = value.startsWith("/") && !value.includes(" ");
+      if (!isTypingCommand) {
+        setShowTools(false);
+        autoOpenedToolsRef.current = false;
+      }
     }
   }
 
@@ -349,6 +354,9 @@ export default function PromptInput({
               promptRef={textareaRef}
               centered={centered}
               highlightedIndexRef={toolsHighlightRef}
+              slashQuery={
+                autoOpenedToolsRef.current ? promptInput.replace(/^\//, "") : ""
+              }
             />
             <div className="bg-zinc-800 light:bg-white light:border light:border-slate-300 rounded-[20px] pwa:rounded-3xl flex flex-col px-5 overflow-hidden">
               <AttachmentManager attachments={attachments} />

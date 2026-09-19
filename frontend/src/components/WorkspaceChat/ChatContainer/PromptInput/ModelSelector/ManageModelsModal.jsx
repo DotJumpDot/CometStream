@@ -8,6 +8,7 @@ import {
   FloppyDisk,
   Plus,
   Sparkle,
+  Star,
   Trash,
   X,
 } from "@phosphor-icons/react";
@@ -47,6 +48,7 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
 
   const [customProviders, setCustomProviders] = useState([]);
   const [configuredBuiltIns, setConfiguredBuiltIns] = useState([]);
+  const [systemLLMProvider, setSystemLLMProvider] = useState(null);
   const [selected, setSelected] = useState(null); // {type:"custom", id} | {type:"builtin", value} | null
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
@@ -66,6 +68,7 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
       System.keys().catch(() => null),
     ]);
     setCustomProviders(providers);
+    setSystemLLMProvider(settings?.LLMProvider ?? null);
     setConfiguredBuiltIns(
       settings
         ? WORKSPACE_LLM_PROVIDERS.filter(
@@ -87,6 +90,18 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
   const afterChange = () => {
     reload();
     onChanged?.();
+  };
+
+  const setSystemDefault = async (providerId) => {
+    const { error } = await System.updateSystem({
+      LLMProvider: `custom:${providerId}`,
+    });
+    if (error) {
+      showToast(error, "error");
+      return;
+    }
+    showToast(t("manage_models.default_set"), "success");
+    reload();
   };
 
   if (!isAdmin) return null;
@@ -157,6 +172,7 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
                     }
                     label={provider.name}
                     connected={provider.models.length > 0}
+                    isDefault={systemLLMProvider === `custom:${provider.id}`}
                   />
                 ))}
                 {customProviders.length === 0 && (
@@ -196,6 +212,10 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
                 <CustomProviderPanel
                   key={selectedCustom.id}
                   provider={selectedCustom}
+                  isDefault={
+                    systemLLMProvider === `custom:${selectedCustom.id}`
+                  }
+                  onSetDefault={() => setSystemDefault(selectedCustom.id)}
                   onSaved={afterChange}
                   onAddModel={() => setShowAddModel(true)}
                   onDeleteModel={async (modelId) => {
@@ -269,7 +289,7 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
   );
 }
 
-function ProviderRow({ active, onClick, icon, label, connected }) {
+function ProviderRow({ active, onClick, icon, label, connected, isDefault }) {
   const { t } = useTranslation();
   return (
     <button
@@ -283,6 +303,14 @@ function ProviderRow({ active, onClick, icon, label, connected }) {
       <span className="text-xs text-theme-text-primary truncate flex-1">
         {label}
       </span>
+      {isDefault && (
+        <span
+          title={t("manage_models.default_badge")}
+          className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-theme-button-cta/15 text-theme-button-cta shrink-0"
+        >
+          {t("manage_models.default_badge")}
+        </span>
+      )}
       <span
         title={
           connected
@@ -324,6 +352,8 @@ function BuiltInPanel({ value, onOpenSettings }) {
 
 function CustomProviderPanel({
   provider,
+  isDefault = false,
+  onSetDefault,
   onSaved,
   onAddModel,
   onDeleteModel,
@@ -382,6 +412,24 @@ function CustomProviderPanel({
             <FloppyDisk size={13} />
             {t("manage_models.save")}
           </button>
+          {onSetDefault && (
+            <button
+              type="button"
+              onClick={onSetDefault}
+              disabled={isDefault}
+              title={t("manage_models.set_default_hint")}
+              className={`flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors duration-100 disabled:cursor-default ${
+                isDefault
+                  ? "bg-theme-button-cta/15 text-theme-button-cta"
+                  : "border border-white/15 text-theme-text-secondary hover:text-theme-text-primary hover:bg-white/5"
+              }`}
+            >
+              <Star size={13} weight={isDefault ? "fill" : "regular"} />
+              {isDefault
+                ? t("manage_models.default_badge")
+                : t("manage_models.set_default")}
+            </button>
+          )}
           <button
             type="button"
             onClick={onDeleteProvider}

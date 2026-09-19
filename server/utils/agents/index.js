@@ -301,17 +301,15 @@ class AgentHandler {
           );
         break;
       default:
-        // CometStream custom providers are chat-only for now: the agent
-        // runtime builds providers from ENV-backed classes synchronously and
-        // cannot load per-row connection config yet. Block with a clear
-        // message instead of a confusing "no provider set" error.
+        // CometStream custom providers ("custom:<id>") hold their connection
+        // config in the DB, not ENV, so there is nothing to check here. The
+        // provider itself resolves (and validates) the row lazily on first
+        // use and surfaces a clear error if it is missing or model-less.
         if (
           typeof this.provider === "string" &&
           this.provider.startsWith("custom:")
         )
-          throw new Error(
-            "Agent chats do not support custom model providers yet. Switch the workspace model to a built-in provider to use @agent."
-          );
+          break;
         throw new Error(
           "No workspace agent provider set. Please set your agent provider in the workspace's settings"
         );
@@ -443,6 +441,15 @@ class AgentHandler {
     const systemProvider = process.env.LLM_PROVIDER;
     if (systemProvider === "anythingllm-router") {
       return { provider: "anythingllm-router", model: null };
+    }
+
+    // CometStream custom providers resolve their own default model (first
+    // enabled) lazily, so a system default of "custom:<id>" needs no model.
+    if (
+      typeof systemProvider === "string" &&
+      systemProvider.startsWith("custom:")
+    ) {
+      return { provider: systemProvider, model: null };
     }
 
     const systemModel = this.providerDefault(systemProvider);

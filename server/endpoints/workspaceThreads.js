@@ -109,6 +109,44 @@ function workspaceThreadEndpoints(app) {
     }
   );
 
+  app.post(
+    "/workspace/:slug/thread/:threadSlug/pin",
+    [
+      validatedRequest,
+      flexUserRoleValid([ROLES.all]),
+      validWorkspaceAndThreadSlug,
+    ],
+    async (request, response) => {
+      try {
+        const { pinned = false } = reqBody(request);
+        const success = await WorkspaceThread.setPinned(
+          response.locals.workspace,
+          response.locals.thread.slug,
+          pinned
+        );
+        if (!success) return response.sendStatus(500).end();
+        response.status(200).json({ success: true, pinned: !!pinned });
+      } catch (e) {
+        console.error(e.message, e);
+        response.sendStatus(500).end();
+      }
+    }
+  );
+
+  app.get(
+    "/pinned-threads",
+    [validatedRequest, flexUserRoleValid([ROLES.all])],
+    async (_, response) => {
+      try {
+        const threads = await WorkspaceThread.pinned();
+        response.status(200).json({ threads });
+      } catch (e) {
+        console.error(e.message, e);
+        response.sendStatus(500).end();
+      }
+    }
+  );
+
   app.delete(
     "/workspace/:slug/thread-bulk-delete",
     [validatedRequest, flexUserRoleValid([ROLES.all]), validWorkspaceSlug],

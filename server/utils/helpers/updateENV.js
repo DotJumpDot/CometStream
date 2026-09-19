@@ -1149,6 +1149,10 @@ function validLocalWhisper(input = "") {
 }
 
 function supportedLLM(input = "") {
+  // CometStream custom providers ("custom:<id>") may be set as the system
+  // default LLM. Only the key shape is checked here (sync); a dangling id
+  // fails loudly at resolution time with a clear provider-not-found error.
+  if (typeof input === "string" && input.startsWith("custom:")) return null;
   const validSelection = [
     "openai",
     "azure",

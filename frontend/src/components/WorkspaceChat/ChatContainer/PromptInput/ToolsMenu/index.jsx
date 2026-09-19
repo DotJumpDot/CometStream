@@ -51,6 +51,7 @@ export default function ToolsMenu({
   promptRef,
   centered = false,
   highlightedIndexRef,
+  slashQuery = "",
 }) {
   const { t } = useTranslation();
   const { user } = useUser();
@@ -177,6 +178,7 @@ export default function ToolsMenu({
             highlightedIndex={highlightedIndex}
             registerItemCount={registerItemCount}
             workspace={workspace}
+            slashQuery={slashQuery}
           />
         </div>
       </div>

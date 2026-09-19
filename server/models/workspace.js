@@ -707,12 +707,18 @@ const Workspace = {
       return (await fallbackProvider.supportsNativeToolCalling?.()) ?? false;
     }
 
-    // CometStream custom providers are chat-only and have no agent/aibitat
-    // provider class, so native tool calling cannot be probed for them.
-    // Report "unknown" (null) so isAgentCommandAvailable hides the @agent
-    // command instead of throwing on every workspace chat page load.
-    if (typeof provider === "string" && provider.startsWith("custom:"))
-      return null;
+    // CometStream custom providers carry per-model capability metadata, so
+    // native tool calling is read straight off the model descriptor instead
+    // of probing a live endpoint.
+    if (typeof provider === "string" && provider.startsWith("custom:")) {
+      const { CustomLlmProviders } = require("./customLlmProviders");
+      const resolved = await CustomLlmProviders.resolveForChat(
+        provider,
+        workspace?.agentModel ?? workspace?.chatModel ?? null
+      );
+      if (!resolved) return false;
+      return resolved.model.capabilities?.tools !== false;
+    }
 
     const model =
       workspace?.agentModel ??

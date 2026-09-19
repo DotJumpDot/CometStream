@@ -17,6 +17,7 @@ export default function SlashCommandsTab({
   promptRef,
   highlightedIndex = -1,
   registerItemCount,
+  slashQuery = "",
 }) {
   const { t } = useTranslation();
   const {
@@ -90,13 +91,18 @@ export default function SlashCommandsTab({
         return;
       }
 
-      // Insert the command at the cursor, replacing a trailing "/" if present
+      // Insert the command at the cursor, replacing the slash token being
+      // typed (both a bare trailing "/" and a partial like "/re")
       const textarea = promptRef?.current;
       if (!textarea) return;
       const cursor = textarea.selectionStart;
       const value = textarea.value;
       const charBefore = cursor > 0 ? value[cursor - 1] : "";
-      const insertStart = charBefore === "/" ? cursor - 1 : cursor;
+      const beforeCursor = value.slice(0, cursor);
+      const isPartialCommand =
+        beforeCursor.startsWith("/") && !beforeCursor.includes(" ");
+      const insertStart =
+        charBefore === "/" ? cursor - 1 : isPartialCommand ? 0 : cursor;
       const newValue =
         value.slice(0, insertStart) + command + value.slice(cursor);
 
@@ -112,8 +118,20 @@ export default function SlashCommandsTab({
     [sendCommand, setShowing, promptRef]
   );
 
+  // While the user types the slash command in the prompt ("/re…"), the menu
+  // stays open and filters live to matching commands.
+  const filteredItems = useMemo(() => {
+    const query = slashQuery.trim().toLowerCase();
+    if (!query) return items;
+    return items.filter(
+      (item) =>
+        item.command.toLowerCase().includes(query) ||
+        (item.description ?? "").toLowerCase().includes(query)
+    );
+  }, [items, slashQuery]);
+
   useToolsMenuItems({
-    items,
+    items: filteredItems,
     highlightedIndex,
     onSelect: (item) => {
       const text = item.autoSubmit ? item.command : `${item.command} `;
@@ -171,7 +189,7 @@ export default function SlashCommandsTab({
 
   return (
     <>
-      {items.map((item, index) => (
+      {filteredItems.map((item, index) => (
         <SlashCommandRow
           key={item.preset?.id ?? item.command}
           command={item.command}

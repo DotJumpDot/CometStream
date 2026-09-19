@@ -145,6 +145,49 @@ const WorkspaceThread = {
     }
   },
 
+  /**
+   * Pin or unpin a thread within a workspace. Pinned threads surface in the
+   * sidebar's Pinned section across all workspaces.
+   * @param {object} workspace - The workspace the thread belongs to
+   * @param {string} threadSlug - Slug of the thread to (un)pin
+   * @param {boolean} pinned - New pinned state
+   * @returns {Promise<boolean>} Whether the update succeeded
+   */
+  setPinned: async function (
+    workspace = {},
+    threadSlug = null,
+    pinned = false
+  ) {
+    try {
+      await prisma.workspace_threads.updateMany({
+        where: { workspace_id: workspace.id, slug: String(threadSlug) },
+        data: { pinned: !!pinned },
+      });
+      return true;
+    } catch (error) {
+      console.error(error.message);
+      return false;
+    }
+  },
+
+  /**
+   * All pinned threads across workspaces, newest activity first.
+   * @returns {Promise<Array>} Thread rows with their workspace slug/name
+   */
+  pinned: async function () {
+    try {
+      return await prisma.workspace_threads.findMany({
+        where: { pinned: true },
+        include: { workspace: { select: { slug: true, name: true } } },
+        orderBy: { lastUpdatedAt: "desc" },
+        take: 20,
+      });
+    } catch (error) {
+      console.error(error.message);
+      return [];
+    }
+  },
+
   // Will fire on first message (included or not) for a thread and rename the thread based on the prompt.
   autoRenameThread: async function ({
     workspace = null,

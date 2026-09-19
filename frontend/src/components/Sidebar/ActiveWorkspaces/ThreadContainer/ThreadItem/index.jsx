@@ -2,15 +2,18 @@ import useScrollActiveItemIntoView from "@/hooks/useScrollActiveItemIntoView";
 import Workspace from "@/models/workspace";
 import paths from "@/utils/paths";
 import showToast from "@/utils/toast";
+import { relativeTime } from "@/utils/dates";
 import {
   ArrowCounterClockwise,
   DotsThree,
   PencilSimple,
+  PushPin,
   Trash,
   X,
 } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 const THREAD_CALLOUT_DETAIL_WIDTH = 26;
 export default function ThreadItem({
@@ -20,6 +23,7 @@ export default function ThreadItem({
   workspace,
   thread,
   onRemove,
+  onTogglePinned,
   toggleMarkForDeletion,
   hasNext,
   ctrlPressed = false,
@@ -101,9 +105,16 @@ export default function ThreadItem({
             to={linkTo}
             data-tooltip-id="workspace-thread-name"
             data-tooltip-content={thread.name}
-            className="w-full pl-2 py-1 overflow-hidden"
+            className="w-full pl-2 py-1 overflow-hidden flex items-center gap-x-1.5 group/thread-name"
             aria-current={isActive ? "page" : ""}
           >
+            {thread.pinned && (
+              <PushPin
+                size={10}
+                weight="fill"
+                className="shrink-0 text-cta-button"
+              />
+            )}
             <p
               className={`text-left text-sm truncate max-w-[150px] ${
                 isActive
@@ -113,6 +124,9 @@ export default function ThreadItem({
             >
               {thread.name}
             </p>
+            <span className="ml-auto shrink-0 text-[10px] text-theme-text-secondary opacity-0 group-hover/thread-name:opacity-100 transition-opacity duration-150">
+              {relativeTime(thread.lastUpdatedAt)}
+            </span>
           </Link>
         )}
         {!!thread.slug && !thread.deleted && !thread.virtual && (
@@ -152,6 +166,7 @@ export default function ThreadItem({
                 workspace={workspace}
                 thread={thread}
                 onRemove={onRemove}
+                onTogglePinned={onTogglePinned}
                 close={() => setShowOptions(false)}
                 currentThreadSlug={threadSlug}
               />
@@ -168,9 +183,11 @@ function OptionsMenu({
   workspace,
   thread,
   onRemove,
+  onTogglePinned,
   close,
   currentThreadSlug,
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const menuRef = useRef(null);
 
@@ -269,6 +286,21 @@ function OptionsMenu({
         <PencilSimple size={18} />
         <p className="text-sm">Rename</p>
       </button>
+      {onTogglePinned && (
+        <button
+          onClick={() => {
+            onTogglePinned(thread);
+            close();
+          }}
+          type="button"
+          className="w-full rounded-md flex items-center p-2 gap-x-2 hover:bg-slate-500/20 text-slate-300 light:text-theme-text-primary"
+        >
+          <PushPin size={18} />
+          <p className="text-sm">
+            {thread.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
+          </p>
+        </button>
+      )}
       <button
         onClick={handleDelete}
         type="button"
