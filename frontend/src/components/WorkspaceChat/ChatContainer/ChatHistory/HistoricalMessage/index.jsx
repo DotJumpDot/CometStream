@@ -114,8 +114,10 @@ const HistoricalMessage = ({
         onAnimationEnd={onEndAnimation}
         className={`${isDeleted ? "animate-remove" : ""} flex justify-end w-full group`}
       >
-        <div className="py-4 px-4 flex flex-col items-end">
-          <div className="bg-zinc-800 light:bg-slate-100 rounded-[20px] rounded-br-none px-4 py-3.5 max-w-[600px] [&_p]:m-0">
+        <div className="py-3 px-4 flex flex-col items-end">
+          {/* ZCode-style plain user prompt: no bubble, no border - just the
+              text right-aligned against the chat column edge. */}
+          <div className="max-w-[85%] text-white light:text-slate-900 [&_p]:m-0">
             <TruncatableContent>
               <RenderChatContent
                 role={role}

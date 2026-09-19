@@ -184,7 +184,9 @@ export default forwardRef(function (
           ref={chatHistoryRef}
           {...scrollHandlers}
         >
-          <div className="w-full max-w-[1400px]">
+          {/* ~85% column with real side gutters, ZCode-style: chat content
+              never runs edge-to-edge against the panel border. */}
+          <div className="w-full md:w-[85%]">
             {compiledHistory.map((item, index) =>
               Array.isArray(item) ? renderStatusResponse(item, index) : item
             )}

@@ -298,7 +298,7 @@ function HomeContent({ workspace, setWorkspace, threadSlug, setThreadSlug }) {
           {isMobile && <SidebarMobileHeader />}
           <DnDFileUploaderWrapper>
             <div className="flex flex-col h-full w-full items-center justify-center">
-              <div className="flex flex-col items-center w-full max-w-[750px]">
+              <div className="flex flex-col items-center w-full md:w-[85%]">
                 <h1 className="text-white text-xl md:text-2xl mb-11 text-center">
                   {t("main-page.greeting")}
                 </h1>

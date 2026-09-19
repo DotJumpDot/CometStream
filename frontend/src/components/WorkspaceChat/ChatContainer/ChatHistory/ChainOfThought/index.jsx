@@ -62,7 +62,7 @@ export function ChainOfThought({
   return (
     <ChainOfThoughtContext.Provider value={chainOfThoughtContext}>
       <div
-        className={cn("not-prose max-w-prose space-y-4 mt-2 mb-1", className)}
+        className={cn("not-prose max-w-prose space-y-1.5 mt-2 mb-1", className)}
         {...props}
       >
         {children}
@@ -153,10 +153,10 @@ export const ChainOfThoughtStep = memo(function ChainOfThoughtStep({
         Spans the gap to the next step so the rail is continuous. Anchored to
         the row rather than the marker, which is only as tall as the marker
         itself and would give the rule no height to fill. The offset reaches
-        past the `space-y-3` gap between steps plus half a marker, so the rule
-        meets the next marker instead of stopping short.
+        past the `space-y-1.5` gap between steps plus half a marker, so the
+        rule meets the next marker instead of stopping short.
       */}
-      <div className="absolute left-[7.5px] top-[15px] bottom-[calc(-0.75rem-6.5px)] w-px bg-zinc-800 group-last:hidden light:bg-zinc-200" />
+      <div className="absolute left-[7.5px] top-[15px] bottom-[calc(-0.375rem-6.5px)] w-px bg-zinc-800 group-last:hidden light:bg-zinc-200" />
       {/* h-5 matches the text-sm line height so the marker centers on the first line */}
       <div className="relative flex h-5 w-4 flex-shrink-0 items-center justify-center">
         {Icon ? (
@@ -200,7 +200,7 @@ export function ChainOfThoughtContent({ className, children, ...props }) {
         setIsPresent(false);
       }}
       className={cn(
-        "mt-2 space-y-3",
+        "mt-1.5 space-y-1.5",
         "text-zinc-50 outline-none light:text-zinc-950 data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 data-[state=closed]:animate-out data-[state=open]:animate-in",
         className
       )}

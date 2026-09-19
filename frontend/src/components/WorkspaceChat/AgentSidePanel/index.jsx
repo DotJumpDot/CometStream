@@ -271,11 +271,21 @@ function ChangesTab({ changes, totals }) {
                 )}
               </span>
             </button>
-            {expanded && !!change.diff && (
-              <UnifiedDiffView
-                diff={change.diff}
-                truncated={change.diffTruncated}
-              />
+            {change.diff && (
+              <div
+                className={`grid transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+                  expanded
+                    ? "grid-rows-[1fr] opacity-100"
+                    : "grid-rows-[0fr] opacity-0"
+                }`}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <UnifiedDiffView
+                    diff={change.diff}
+                    truncated={change.diffTruncated}
+                  />
+                </div>
+              </div>
             )}
           </div>
         );

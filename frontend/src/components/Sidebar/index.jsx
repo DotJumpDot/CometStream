@@ -23,7 +23,6 @@ import { PINNED_THREADS_CHANGED_EVENT } from "@/utils/constants";
 export const SIDEBAR_SEARCH_INPUT_ID = "sidebar-search-input";
 
 export default function Sidebar() {
-  const { t } = useTranslation();
   const { user } = useUser();
   const sidebarRef = useRef(null);
   const { showSidebar, setShowSidebar, canToggleSidebar } = useSidebarToggle();
@@ -82,12 +81,7 @@ export default function Sidebar() {
                       showNewWsModal={showNewWsModal}
                     />
                     <PinnedThreads />
-                    <div className="flex flex-col gap-y-[6px]">
-                      <p className="text-[10px] uppercase tracking-[0.08em] font-semibold text-theme-text-secondary opacity-60 px-2">
-                        {t("sidebar.projects")}
-                      </p>
-                      <ActiveWorkspaces />
-                    </div>
+                    <ActiveWorkspaces />
                   </div>
                 </div>
                 <div className="absolute bottom-0 left-0 right-0 pb-3 rounded-b-[16px] bg-theme-bg-sidebar light:bg-slate-200 bg-opacity-80 backdrop-filter backdrop-blur-md z-10">

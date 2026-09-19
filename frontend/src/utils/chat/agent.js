@@ -4,10 +4,7 @@ import { API_BASE } from "../constants";
 import { useEffect, useState } from "react";
 import { emitAssistantMessageCompleteEvent } from "@/components/contexts/TTSProvider";
 import { THREAD_RENAME_EVENT } from "@/components/Sidebar/ActiveWorkspaces/ThreadContainer";
-import {
-  addAgentFileChange,
-  setAgentTodo,
-} from "@/utils/agentActivity";
+import { addAgentFileChange, setAgentTodo } from "@/utils/agentActivity";
 
 export const AGENT_SESSION_START = "agentSessionStart";
 export const AGENT_SESSION_END = "agentSessionEnd";

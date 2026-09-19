@@ -53,7 +53,7 @@ function FileChangeCard({
       : t("chat_window.file_change.edited_file", { path });
 
   return (
-    <div className="not-prose w-full mt-1 mb-1">
+    <div className="not-prose w-full">
       <button
         type="button"
         onClick={() => hasDiff && setExpanded((v) => !v)}
@@ -61,9 +61,9 @@ function FileChangeCard({
         aria-label={ariaLabel}
         title={path}
         disabled={!hasDiff}
-        className={`flex items-center gap-x-2 w-full max-w-[560px] rounded-lg border border-white/10 light:border-black/10 bg-white/[0.03] light:bg-black/[0.03] px-3 py-1.5 text-left text-sm ${
+        className={`flex items-center gap-x-2 w-full max-w-[560px] rounded-md px-2 py-1 text-left text-sm transition-colors duration-150 ${
           hasDiff
-            ? "cursor-pointer hover:bg-white/[0.07] light:hover:bg-black/[0.06]"
+            ? "cursor-pointer hover:bg-white/[0.05] light:hover:bg-black/[0.05]"
             : "cursor-default"
         }`}
       >
@@ -106,9 +106,17 @@ function FileChangeCard({
           )}
         </span>
       </button>
-      {expanded && hasDiff && (
-        <div className="max-w-[560px]">
-          <UnifiedDiffView diff={diff} truncated={diffTruncated} />
+      {hasDiff && (
+        <div
+          className={`grid max-w-[560px] transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+            expanded
+              ? "grid-rows-[1fr] opacity-100"
+              : "grid-rows-[0fr] opacity-0"
+          }`}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <UnifiedDiffView diff={diff} truncated={diffTruncated} />
+          </div>
         </div>
       )}
     </div>

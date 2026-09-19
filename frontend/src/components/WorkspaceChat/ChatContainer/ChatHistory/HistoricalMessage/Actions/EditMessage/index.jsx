@@ -95,7 +95,7 @@ export function EditMessageForm({
     return (
       <form
         onSubmit={handleSubmit}
-        className="flex flex-col w-full max-w-[650px]"
+        className="flex flex-col w-full max-w-[85%]"
       >
         <textarea
           ref={formRef}
@@ -115,10 +115,7 @@ export function EditMessageForm({
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex flex-col w-full max-w-[650px]"
-    >
+    <form onSubmit={handleSubmit} className="flex flex-col w-full max-w-[85%]">
       <textarea
         ref={formRef}
         name="editedMessage"

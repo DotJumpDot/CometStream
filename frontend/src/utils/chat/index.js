@@ -1,10 +1,7 @@
 import { THREAD_RENAME_EVENT } from "@/components/Sidebar/ActiveWorkspaces/ThreadContainer";
 import { emitAssistantMessageCompleteEvent } from "@/components/contexts/TTSProvider";
 import { getAgentSessionActive } from "@/utils/chat/agent";
-import {
-  addAgentFileChange,
-  setAgentTodo,
-} from "@/utils/agentActivity";
+import { addAgentFileChange, setAgentTodo } from "@/utils/agentActivity";
 export const ABORT_STREAM_EVENT = "abort-chat-stream";
 
 // For handling of chat responses in the frontend by their various types.

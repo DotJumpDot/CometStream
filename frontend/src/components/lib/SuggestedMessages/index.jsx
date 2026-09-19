@@ -5,7 +5,7 @@ export default function SuggestedMessages({
   if (!suggestedMessages?.length) return null;
 
   return (
-    <div className="flex flex-col w-full max-w-[650px] mt-6 px-4">
+    <div className="flex flex-col w-full md:max-w-[85%] mt-6 px-4">
       {suggestedMessages.map((msg, index) => {
         const text = msg.heading?.trim()
           ? `${msg.heading.trim()} ${msg.message?.trim() || ""}`

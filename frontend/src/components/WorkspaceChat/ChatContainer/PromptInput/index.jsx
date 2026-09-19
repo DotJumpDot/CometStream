@@ -330,8 +330,8 @@ export default function PromptInput({
       id="prompt-input-wrapper"
       className={
         centered
-          ? "w-full relative flex justify-center items-center"
-          : "w-full fixed md:absolute bottom-0 left-0 z-10 flex justify-center items-center pwa:pb-5"
+          ? "w-full relative flex justify-center items-center px-4"
+          : "w-full fixed md:absolute bottom-0 left-0 z-10 flex justify-center items-center px-4 pwa:pb-5"
       }
     >
       <form
@@ -339,13 +339,13 @@ export default function PromptInput({
         className={
           centered
             ? "flex flex-col gap-y-1 rounded-t-lg w-full items-center"
-            : "flex flex-col gap-y-1 rounded-t-lg md:w-full w-full mx-auto max-w-[1400px] items-center"
+            : "flex flex-col gap-y-1 rounded-t-lg md:w-full w-full mx-auto md:max-w-[85%] items-center"
         }
       >
         <div
           className={`flex items-center rounded-lg md:w-full ${centered ? "mb-0" : "mb-4"}`}
         >
-          <div className="relative w-[95vw] md:w-[750px]">
+          <div className="relative w-full">
             <ToolsMenu
               workspace={workspace}
               showing={showTools}
@@ -522,7 +522,7 @@ function SendPromptButton({ formRef, promptInput, isDisabled }) {
         ref={formRef}
         type="submit"
         disabled={isDisabled || !promptInput.trim().length}
-        className={`border-none flex justify-center items-center rounded-full w-8 h-8 transition-all ${
+        className={`border-none flex justify-center items-center rounded-full w-8 h-8 transition-[background-color,transform] duration-150 active:scale-[0.94] ${
           promptInput.trim().length && !isDisabled
             ? "cursor-pointer bg-white hover:bg-zinc-200 light:bg-slate-800 light:hover:bg-slate-600"
             : "cursor-not-allowed bg-zinc-600 light:bg-slate-400"

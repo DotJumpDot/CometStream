@@ -206,7 +206,7 @@ export default function ThreadContainer({
           activeIdx={activeThreadIdx}
           isActive={true}
           workspace={workspace}
-          thread={{ slug: null, name: "*New Thread", virtual: true }}
+          thread={{ slug: null, name: "Draft", virtual: true }}
           hasNext={false}
         />
       )}

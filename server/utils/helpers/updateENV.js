@@ -596,6 +596,14 @@ const KEY_MAPPING = {
     ],
   },
 
+  // CometStream: master switch for the agent filesystem tools. Without this
+  // entry the flag is launcher-only (process env), so a production instance
+  // cannot enable the tools at runtime like every other agent toggle.
+  EnableFilesystemTools: {
+    envKey: "ENABLE_FILESYSTEM_TOOLS",
+    checks: [validFilesystemToolsToggle],
+  },
+
   // Agent Integration ENVs
   AgentSerpApiKey: {
     envKey: "AGENT_SERPAPI_API_KEY",
@@ -1083,6 +1091,12 @@ function isValidURL(input = "") {
 
 function validOpenAIKey(input = "") {
   return input.startsWith("sk-") ? null : "OpenAI Key must start with sk-";
+}
+
+function validFilesystemToolsToggle(input = "") {
+  return ["0", "1"].includes(String(input))
+    ? null
+    : "Filesystem tools toggle must be 0 or 1";
 }
 
 function validAnthropicApiKey(input = "") {
