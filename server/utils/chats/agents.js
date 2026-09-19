@@ -3,7 +3,6 @@ const {
   WorkspaceAgentInvocation,
 } = require("../../models/workspaceAgentInvocation");
 const { writeResponseChunk } = require("../helpers/chat/responses");
-const { Workspace } = require("../../models/workspace");
 
 /**
  * In-memory cache for attachments associated with agent invocations.
@@ -44,15 +43,15 @@ async function grepAgents({
   thread = null,
   attachments = [],
 }) {
-  let nativeToolingEnabled = false;
-
-  // If the workspace is in automatic mode, check if the workspace supports native tooling
-  // to determine if the agent flow should be used or not.
-  if (workspace?.chatMode === "automatic")
-    nativeToolingEnabled = await Workspace.supportsNativeToolCalling(workspace);
+  // CometStream is agent-first: in automatic chat mode every message runs
+  // the agent flow, no @agent handle required. Models without native tool
+  // calling still work - the provider falls back to its UnTooled prompt-based
+  // tool calling, same as an explicit @agent mention. Pick the chat/query
+  // workspace modes for plain LLM conversations.
+  const isAgentChat = workspace?.chatMode === "automatic";
 
   const agentHandles = WorkspaceAgentInvocation.parseAgents(message);
-  if (agentHandles.length > 0 || nativeToolingEnabled) {
+  if (agentHandles.length > 0 || isAgentChat) {
     const { invocation: newInvocation } = await WorkspaceAgentInvocation.new({
       prompt: message,
       workspace: workspace,

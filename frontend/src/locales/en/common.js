@@ -127,6 +127,8 @@ const TRANSLATIONS = {
     pinned: "Pinned",
     pin: "Pin to sidebar",
     unpin: "Unpin from sidebar",
+    nav_back: "Go back",
+    nav_forward: "Go forward",
   },
   command_palette: {
     placeholder: "Type a command or search...",
@@ -2139,7 +2141,8 @@ const TRANSLATIONS = {
     agent: "Agent",
     chat_description: "Chat with your documents and general knowledge.",
     query_description: "Answer strictly from this workspace's documents.",
-    agent_description: "Full agent with tools and skills access.",
+    agent_description:
+      "Every message runs the agent with tools and skills access.",
     agent_skills: "Agent skills & tools",
   },
 };

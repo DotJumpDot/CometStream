@@ -391,7 +391,6 @@ export default function PromptInput({
                     />
                     <ModeSelector
                       workspace={workspace}
-                      sendCommand={sendCommand}
                       agentSessionActive={agentSessionActive}
                       showAgentCommand={showAgentCommand}
                       onOpenTools={() => setShowTools(true)}

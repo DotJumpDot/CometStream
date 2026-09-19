@@ -15,19 +15,29 @@ import useAnchoredOverlay from "../ModelSelector/useAnchoredOverlay";
 
 /**
  * Chat mode pill on the left of the input (ZCode-style permission modes):
- * Chat (RAG chat), Query docs (answers only from workspace documents), and
- * Agent (starts an agent session with tool access). The "Agent skills" row
- * opens the tools menu so what the agent may access can be edited right here.
+ * Agent (every message runs the agent - the default), Chat (RAG chat), and
+ * Query docs (answers only from workspace documents). All three persist on
+ * the workspace's chatMode; a live agent session always reads as Agent. The
+ * "Agent skills" row opens the tools menu so what the agent may access can
+ * be edited right here.
  */
 
 const MODE_OPTIONS = [
   {
+    value: "automatic",
+    mode: "agent",
+    icon: Robot,
+    descriptionKey: "mode_selector.agent_description",
+  },
+  {
     value: "chat",
+    mode: "chat",
     icon: ChatCircleText,
     descriptionKey: "mode_selector.chat_description",
   },
   {
     value: "query",
+    mode: "query",
     icon: FileMagnifyingGlass,
     descriptionKey: "mode_selector.query_description",
   },
@@ -35,7 +45,6 @@ const MODE_OPTIONS = [
 
 export default function ModeSelector({
   workspace,
-  sendCommand,
   agentSessionActive = false,
   showAgentCommand = false,
   onOpenTools,
@@ -44,7 +53,7 @@ export default function ModeSelector({
   const { user } = useUser();
   const canEdit = !user || ["admin", "manager"].includes(user.role);
   const [open, setOpen] = useState(false);
-  const [chatMode, setChatMode] = useState(workspace?.chatMode ?? "chat");
+  const [chatMode, setChatMode] = useState(workspace?.chatMode ?? "automatic");
   const rootRef = useRef(null);
   // Fixed-position dropdown so the input box's overflow-hidden cannot clip it.
   const panelStyle = useAnchoredOverlay(open, rootRef, "left");
@@ -60,7 +69,7 @@ export default function ModeSelector({
   }, [open]);
 
   useEffect(() => {
-    setChatMode(workspace?.chatMode ?? "chat");
+    setChatMode(workspace?.chatMode ?? "automatic");
   }, [workspace?.chatMode, workspace?.slug]);
 
   const activeMode = useMemo(
@@ -68,19 +77,13 @@ export default function ModeSelector({
       agentSessionActive
         ? "agent"
         : MODE_OPTIONS.some((m) => m.value === chatMode)
-          ? chatMode
-          : "chat",
+          ? MODE_OPTIONS.find((m) => m.value === chatMode).mode
+          : "agent",
     [agentSessionActive, chatMode]
   );
 
   const selectMode = async (value) => {
     setOpen(false);
-    if (value === "agent") {
-      // Same behavior as the @agent button: prepends @agent to the input.
-      if (typeof sendCommand === "function")
-        sendCommand({ text: "@agent", writeMode: "prepend" });
-      return;
-    }
     if (!canEdit || value === chatMode || !workspace?.slug) return;
     const { message } = await Workspace.update(workspace.slug, {
       chatMode: value,
@@ -135,7 +138,7 @@ export default function ModeSelector({
               {MODE_OPTIONS.map((option) => {
                 const Icon = option.icon;
                 const isActive =
-                  !agentSessionActive && option.value === activeMode;
+                  !agentSessionActive && option.value === chatMode;
                 return (
                   <button
                     key={option.value}
@@ -151,7 +154,7 @@ export default function ModeSelector({
                     />
                     <span className="flex-1 min-w-0">
                       <span className="block text-xs text-theme-text-primary">
-                        {t(`mode_selector.${option.value}`)}
+                        {t(`mode_selector.${option.mode}`)}
                       </span>
                       <span className="block text-[10px] leading-4 text-theme-text-secondary">
                         {t(option.descriptionKey)}
@@ -166,50 +169,22 @@ export default function ModeSelector({
                   </button>
                 );
               })}
-
-              {showAgentCommand && (
-                <button
-                  type="button"
-                  onClick={() => selectMode("agent")}
-                  className={`w-full flex items-start gap-x-2.5 px-3 py-2 text-left transition-colors duration-100 ${
-                    agentSessionActive ? "bg-white/10" : "hover:bg-white/5"
-                  }`}
-                >
-                  <Robot
-                    size={14}
-                    className="mt-0.5 text-theme-text-secondary shrink-0"
-                  />
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-xs text-theme-text-primary">
-                      {t("mode_selector.agent")}
-                    </span>
-                    <span className="block text-[10px] leading-4 text-theme-text-secondary">
-                      {t("mode_selector.agent_description")}
-                    </span>
-                  </span>
-                  {agentSessionActive && (
-                    <Check
-                      size={13}
-                      className="text-theme-button-cta shrink-0 mt-0.5"
-                    />
-                  )}
-                </button>
-              )}
             </div>
 
-            {showAgentCommand && typeof onOpenTools === "function" && (
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  onOpenTools();
-                }}
-                className="w-full flex items-center gap-x-2 px-3 py-2.5 border-t border-white/10 text-xs text-theme-text-secondary hover:text-theme-text-primary hover:bg-white/5 transition-colors duration-100"
-              >
-                <Wrench size={13} />
-                {t("mode_selector.agent_skills")}
-              </button>
-            )}
+            {(showAgentCommand || activeMode === "agent") &&
+              typeof onOpenTools === "function" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenTools();
+                  }}
+                  className="w-full flex items-center gap-x-2 px-3 py-2.5 border-t border-white/10 text-xs text-theme-text-secondary hover:text-theme-text-primary hover:bg-white/5 transition-colors duration-100"
+                >
+                  <Wrench size={13} />
+                  {t("mode_selector.agent_skills")}
+                </button>
+              )}
           </div>
         </>
       )}
