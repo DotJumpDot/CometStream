@@ -1,9 +1,46 @@
 const fs = require("fs/promises");
+const fsSync = require("fs");
 const path = require("path");
 const os = require("os");
 const { randomBytes } = require("crypto");
 const { createTwoFilesPatch } = require("diff");
 const { humanFileSize } = require("../../../../helpers");
+
+/**
+ * Counts added/removed lines in a unified diff string, ignoring the
+ * `+++`/`---` file headers.
+ * @param {string} diffText - unified diff produced by `createTwoFilesPatch`
+ * @returns {{added: number, removed: number}}
+ */
+function countUnifiedDiffLines(diffText) {
+  let added = 0;
+  let removed = 0;
+  for (const line of diffText.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) added++;
+    else if (line.startsWith("-")) removed++;
+  }
+  return { added, removed };
+}
+
+/**
+ * Caps a unified diff to the first `maxLines` lines so a whole-file
+ * rewrite cannot flood the chat transport with a multi-megabyte payload.
+ * @param {string} diffText - unified diff string
+ * @param {number} maxLines - maximum number of diff lines to keep
+ * @returns {{diff: string, truncated: boolean, totalLines: number}}
+ */
+function capUnifiedDiffLines(diffText, maxLines = 500) {
+  const lines = diffText.split("\n");
+  if (lines.length <= maxLines) {
+    return { diff: diffText, truncated: false, totalLines: lines.length };
+  }
+  return {
+    diff: lines.slice(0, maxLines).join("\n"),
+    truncated: true,
+    totalLines: lines.length,
+  };
+}
 
 /**
  * Manages filesystem operations with security constraints.
@@ -34,11 +71,13 @@ class FilesystemManager {
   /**
    * Checks if the filesystem tool is available.
    * The filesystem tool is only available when running in a docker container
-   * or in development mode.
+   * or in development mode. Desktop/portable builds can opt in explicitly so
+   * the agent's file tools (and their change indicators) work there too.
    * @returns {boolean} True if the tool is available
    */
   isToolAvailable() {
     if (process.env.NODE_ENV === "development") return true;
+    if (process.env.ENABLE_FILESYSTEM_TOOLS === "1") return true;
     return process.env.ANYTHING_LLM_RUNTIME === "docker";
   }
 
@@ -526,11 +565,63 @@ class FilesystemManager {
   }
 
   /**
+   * Checks whether a validated path exists on disk.
+   * @param {string} filePath - Validated absolute path
+   * @returns {boolean}
+   */
+  fileExists(filePath) {
+    return fsSync.existsSync(filePath);
+  }
+
+  /**
+   * Shortens a validated absolute path to its most readable form for chat
+   * display: relative to the allowed directory that contains it, falling
+   * back to the absolute path when it is not under any allowed root.
+   * @param {string} filePath - Validated absolute path
+   * @returns {string}
+   */
+  relativeDisplayPath(filePath) {
+    for (const dir of this.#allowedDirectories) {
+      if (filePath.startsWith(dir + path.sep))
+        return path.relative(dir, filePath);
+    }
+    return filePath;
+  }
+
+  /**
+   * Builds the `fileChangeCard` payload sent to the chat UI when a file
+   * changes: display path, +/- line counts, and a size-capped unified diff
+   * the UI can render when the change chip is clicked.
+   * @param {string} filePath - Validated absolute path of the changed file
+   * @param {string} originalContent - Content before the change ("" for new files)
+   * @param {string} newContent - Content after the change
+   * @returns {{path: string, added: number, removed: number, diff: string, truncated: boolean}}
+   */
+  changeEventPayload(filePath, originalContent, newContent) {
+    const rawDiff = this.#createUnifiedDiff(
+      originalContent,
+      newContent,
+      this.relativeDisplayPath(filePath)
+    );
+    const { added, removed } = countUnifiedDiffLines(rawDiff);
+    const { diff, truncated } = capUnifiedDiffLines(rawDiff);
+    return {
+      path: this.relativeDisplayPath(filePath),
+      added,
+      removed,
+      diff,
+      truncated,
+    };
+  }
+
+  /**
    * Applies edits to a file.
    * @param {string} filePath - Path to the file
    * @param {Array<{oldText: string, newText: string}>} edits - Array of edits
    * @param {boolean} dryRun - If true, only preview changes
-   * @returns {Promise<string>} Diff of changes
+   * @returns {Promise<{result: string, change: {path: string, added: number, removed: number, diff: string, truncated: boolean}}>}
+   *   `result` is the fenced diff block returned to the model; `change` is the
+   *   fileChangeCard payload for the chat UI (present once changes were applied).
    */
   async applyFileEdits(filePath, edits, dryRun = false) {
     const content = this.#normalizeLineEndings(
@@ -593,7 +684,7 @@ class FilesystemManager {
     const diffResult = this.#createUnifiedDiff(
       content,
       modifiedContent,
-      filePath
+      this.relativeDisplayPath(filePath)
     );
 
     let numBackticks = 3;
@@ -606,7 +697,21 @@ class FilesystemManager {
       await this.#atomicWrite(filePath, modifiedContent);
     }
 
-    return formattedDiff;
+    // change is only reported for applied edits - a dry run alters nothing.
+    let change = null;
+    if (!dryRun) {
+      const { added, removed } = countUnifiedDiffLines(diffResult);
+      const { diff, truncated } = capUnifiedDiffLines(diffResult);
+      change = {
+        path: this.relativeDisplayPath(filePath),
+        added,
+        removed,
+        diff,
+        truncated,
+      };
+    }
+
+    return { result: formattedDiff, change };
   }
 
   /**
@@ -784,4 +889,9 @@ class FilesystemManager {
   }
 }
 
-module.exports = new FilesystemManager();
+const filesystemManager = new FilesystemManager();
+// Pure diff helpers double as the unit under test in
+// server/__tests__/utils/agents/filesystem/diffHelpers.test.js.
+filesystemManager.countUnifiedDiffLines = countUnifiedDiffLines;
+filesystemManager.capUnifiedDiffLines = capUnifiedDiffLines;
+module.exports = filesystemManager;

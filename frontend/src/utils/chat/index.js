@@ -1,6 +1,10 @@
 import { THREAD_RENAME_EVENT } from "@/components/Sidebar/ActiveWorkspaces/ThreadContainer";
 import { emitAssistantMessageCompleteEvent } from "@/components/contexts/TTSProvider";
 import { getAgentSessionActive } from "@/utils/chat/agent";
+import {
+  addAgentFileChange,
+  setAgentTodo,
+} from "@/utils/agentActivity";
 export const ABORT_STREAM_EVENT = "abort-chat-stream";
 
 // For handling of chat responses in the frontend by their various types.
@@ -185,6 +189,35 @@ export default function handleChat(
     setChatHistory([..._chatHistory]);
   } else if (type === "agentInitWebsocketConnection") {
     setWebsocket(chatResult.websocketUUID);
+  } else if (type === "fileChangeCard") {
+    // Agent file activity (read/edit/create) surfaced as a chip in the chat.
+    const change = chatResult.content || {};
+    if (!change.path) return;
+    addAgentFileChange(change);
+    const changeMsg = {
+      uuid,
+      type: "fileChangeCard",
+      role: "assistant",
+      action: change.action || "edit",
+      path: change.path,
+      added: change.added ?? 0,
+      removed: change.removed ?? 0,
+      diff: change.diff || "",
+      diffTruncated: !!change.truncated,
+      readLines: change.lines ?? null,
+      content: change.path,
+      sources: [],
+      closed: true,
+      error: null,
+      animate: false,
+      pending: false,
+      metrics: {},
+    };
+    setChatHistory([...remHistory, changeMsg]);
+    _chatHistory.push(changeMsg);
+  } else if (type === "todoListCard") {
+    // Plan updates render only in the agent side panel - no chat bubble.
+    setAgentTodo(chatResult.content?.items || []);
   } else if (type === "stopGeneration") {
     const chatIdx = _chatHistory.length - 1;
     const existingHistory = { ..._chatHistory[chatIdx] };

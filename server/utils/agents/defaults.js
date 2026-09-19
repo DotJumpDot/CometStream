@@ -13,6 +13,7 @@ const DEFAULT_SKILLS = [
   AgentPlugins.docSummarizer.name,
   AgentPlugins.webScraping.name,
   AgentPlugins.webBrowsing.name,
+  AgentPlugins.agentTodo.name,
 ];
 
 // Skills that must never be injected when the instance is running in multi-user mode.

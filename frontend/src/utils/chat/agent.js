@@ -4,6 +4,10 @@ import { API_BASE } from "../constants";
 import { useEffect, useState } from "react";
 import { emitAssistantMessageCompleteEvent } from "@/components/contexts/TTSProvider";
 import { THREAD_RENAME_EVENT } from "@/components/Sidebar/ActiveWorkspaces/ThreadContainer";
+import {
+  addAgentFileChange,
+  setAgentTodo,
+} from "@/utils/agentActivity";
 
 export const AGENT_SESSION_START = "agentSessionStart";
 export const AGENT_SESSION_END = "agentSessionEnd";
@@ -66,6 +70,8 @@ function takeBufferedCitations(uuid) {
 }
 const handledEvents = [
   "statusResponse",
+  "fileChangeCard",
+  "todoListCard",
   "fileDownloadCard",
   "imageGenerationCard",
   "imageGenerationPending",
@@ -316,6 +322,41 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
         );
       }
     });
+  }
+
+  if (data.type === "fileChangeCard") {
+    const change = data.content || {};
+    if (!change.path) return;
+    // Panel feed mirrors chat-stream chips (reads are chat-only).
+    addAgentFileChange(change);
+    return setChatHistory((prev) => [
+      ...prev.filter((msg) => !!msg.content),
+      {
+        uuid: v4(),
+        type: "fileChangeCard",
+        role: "assistant",
+        action: change.action || "edit",
+        path: change.path,
+        added: change.added ?? 0,
+        removed: change.removed ?? 0,
+        diff: change.diff || "",
+        diffTruncated: !!change.truncated,
+        readLines: change.lines ?? null,
+        content: change.path,
+        sources: [],
+        closed: true,
+        error: null,
+        animate: false,
+        pending: false,
+        metrics: {},
+      },
+    ]);
+  }
+
+  // Plan updates render only in the agent side panel - no chat bubble.
+  if (data.type === "todoListCard") {
+    setAgentTodo(data.content?.items || []);
+    return;
   }
 
   if (data.type === "fileDownloadCard") {

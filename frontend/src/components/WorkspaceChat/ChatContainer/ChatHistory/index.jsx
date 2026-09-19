@@ -5,6 +5,7 @@ import StatusResponse from "./StatusResponse";
 import ToolApprovalRequest from "./ToolApprovalRequest";
 import ClarifyingQuestionCard from "./ClarifyingQuestion";
 import FileDownloadCard from "./FileDownloadCard";
+import FileChangeCard from "./FileChangeCard";
 import ImageGenerationPending from "./ImageGenerationPending";
 import ScheduledJobCreatedCard from "./ScheduledJobCreatedCard";
 import { useManageWorkspaceModal } from "../../../Modals/ManageWorkspace";
@@ -183,7 +184,7 @@ export default forwardRef(function (
           ref={chatHistoryRef}
           {...scrollHandlers}
         >
-          <div className="w-full max-w-[750px]">
+          <div className="w-full max-w-[1400px]">
             {compiledHistory.map((item, index) =>
               Array.isArray(item) ? renderStatusResponse(item, index) : item
             )}
@@ -235,12 +236,33 @@ function buildMessages({
   forkThread,
   websocket,
 }) {
+  // Tracks the activity chain that statuses are currently rolling up into, so
+  // file-change chips interleaved with statuses do not split one run's
+  // activity into a chain-chip-chain sandwich. Any visible message/card ends
+  // the chain; chips do not.
+  const chainRef = { chain: null };
   return history.reduce((acc, props, index) => {
     const isLastBotReply =
       index === history.length - 1 && props.role === "assistant";
 
     if (props?.type === "statusResponse" && !!props.content) {
-      pushActivity(acc, props);
+      pushActivity(acc, props, chainRef);
+      return acc;
+    }
+
+    if (props.type === "fileChangeCard" && !!props.content) {
+      acc.push(
+        <FileChangeCard
+          key={`file-change-${props.uuid || index}`}
+          action={props.action}
+          path={props.path}
+          added={props.added}
+          removed={props.removed}
+          diff={props.diff}
+          diffTruncated={props.diffTruncated}
+          readLines={props.readLines}
+        />
+      );
       return acc;
     }
 
@@ -253,6 +275,7 @@ function buildMessages({
       const isStreaming =
         isLast &&
         (index === history.length - 1 || lastMsg?.animate || lastMsg?.pending);
+      chainRef.chain = null;
       acc.push(
         <ModelRouteNotification
           key={`route-${props.uuid}`}
@@ -264,6 +287,7 @@ function buildMessages({
     }
 
     if (props.type === "toolApprovalRequest") {
+      chainRef.chain = null;
       acc.push(
         <ToolApprovalRequest
           key={`tool-approval-${props.requestId}`}
@@ -279,6 +303,7 @@ function buildMessages({
     }
 
     if (props.type === "clarifyingQuestion") {
+      chainRef.chain = null;
       acc.push(
         <ClarifyingQuestionCard
           key={`clarify-${props.requestId}`}
@@ -293,12 +318,16 @@ function buildMessages({
     }
 
     if (props.type === "rechartVisualize" && !!props.content) {
+      chainRef.chain = null;
       acc.push(<Chartable key={props.uuid} props={props} />);
     } else if (props.type === "fileDownloadCard" && !!props.content) {
+      chainRef.chain = null;
       acc.push(<FileDownloadCard key={props.uuid} props={props} />);
     } else if (props.type === "scheduledJobCreated" && !!props.content) {
+      chainRef.chain = null;
       acc.push(<ScheduledJobCreatedCard key={props.uuid} props={props} />);
     } else if (props.type === "imageGenerationPending") {
+      chainRef.chain = null;
       acc.push(
         <ImageGenerationPending
           key={`img-pending-${props.uuid || index}`}
@@ -313,14 +342,22 @@ function buildMessages({
       if (props.role === "assistant" && typeof props.content === "string") {
         const { thought, hasVisible } = splitAssistantThought(props);
         if (thought) {
-          pushActivity(acc, {
-            type: "thoughtChain",
-            uuid: props.uuid ? `thought-${props.uuid}` : undefined,
-            content: thought,
-          });
+          pushActivity(
+            acc,
+            {
+              type: "thoughtChain",
+              uuid: props.uuid ? `thought-${props.uuid}` : undefined,
+              content: thought,
+            },
+            chainRef
+          );
         }
         if (!hasVisible) return acc;
       }
+
+      // Reaching this point a visible message (assistant reply or user
+      // prompt) is about to be pushed - the activity chain ends here.
+      chainRef.chain = null;
 
       if (isLastBotReply && props.animate) {
         acc.push(
@@ -365,16 +402,27 @@ function buildMessages({
 /**
  * Appends an activity node (agent status or thought segment) to the current
  * activity chain, or starts a new chain when the previous compiled item is a
- * visible message/card - visible content is what breaks a chain.
+ * visible message/card - visible content is what breaks a chain. File-change
+ * chips between statuses do not break a chain: a status arriving after chips
+ * continues the chain that sits above them in the compiled output.
  * @param {Array} acc - the compiled history being built
  * @param {Object} node - statusResponse history item or thoughtChain node
+ * @param {{chain: Array|null}} chainRef - the chain statuses are rolling into
  */
-function pushActivity(acc, node) {
-  if (acc.length > 0 && Array.isArray(acc[acc.length - 1])) {
-    acc[acc.length - 1].push(node);
-  } else {
-    acc.push([node]);
+function pushActivity(acc, node, chainRef) {
+  const last = acc[acc.length - 1];
+  if (Array.isArray(last)) {
+    last.push(node);
+    chainRef.chain = last;
+    return;
   }
+  if (chainRef.chain) {
+    chainRef.chain.push(node);
+    return;
+  }
+  const group = [node];
+  acc.push(group);
+  chainRef.chain = group;
 }
 
 /**

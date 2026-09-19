@@ -19,7 +19,7 @@ function ScheduledJobCreatedCard({ props }) {
 
   return (
     <div className="flex justify-center w-full my-2">
-      <div className="w-full max-w-[750px] mr-4">
+      <div className="w-full max-w-[1400px] mr-4">
         <button
           type="button"
           onClick={goToJob}

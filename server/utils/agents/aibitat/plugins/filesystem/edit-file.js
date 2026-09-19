@@ -107,7 +107,7 @@ module.exports.FilesystemEditFile = {
                 }
               }
 
-              const result = await filesystem.applyFileEdits(
+              const { result, change } = await filesystem.applyFileEdits(
                 validPath,
                 edits,
                 dryRun
@@ -115,7 +115,14 @@ module.exports.FilesystemEditFile = {
 
               if (dryRun)
                 this.super.introspect(`Preview of changes to ${filePath}:`);
-              else this.super.introspect(`Successfully edited ${filePath}`);
+              else {
+                this.super.introspect(`Successfully edited ${filePath}`);
+                // File-change chip for the chat UI - clicks expand to the diff.
+                this.super.socket?.send?.("fileChangeCard", {
+                  action: "edit",
+                  ...change,
+                });
+              }
 
               return result;
             } catch (e) {

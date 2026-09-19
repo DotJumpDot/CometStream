@@ -5,6 +5,11 @@ const {
 
 const MAX_TEXT_LENGTH = 1000;
 
+// Tools that survive reranking regardless of semantic score. todo-write is
+// UI-coupled (it drives the Plan tab in the chat side panel) and costs almost
+// no tokens, so pruning it breaks the panel contract for multi-step tasks.
+const ALWAYS_INCLUDED_TOOLS = new Set(["todo-write"]);
+
 class ToolReranker {
   /**
    * The default number of top tools to keep after reranking
@@ -178,6 +183,18 @@ ${originalTokenCount.toLocaleString()} -> ${newTokenCount.toLocaleString()} toke
         logText += `  ${i + 1}. ${documents[index].toolName}\n`;
       });
       this.log(logText);
+
+      // Re-add pinned tools the reranker dropped (dedup by tool name).
+      const selectedNames = new Set(rerankedTools.map((t) => t.name));
+      const pinned = tools.filter(
+        (t) => ALWAYS_INCLUDED_TOOLS.has(t.name) && !selectedNames.has(t.name)
+      );
+      if (pinned.length > 0) {
+        this.log(
+          `Re-adding always-included tools: ${pinned.map((t) => t.name).join(", ")}`
+        );
+        return [...rerankedTools, ...pinned];
+      }
       return rerankedTools;
     } catch (error) {
       this.log(`Error during tool reranking: ${error.message}`);

@@ -1581,11 +1581,33 @@ const TRANSLATIONS = {
       accept: "Okay, got it",
     },
   },
+  agent_panel: {
+    title: "Agent",
+    open: "Open agent panel",
+    close: "Close panel",
+    tab_plan: "Plan",
+    tab_changes: "Changes",
+    plan_empty:
+      "The agent's plan will appear here when it starts a multi-step task.",
+    changes_empty:
+      "File changes the agent makes will be listed here with their diffs.",
+    progress: "{{done}} of {{total}} steps",
+    changes_total_one: "{{count}} file",
+    changes_total_other: "{{count}} files",
+  },
   chat_window: {
     attachments_processing: "Attachments are processing. Please wait...",
     generating_response: "Generating response",
     thought_in_progress: "Model is Thinking...",
     thoughts: "Thoughts",
+    file_change: {
+      edited_file: "Edited file {{path}}",
+      created_file: "Created file {{path}}",
+      read_file: "Read file {{path}}",
+      lines_one: "{{count}} line",
+      lines_other: "{{count}} lines",
+      diff_capped: "Diff truncated for display",
+    },
     response_failed: "Could not respond to message.",
     response_failed_reason: "Reason: {{reason}}",
     send_message: "Send a message",

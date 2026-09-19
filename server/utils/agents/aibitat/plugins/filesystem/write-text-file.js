@@ -72,8 +72,18 @@ module.exports.FilesystemWriteTextFile = {
                 }
               }
 
+              const existed = filesystem.fileExists(validPath);
+              const original = existed
+                ? await filesystem.readFileContent(validPath)
+                : "";
+
               await filesystem.writeFileContent(validPath, content);
               this.super.introspect(`Successfully wrote to ${filePath}`);
+              // File-change chip for the chat UI - clicks expand to the diff.
+              this.super.socket?.send?.("fileChangeCard", {
+                action: existed ? "edit" : "create",
+                ...filesystem.changeEventPayload(validPath, original, content),
+              });
               return `Successfully wrote to ${filePath}`;
             } catch (e) {
               this.super.handlerProps.log(

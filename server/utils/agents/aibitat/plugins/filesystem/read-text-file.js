@@ -118,6 +118,12 @@ module.exports.FilesystemReadTextFile = {
               }
 
               const filename = path.basename(validPath);
+              // Read chip for the chat UI - a lighter row, no diff attached.
+              this.super.socket?.send?.("fileChangeCard", {
+                action: "read",
+                path: filesystem.relativeDisplayPath(validPath),
+                lines: content.split("\n").length,
+              });
               this.super.addCitation?.({
                 id: `fs-${Buffer.from(validPath).toString("base64url").slice(0, 32)}`,
                 title: filename,
