@@ -1594,8 +1594,15 @@ const TRANSLATIONS = {
     changes_empty:
       "File changes the agent makes will be listed here with their diffs.",
     progress: "{{done}} of {{total}} steps",
+    status_done: "Done",
+    status_in_progress: "In progress",
+    status_pending: "Pending",
     changes_total_one: "{{count}} file",
     changes_total_other: "{{count}} files",
+  },
+  chat_header: {
+    workspace: "Workspace",
+    thread: "Thread",
   },
   chat_window: {
     attachments_processing: "Attachments are processing. Please wait...",
@@ -1606,6 +1613,9 @@ const TRANSLATIONS = {
       edited_file: "Edited file {{path}}",
       created_file: "Created file {{path}}",
       read_file: "Read file {{path}}",
+      verb_edit: "Edited",
+      verb_create: "Created",
+      verb_read: "Read",
       lines_one: "{{count}} line",
       lines_other: "{{count}} lines",
       diff_capped: "Diff truncated for display",

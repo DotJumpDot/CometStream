@@ -10,6 +10,7 @@ export default function ChatSettingsMenu({
   history = [],
   workspace = null,
   threadSlug = null,
+  inline = false,
 }) {
   const mode = useLoginMode();
   const [showMenu, setShowMenu] = useState(false);
@@ -36,7 +37,13 @@ export default function ChatSettingsMenu({
 
   return (
     <div
-      className={`absolute top-3 md:top-5 z-30 ${hasUserIcon ? "right-[55px] md:right-[67px]" : "right-4 md:right-6"}`}
+      // Inline mode drops the floating-position wrapper so the button can
+      // live inside the ChatHeader; the dropdown still anchors to this box.
+      className={
+        inline
+          ? "relative"
+          : `absolute top-3 md:top-5 z-30 ${hasUserIcon ? "right-[55px] md:right-[67px]" : "right-4 md:right-6"}`
+      }
     >
       <button
         ref={buttonRef}

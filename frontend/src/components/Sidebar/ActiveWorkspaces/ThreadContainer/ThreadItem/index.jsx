@@ -45,7 +45,7 @@ export default function ThreadItem({
   });
   return (
     <div
-      className="w-full relative flex h-[38px] items-center border-none rounded-lg"
+      className="w-full relative flex h-[40px] items-center border-none rounded-lg"
       role="listitem"
     >
       {/* Curved line Element and leader if required */}
@@ -116,7 +116,7 @@ export default function ThreadItem({
               />
             )}
             <p
-              className={`text-left text-sm truncate max-w-[150px] ${
+              className={`text-left text-sm truncate max-w-[175px] ${
                 isActive
                   ? "font-semibold text-theme-text-primary light:text-blue-900"
                   : "text-theme-text-primary font-medium light:text-slate-800"

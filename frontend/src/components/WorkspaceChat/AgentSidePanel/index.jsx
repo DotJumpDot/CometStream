@@ -99,7 +99,7 @@ export default function AgentSidePanel() {
             </button>
           </div>
 
-          <div className="flex gap-x-4 px-4 border-b border-white/10 light:border-black/10">
+          <div className="flex gap-x-1 px-3 pt-3 pb-2 border-b border-white/10 light:border-black/10">
             {TABS.map((key) => {
               const active = tab === key;
               const count =
@@ -114,10 +114,10 @@ export default function AgentSidePanel() {
                   onClick={() => setTab(key)}
                   aria-selected={active}
                   role="tab"
-                  className={`flex items-center gap-x-1.5 pb-2 text-[13px] border-b-2 -mb-px transition-colors ${
+                  className={`flex items-center gap-x-1.5 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
                     active
-                      ? "border-cta-button text-white light:text-zinc-900"
-                      : "border-transparent text-zinc-500 light:text-zinc-400 hover:text-zinc-300 light:hover:text-zinc-600"
+                      ? "bg-white/10 light:bg-black/10 text-white light:text-zinc-900"
+                      : "text-zinc-500 light:text-zinc-400 hover:text-zinc-300 light:hover:text-zinc-600"
                   }`}
                 >
                   <Icon
@@ -126,7 +126,7 @@ export default function AgentSidePanel() {
                   />
                   {t(`agent_panel.tab_${key}`)}
                   {count > 0 && (
-                    <span className="text-[11px] text-zinc-500 light:text-zinc-400">
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-white/10 light:bg-black/10 text-[10px] leading-[18px] text-center text-zinc-300 light:text-zinc-500 tabular-nums">
                       {count}
                     </span>
                   )}
@@ -149,6 +149,9 @@ export default function AgentSidePanel() {
 }
 
 /**
+ * Trae-style plan stepper: one colored status badge per step with a
+ * connecting rail, a progress bar summary on top, and a per-step status
+ * label so the agent's current step reads at a glance.
  * @param {Object} props
  * @param {Array<{content: string, status: string}>} props.items
  * @param {number} props.done - completed item count
@@ -163,45 +166,78 @@ function PlanTab({ items, done }) {
       </p>
     );
 
+  const percent = Math.round((done / items.length) * 100);
+
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between text-xs text-zinc-400 light:text-zinc-500">
+    <div className="mt-1">
+      <div className="flex items-center justify-between text-xs text-zinc-400 light:text-zinc-500 mb-2">
         <span>{t("agent_panel.progress", { done, total: items.length })}</span>
-        <span>{Math.round((done / items.length) * 100)}%</span>
+        <span className="tabular-nums">{percent}%</span>
       </div>
-      <div className="h-1 rounded-full bg-white/10 light:bg-black/10 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-white/10 light:bg-black/10 overflow-hidden">
         <div
-          className="h-full bg-emerald-500/80 rounded-full transition-all"
-          style={{ width: `${(done / items.length) * 100}%` }}
+          className="h-full bg-emerald-500/80 rounded-full transition-[width] duration-300 ease-[cubic-bezier(0.23,1,0.32,1)]"
+          style={{ width: `${percent}%` }}
         />
       </div>
-      <ul className="space-y-2.5">
-        {items.map((item, i) => (
-          <li key={i} className="flex items-start gap-x-2.5">
-            {item.status === "done" ? (
-              <CheckCircle
-                weight="fill"
-                className="w-4 h-4 mt-0.5 flex-shrink-0 text-emerald-500"
-              />
-            ) : item.status === "in_progress" ? (
-              <SpinnerGap className="w-4 h-4 mt-0.5 flex-shrink-0 animate-spin text-cta-button" />
-            ) : (
-              <Circle className="w-4 h-4 mt-0.5 flex-shrink-0 text-zinc-600 light:text-zinc-400" />
-            )}
-            <span
-              className={`text-[13px] leading-5 ${
-                item.status === "done"
-                  ? "text-zinc-500 light:text-zinc-400 line-through"
-                  : item.status === "in_progress"
-                    ? "text-white light:text-zinc-900"
-                    : "text-zinc-300 light:text-zinc-600"
-              }`}
-            >
-              {item.content}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <ol className="mt-4">
+        {items.map((item, i) => {
+          const isLast = i === items.length - 1;
+          const label =
+            item.status === "done"
+              ? t("agent_panel.status_done")
+              : item.status === "in_progress"
+                ? t("agent_panel.status_in_progress")
+                : t("agent_panel.status_pending");
+          return (
+            <li key={i} className="relative flex gap-x-3 pb-4 last:pb-0">
+              {!isLast && (
+                <span
+                  aria-hidden="true"
+                  className={`absolute left-[13px] top-[30px] bottom-[-2px] w-px ${
+                    item.status === "done"
+                      ? "bg-emerald-500/30"
+                      : "bg-white/10 light:bg-black/10"
+                  }`}
+                />
+              )}
+              <span
+                className={`relative z-[1] flex h-[26px] w-[26px] items-center justify-center rounded-full shrink-0 ${
+                  item.status === "done"
+                    ? "bg-emerald-500/15 text-emerald-400"
+                    : item.status === "in_progress"
+                      ? "bg-cta-button/15 text-cta-button"
+                      : "bg-white/5 light:bg-black/5 text-zinc-500 light:text-zinc-400"
+                }`}
+              >
+                {item.status === "done" ? (
+                  <CheckCircle weight="bold" className="w-3.5 h-3.5" />
+                ) : item.status === "in_progress" ? (
+                  <SpinnerGap className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Circle className="w-3 h-3" />
+                )}
+              </span>
+              <div className="min-w-0 pt-0.5">
+                <p
+                  className={`text-[13px] leading-5 ${
+                    item.status === "done"
+                      ? "text-zinc-500 light:text-zinc-400 line-through"
+                      : item.status === "in_progress"
+                        ? "text-white light:text-zinc-900 font-medium"
+                        : "text-zinc-300 light:text-zinc-600"
+                  }`}
+                >
+                  {item.content}
+                </p>
+                <p className="text-[11px] text-zinc-500 light:text-zinc-400 mt-0.5">
+                  {label}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }
@@ -239,15 +275,23 @@ function ChangesTab({ changes, totals }) {
         const { basename, dirname } = splitPath(change.path);
         const expanded = expandedPath === change.path;
         const Icon = change.action === "create" ? FilePlus : PencilSimple;
+        const badge =
+          change.action === "create"
+            ? "bg-emerald-500/15 text-emerald-400"
+            : "bg-amber-500/15 text-amber-400";
         return (
           <div key={change.path}>
             <button
               type="button"
               onClick={() => setExpandedPath(expanded ? null : change.path)}
               title={change.path}
-              className="flex items-center gap-x-2 w-full rounded-lg border border-white/10 light:border-black/10 bg-white/[0.03] light:bg-black/[0.03] hover:bg-white/[0.07] light:hover:bg-black/[0.06] px-2.5 py-1.5 text-left"
+              className="flex items-center gap-x-2.5 w-full rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors"
             >
-              <Icon className="w-4 h-4 flex-shrink-0 text-zinc-400 light:text-zinc-500" />
+              <span
+                className={`flex h-7 w-7 items-center justify-center rounded-lg shrink-0 ${badge}`}
+              >
+                <Icon className="w-4 h-4" />
+              </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-mono text-[12px] text-zinc-100 light:text-zinc-900 truncate">
                   {basename}

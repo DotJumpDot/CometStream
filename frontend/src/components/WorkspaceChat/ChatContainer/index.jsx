@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext, useRef, useCallback } from "react";
 import ChatHistory from "./ChatHistory";
+import ChatHeader from "./ChatHeader";
 import { CLEAR_ATTACHMENTS_EVENT, DndUploaderContext } from "./DnDWrapper";
 import PromptInput, {
   PROMPT_INPUT_EVENT,
@@ -479,47 +480,56 @@ export default function ChatContainer({
           style={{ height: isMobile ? "100%" : "calc(100% - 32px)" }}
           className="relative flex md:ml-[2px] md:mr-[16px] md:my-[16px] w-full h-full z-[2]"
         >
-          <ChatSettingsMenu
-            history={chatHistory}
-            workspace={workspace}
-            threadSlug={activeThreadSlug}
-          />
           <div className="flex-1 min-w-0 relative md:rounded-[16px] bg-zinc-900 light:bg-white w-full h-full overflow-hidden border-none light:border-solid light:border light:border-theme-modal-border">
             {isMobile && <SidebarMobileHeader />}
             <DnDFileUploaderWrapper>
-              <div className="flex flex-col h-full w-full items-center justify-center">
-                <div className="flex flex-col items-center w-full md:w-[85%]">
-                  <h1 className="text-white text-xl md:text-2xl mb-11 text-center">
-                    {t("main-page.greeting")}
-                  </h1>
-                  <PromptInput
+              <div className="flex flex-col h-full w-full">
+                <ChatHeader workspace={workspace} threadSlug={activeThreadSlug}>
+                  <ChatSettingsMenu
+                    inline
+                    history={chatHistory}
                     workspace={workspace}
-                    submit={handleSubmit}
-                    isStreaming={loadingResponse}
-                    sendCommand={sendCommand}
-                    attachments={files}
-                    centered={true}
-                    chatHistory={chatHistory}
+                    threadSlug={activeThreadSlug}
                   />
-                  <QuickActions
-                    hasAvailableWorkspace={!!workspace}
-                    onCreateAgent={() => navigate(paths.settings.agentSkills())}
-                    onEditWorkspace={() =>
-                      navigate(
-                        paths.workspace.settings.generalAppearance(
-                          workspace.slug
+                </ChatHeader>
+                <div className="flex-1 min-h-0 flex flex-col w-full items-center justify-center overflow-y-auto no-scroll">
+                  <div className="flex flex-col items-center w-full md:w-[85%]">
+                    <h1 className="text-white text-xl md:text-2xl mb-11 text-center">
+                      {t("main-page.greeting")}
+                    </h1>
+                    <PromptInput
+                      workspace={workspace}
+                      submit={handleSubmit}
+                      isStreaming={loadingResponse}
+                      sendCommand={sendCommand}
+                      attachments={files}
+                      centered={true}
+                      chatHistory={chatHistory}
+                    />
+                    <QuickActions
+                      hasAvailableWorkspace={!!workspace}
+                      onCreateAgent={() =>
+                        navigate(paths.settings.agentSkills())
+                      }
+                      onEditWorkspace={() =>
+                        navigate(
+                          paths.workspace.settings.generalAppearance(
+                            workspace.slug
+                          )
                         )
-                      )
-                    }
-                    onUploadDocument={() =>
-                      document.getElementById("dnd-chat-file-uploader")?.click()
-                    }
+                      }
+                      onUploadDocument={() =>
+                        document
+                          .getElementById("dnd-chat-file-uploader")
+                          ?.click()
+                      }
+                    />
+                  </div>
+                  <SuggestedMessages
+                    suggestedMessages={workspace?.suggestedMessages}
+                    sendCommand={sendCommand}
                   />
                 </div>
-                <SuggestedMessages
-                  suggestedMessages={workspace?.suggestedMessages}
-                  sendCommand={sendCommand}
-                />
               </div>
             </DnDFileUploaderWrapper>
             <ChatTooltips />
@@ -537,15 +547,18 @@ export default function ChatContainer({
         style={{ height: isMobile ? "100%" : "calc(100% - 32px)" }}
         className="relative flex md:ml-[2px] md:mr-[16px] md:my-[16px] w-full h-full z-[2]"
       >
-        <ChatSettingsMenu
-          history={chatHistory}
-          workspace={workspace}
-          threadSlug={activeThreadSlug}
-        />
         <div className="flex-1 min-w-0 relative md:rounded-[16px] bg-zinc-900 light:bg-white text-white light:text-slate-900 h-full overflow-hidden border-none light:border-solid light:border light:border-theme-modal-border">
           {isMobile && <SidebarMobileHeader />}
           <DnDFileUploaderWrapper>
             <div className="flex flex-col h-full w-full pb-20 md:pb-0">
+              <ChatHeader workspace={workspace} threadSlug={activeThreadSlug}>
+                <ChatSettingsMenu
+                  inline
+                  history={chatHistory}
+                  workspace={workspace}
+                  threadSlug={activeThreadSlug}
+                />
+              </ChatHeader>
               <div className="contents">
                 <MetricsProvider>
                   <ChatHistory

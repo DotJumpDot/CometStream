@@ -114,10 +114,11 @@ const HistoricalMessage = ({
         onAnimationEnd={onEndAnimation}
         className={`${isDeleted ? "animate-remove" : ""} flex justify-end w-full group`}
       >
-        <div className="py-3 px-4 flex flex-col items-end">
-          {/* ZCode-style plain user prompt: no bubble, no border - just the
-              text right-aligned against the chat column edge. */}
-          <div className="max-w-[85%] text-white light:text-slate-900 [&_p]:m-0">
+        {/* w-full is load-bearing: without it this column shrink-to-fits to
+            the actions row and any percentage max-width on the bubble
+            resolves against that (~170px) instead of the chat column. */}
+        <div className="py-3 px-4 w-full flex flex-col items-end">
+          <div className="bg-zinc-800 light:bg-slate-100 rounded-2xl rounded-br-md px-4 py-2.5 max-w-[50%] text-white light:text-slate-900 [&_p]:m-0">
             <TruncatableContent>
               <RenderChatContent
                 role={role}

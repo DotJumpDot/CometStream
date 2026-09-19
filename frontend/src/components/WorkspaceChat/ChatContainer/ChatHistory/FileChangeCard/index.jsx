@@ -15,6 +15,19 @@ const ACTION_ICONS = {
   read: FileMagnifyingGlass,
 };
 
+// Trae-style step row accents: a soft colored badge keyed to the action.
+const ACTION_BADGES = {
+  edit: "bg-amber-500/15 text-amber-400 light:text-amber-500",
+  create: "bg-emerald-500/15 text-emerald-400 light:text-emerald-500",
+  read: "bg-sky-500/15 text-sky-400 light:text-sky-500",
+};
+
+const ACTION_VERB_KEYS = {
+  edit: "chat_window.file_change.verb_edit",
+  create: "chat_window.file_change.verb_create",
+  read: "chat_window.file_change.verb_read",
+};
+
 /**
  * A single file-activity row in the chat stream, styled after agentic IDEs:
  * icon + filename + muted directory + `+N -N` line counts on the right.
@@ -61,21 +74,36 @@ function FileChangeCard({
         aria-label={ariaLabel}
         title={path}
         disabled={!hasDiff}
-        className={`flex items-center gap-x-2 w-full max-w-[560px] rounded-md px-2 py-1 text-left text-sm transition-colors duration-150 ${
+        className={`flex items-center gap-x-3 w-full max-w-[640px] rounded-lg px-2 py-1.5 text-left text-sm transition-colors duration-150 ${
           hasDiff
             ? "cursor-pointer hover:bg-white/[0.05] light:hover:bg-black/[0.05]"
             : "cursor-default"
         }`}
       >
-        <Icon className="w-4 h-4 flex-shrink-0 text-zinc-400 light:text-zinc-500" />
-        <span className="font-mono text-[13px] text-zinc-100 light:text-zinc-900 truncate">
-          {segments.basename}
+        <span
+          className={`flex h-7 w-7 items-center justify-center rounded-lg shrink-0 ${
+            ACTION_BADGES[action] ?? "bg-white/5 text-zinc-400"
+          }`}
+        >
+          <Icon className="w-4 h-4" />
         </span>
-        {segments.dirname && (
-          <span className="font-mono text-xs text-zinc-500 light:text-zinc-400 truncate">
-            {segments.dirname}
+        <span className="min-w-0 flex-1 flex flex-col">
+          <span className="flex items-baseline gap-x-1.5 min-w-0">
+            <span className="text-[12px] text-zinc-400 light:text-zinc-500 shrink-0">
+              {t(
+                ACTION_VERB_KEYS[action] ?? "chat_window.file_change.verb_edit"
+              )}
+            </span>
+            <span className="font-mono text-[13px] text-zinc-100 light:text-zinc-900 truncate">
+              {segments.basename}
+            </span>
           </span>
-        )}
+          {segments.dirname && (
+            <span className="font-mono text-[11px] text-zinc-500 light:text-zinc-400 truncate">
+              {segments.dirname}
+            </span>
+          )}
+        </span>
         <span className="ml-auto flex items-center gap-x-2 flex-shrink-0 pl-2">
           {isRead ? (
             readLines != null && (
@@ -108,7 +136,7 @@ function FileChangeCard({
       </button>
       {hasDiff && (
         <div
-          className={`grid max-w-[560px] transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+          className={`grid max-w-[640px] transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
             expanded
               ? "grid-rows-[1fr] opacity-100"
               : "grid-rows-[0fr] opacity-0"
