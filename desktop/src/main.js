@@ -26,7 +26,7 @@
  * All user data stays inside the bundle folder (server/storage), so the whole
  * folder remains portable: move it, and the app + data move with it.
  */
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
@@ -142,17 +142,27 @@ function createWindow() {
     backgroundColor: "#0e0f0f",
     autoHideMenuBar: true,
     show: false,
+    // Frameless: the app draws its own title bar (see
+    // frontend/src/components/DesktopTitleBar) themed like the rest of the UI,
+    // instead of the plain OS caption. The preload script is the only bridge -
+    // it exposes window controls, nothing else.
+    frame: false,
     webPreferences: {
-      // No node in the renderer; the app is a normal web page served by the
-      // local server, and we intentionally expose no IPC bridge to it.
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 
   // The web app sets its own <title>; keep our window title on the chrome.
   win.on("page-title-updated", (event) => event.preventDefault());
+
+  // Keep the in-page title bar's maximize/restore icon in sync.
+  const sendMaximizeState = () =>
+    win.webContents.send("cometstream:maximize-changed", win.isMaximized());
+  win.on("maximize", sendMaximizeState);
+  win.on("unmaximize", sendMaximizeState);
 
   // Everything the app opens in a new tab/window is external content -
   // docs links, OAuth providers - hand those to the OS browser instead of
@@ -175,6 +185,29 @@ function fatal(title, detail) {
   dialog.showErrorBox(title, String(detail?.message || detail));
   app.exit(1);
 }
+
+// ---- Window controls (used by the in-page title bar) ------------------------
+// Actions are fixed strings from the preload script - the page cannot ask for
+// anything else, and every action targets the window that sent the request.
+
+ipcMain.on("cometstream:window-minimize", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.minimize();
+});
+
+ipcMain.on("cometstream:window-toggle-maximize", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  if (win.isMaximized()) win.unmaximize();
+  else win.maximize();
+});
+
+ipcMain.on("cometstream:window-close", (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close();
+});
+
+ipcMain.handle("cometstream:window-is-maximized", (event) => {
+  return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
+});
 
 // ---- App lifecycle ---------------------------------------------------------
 

@@ -54,12 +54,6 @@ export default {
       return "/onboarding/data-handling";
     },
   },
-  github: () => {
-    return "https://github.com/Mintplex-Labs/anything-llm";
-  },
-  discord: () => {
-    return "https://discord.com/invite/6UyHPeGZAC";
-  },
   docs: (path = "") => {
     return `https://docs.anythingllm.com${path}`;
   },
@@ -168,9 +162,6 @@ export default {
     systemPromptVariables: () => "/settings/system-prompt-variables",
     logs: () => {
       return "/settings/event-logs";
-    },
-    privacy: () => {
-      return "/settings/privacy";
     },
     embedChatWidgets: () => {
       return `/settings/embed-chat-widgets`;

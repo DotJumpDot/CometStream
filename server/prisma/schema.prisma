@@ -139,6 +139,10 @@ model workspaces {
   agentModel                   String?
   queryRefusalResponse         String?
   vectorSearchMode             String?                        @default("default")
+  // Reasoning preference for chat: null (unset/off), "off", "on", or a
+  // provider/model-specific level name (e.g. "low" | "medium" | "high").
+  // Only applied for models that declare reasoning support (custom providers).
+  chatReasoningEffort          String?                        @map("chat_reasoning_effort")
   router_id                    Int? // No relation to prevent whole table migration (SQLite limitation)
   workspace_users              workspace_users[]
   documents                    workspace_documents[]
@@ -485,4 +489,20 @@ model model_router_rules {
   @@unique([router_id, title])
   @@index([router_id])
   @@index([router_id, enabled, priority])
+}
+// User-defined OpenAI-compatible provider (added by CometStream's "Manage
+// models" UI). Each row becomes a selectable provider group in the chat model
+// picker (provider key `custom:<id>`). `modelsJson` stores an array of
+// { id, displayName, contextWindow, maxTokens, capabilities, reasoningLevels,
+// enabled } entries - see server/models/customLlmProviders.js for validation.
+model custom_llm_providers {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique
+  baseUrl    String   @map("base_url")
+  apiKey     String?  @map("api_key")
+  modelsJson String   @default("[]") @map("models_json")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("custom_llm_providers")
 }

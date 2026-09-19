@@ -13,6 +13,7 @@ import { ThemeProvider } from "./ThemeContext";
 import { PWAModeProvider } from "./PWAContext";
 import KeyboardShortcutsHelp from "@/components/KeyboardShortcutsHelp";
 import ImageLightbox from "@/components/ImageLightbox";
+import DesktopTitleBar from "@/components/DesktopTitleBar";
 import { ErrorBoundary } from "react-error-boundary";
 import ErrorBoundaryFallback from "./components/ErrorBoundaryFallback";
 
@@ -31,7 +32,19 @@ export default function App() {
               <LogoProvider>
                 <PfpProvider>
                   <I18nextProvider i18n={i18n}>
-                    <Outlet />
+                    {/* Desktop shell only: themed title bar with window
+                     * controls. Renders null in a normal browser. */}
+                    <DesktopTitleBar />
+                    {/* Keyed on the pathname so every route change remounts the
+                     * wrapper and replays a short fade (see .page-transition-root
+                     * in index.css). Opacity-only: transforms here would break
+                     * position:fixed children (chat input bar, sidebars). */}
+                    <div
+                      key={location.pathname}
+                      className="page-transition-root"
+                    >
+                      <Outlet />
+                    </div>
                     <ToastContainer />
                     <KeyboardShortcutsHelp />
                     <ImageLightbox />

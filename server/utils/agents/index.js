@@ -301,6 +301,17 @@ class AgentHandler {
           );
         break;
       default:
+        // CometStream custom providers are chat-only for now: the agent
+        // runtime builds providers from ENV-backed classes synchronously and
+        // cannot load per-row connection config yet. Block with a clear
+        // message instead of a confusing "no provider set" error.
+        if (
+          typeof this.provider === "string" &&
+          this.provider.startsWith("custom:")
+        )
+          throw new Error(
+            "Agent chats do not support custom model providers yet. Switch the workspace model to a built-in provider to use @agent."
+          );
         throw new Error(
           "No workspace agent provider set. Please set your agent provider in the workspace's settings"
         );

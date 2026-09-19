@@ -4,11 +4,113 @@
 
 * {
   -webkit-font-smoothing: antialiased;
+  /* Firefox: thin themed scrollbar; Chromium rules below. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--theme-scrollbar-thumb) transparent;
+}
+
+/*
+ * Custom scrollbar (Chromium/Electron + any WebKit browser).
+ * Rounded floating thumb with a transparent gap so it reads as part of the
+ * theme instead of the OS default gray bar. Colors come from theme variables
+ * so each theme (and its accent) styles it.
+ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--theme-scrollbar-thumb);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-scrollbar-thumb-hover);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/*
+ * Shared motion tokens. Strong custom curves - built-in ease-out is too weak
+ * for deliberate UI motion. Components should reference these instead of
+ * inventing parallel curves.
+ */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* Route-level page transition (see App.jsx). Opacity-only on purpose: a
+ * transform on the wrapper would become the containing block for fixed
+ * descendants (chat prompt bar, sidebars) and shift them mid-animation. */
+@keyframes cs-page-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.page-transition-root {
+  animation: cs-page-enter 180ms var(--ease-out);
+}
+
+/* Entrances for popover/dropdown surfaces (anchored above their trigger).
+ * Set transform-origin inline per surface. Never used for rapid toggles. */
+@keyframes cs-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.cs-pop-in {
+  animation: cs-pop-in 150ms var(--ease-out);
+}
+
+@keyframes cs-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.cs-fade-in {
+  animation: cs-fade-in 150ms var(--ease-out);
+}
+
+/* Reserve space for the desktop app's in-page title bar (set by the Electron
+ * shell); browsers never apply this class. */
+body.has-desktop-titlebar {
+  padding-top: 38px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition-root,
+  .cs-pop-in {
+    /* Keep the fade (aids comprehension), drop movement/scale. */
+    animation-name: cs-fade-in;
+    animation-duration: 120ms;
+  }
 }
 
 :root {
   /* Default theme */
   --theme-loader: #ffffff;
+  --theme-scrollbar-thumb: rgba(255, 255, 255, 0.14);
+  --theme-scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
   --theme-bg-primary: #0e0f0f;
   --theme-bg-secondary: #1b1b1e;
   --theme-bg-sidebar: #0e0f0f;
@@ -107,6 +209,8 @@
 
 [data-theme="light"] {
   --theme-loader: #000000;
+  --theme-scrollbar-thumb: rgba(0, 0, 0, 0.18);
+  --theme-scrollbar-thumb-hover: rgba(0, 0, 0, 0.35);
   --theme-bg-primary: #ffffff;
   --theme-bg-secondary: #ffffff;
   --theme-bg-sidebar: #edf2fa;
@@ -217,6 +321,8 @@
  */
 [data-theme="monokai-night"] {
   --theme-loader: #ffffff;
+  --theme-scrollbar-thumb: rgba(221, 221, 221, 0.15);
+  --theme-scrollbar-thumb-hover: rgba(249, 38, 114, 0.55);
   --theme-bg-primary: #1f1f1f;
   --theme-bg-secondary: #262626;
   --theme-bg-sidebar: #161616;
@@ -322,6 +428,8 @@
  */
 [data-theme="monokai-dark-soda"] {
   --theme-loader: #ffffff;
+  --theme-scrollbar-thumb: rgba(248, 248, 242, 0.15);
+  --theme-scrollbar-thumb-hover: rgba(253, 151, 31, 0.55);
   --theme-bg-primary: #242424;
   --theme-bg-secondary: #2a2a2a;
   --theme-bg-sidebar: #242424;

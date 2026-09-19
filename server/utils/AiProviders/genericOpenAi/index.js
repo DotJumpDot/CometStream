@@ -15,28 +15,58 @@ const { getAnythingLLMUserAgent } = require("../../../endpoints/utils");
 const { attachmentToContentBlock } = require("../../helpers/attachments");
 
 class GenericOpenAiLLM {
-  constructor(embedder = null, modelPreference = null) {
+  /**
+   * @param {import("../../EmbeddingEngines/native")} embedder
+   * @param {string|null} modelPreference
+   * @param {object} [overrides] - Explicit connection config (CometStream
+   * custom providers). Every field falls back to the ENV values so the
+   * built-in generic-openai behavior is unchanged when omitted.
+   * @param {string} [overrides.basePath]
+   * @param {string|null} [overrides.apiKey]
+   * @param {string|null} [overrides.modelPref]
+   * @param {number|null} [overrides.tokenLimit]
+   * @param {number|null} [overrides.maxTokens]
+   * @param {Object} [overrides.customHeaders]
+   * @param {string|null} [overrides.reasoningEffort] - Sent as `reasoning_effort`
+   * when set (model metadata says the model supports reasoning).
+   */
+  constructor(embedder = null, modelPreference = null, overrides = {}) {
     const { OpenAI: OpenAIApi } = require("openai");
-    if (!process.env.GENERIC_OPEN_AI_BASE_PATH)
+    const basePath =
+      overrides.basePath ?? process.env.GENERIC_OPEN_AI_BASE_PATH;
+    if (!basePath)
       throw new Error(
         "GenericOpenAI must have a valid base path to use for the api."
       );
 
     this.className = "GenericOpenAiLLM";
-    this.basePath = process.env.GENERIC_OPEN_AI_BASE_PATH;
+    this.basePath = basePath;
     this.openai = new OpenAIApi({
       baseURL: this.basePath,
-      apiKey: process.env.GENERIC_OPEN_AI_API_KEY ?? null,
+      apiKey: overrides.apiKey ?? process.env.GENERIC_OPEN_AI_API_KEY ?? null,
       defaultHeaders: {
         "User-Agent": getAnythingLLMUserAgent(),
-        ...GenericOpenAiLLM.parseCustomHeaders(),
+        ...(overrides.customHeaders ?? GenericOpenAiLLM.parseCustomHeaders()),
       },
     });
     this.model =
-      modelPreference ?? process.env.GENERIC_OPEN_AI_MODEL_PREF ?? null;
-    this.maxTokens = process.env.GENERIC_OPEN_AI_MAX_TOKENS
-      ? toValidNumber(process.env.GENERIC_OPEN_AI_MAX_TOKENS, 1024)
-      : 1024;
+      modelPreference ??
+      overrides.modelPref ??
+      process.env.GENERIC_OPEN_AI_MODEL_PREF ??
+      null;
+    this.maxTokens =
+      overrides.maxTokens ??
+      (process.env.GENERIC_OPEN_AI_MAX_TOKENS
+        ? toValidNumber(process.env.GENERIC_OPEN_AI_MAX_TOKENS, 1024)
+        : 1024);
+    // Instance-level context window (custom provider model metadata). When
+    // null the ENV token limit (or 4096) is used like before.
+    this.#tokenLimitOverride = overrides.tokenLimit ?? null;
+    // Reasoning effort for models that support it ("off" never sends it).
+    this.reasoningEffort =
+      overrides.reasoningEffort && overrides.reasoningEffort !== "off"
+        ? overrides.reasoningEffort
+        : null;
     if (!this.model)
       throw new Error("GenericOpenAI must have a valid model set.");
     this.limits = {
@@ -48,6 +78,16 @@ class GenericOpenAiLLM {
     this.embedder = embedder ?? new NativeEmbedder();
     this.defaultTemp = 0.7;
     this.log(`Inference API: ${this.basePath} Model: ${this.model}`);
+  }
+
+  #tokenLimitOverride = null;
+
+  /** `reasoning_effort` param for models that support it; empty otherwise. */
+  #reasoningParams() {
+    if (!this.reasoningEffort) return {};
+    if (this.reasoningEffort === "on") return {};
+    // Named levels (low/medium/high/...) map straight through to the API.
+    return { reasoning_effort: this.reasoningEffort };
   }
 
   log(text, ...args) {
@@ -106,6 +146,8 @@ class GenericOpenAiLLM {
   // Ensure the user set a value for the token limit
   // and if undefined - assume 4096 window.
   promptWindowLimit() {
+    // Custom provider models carry their own context window metadata.
+    if (this.#tokenLimitOverride) return this.#tokenLimitOverride;
     const limit = process.env.GENERIC_OPEN_AI_MODEL_TOKEN_LIMIT || 4096;
     if (!limit || isNaN(Number(limit)))
       throw new Error("No token context limit was set.");
@@ -229,6 +271,7 @@ class GenericOpenAiLLM {
           messages,
           temperature,
           max_tokens: this.maxTokens,
+          ...this.#reasoningParams(),
         })
         .catch((e) => {
           throw new Error(e.message);
@@ -269,6 +312,7 @@ class GenericOpenAiLLM {
         messages,
         temperature,
         max_tokens: this.maxTokens,
+        ...this.#reasoningParams(),
         ...this.#includeStreamOptionsUsage(),
       }),
       messages,

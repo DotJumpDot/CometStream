@@ -30,6 +30,7 @@ function isNullOrNaN(value) {
  * @property {string} agentModel - The agent model of the workspace
  * @property {string} queryRefusalResponse - The query refusal response of the workspace
  * @property {string} vectorSearchMode - The vector search mode of the workspace
+ * @property {string} chatReasoningEffort - Chat reasoning preference (null|"off"|"on"|level name)
  */
 
 const Workspace = {
@@ -55,6 +56,7 @@ const Workspace = {
     "agentModel",
     "queryRefusalResponse",
     "vectorSearchMode",
+    "chatReasoningEffort",
     "router_id",
   ],
 
@@ -105,6 +107,13 @@ const Workspace = {
     chatModel: (value) => {
       if (!value || typeof value !== "string") return null;
       return String(value);
+    },
+    // Reasoning preference for chat with models that declare reasoning
+    // support: null/"off" = disabled, "on" = enabled (no levels), or one of
+    // the model's level names (e.g. "low" | "medium" | "high").
+    chatReasoningEffort: (value) => {
+      if (!value || typeof value !== "string") return null;
+      return String(value).trim().slice(0, 24) || null;
     },
     agentProvider: (value) => {
       if (!value || typeof value !== "string" || value === "none") return null;
@@ -697,6 +706,13 @@ const Workspace = {
       );
       return (await fallbackProvider.supportsNativeToolCalling?.()) ?? false;
     }
+
+    // CometStream custom providers are chat-only and have no agent/aibitat
+    // provider class, so native tool calling cannot be probed for them.
+    // Report "unknown" (null) so isAgentCommandAvailable hides the @agent
+    // command instead of throwing on every workspace chat page load.
+    if (typeof provider === "string" && provider.startsWith("custom:"))
+      return null;
 
     const model =
       workspace?.agentModel ??

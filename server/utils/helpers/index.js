@@ -127,6 +127,38 @@ function getVectorDbClass(getExactly = null) {
 }
 
 /**
+ * Build a chat connector for a CometStream custom provider (`custom:<id>`).
+ * Custom providers are OpenAI-compatible endpoints configured in the Manage
+ * models UI; they reuse the GenericOpenAiLLM implementation with explicit
+ * connection overrides instead of ENV values.
+ * @param {{provider: string, model: string|null, reasoningEffort?: string|null}} params
+ * @returns {Promise<import("../AiProviders/genericOpenAi").GenericOpenAiLLM>}
+ */
+async function getCustomLLMProvider({
+  provider,
+  model = null,
+  reasoningEffort = null,
+}) {
+  const { CustomLlmProviders } = require("../models/customLlmProviders");
+  const { GenericOpenAiLLM } = require("../AiProviders/genericOpenAi");
+
+  const resolved = await CustomLlmProviders.resolveForChat(provider, model);
+  if (!resolved)
+    throw new Error(
+      "The selected custom model provider no longer exists or has no enabled models. Pick another model in the model selector."
+    );
+
+  const { provider: record, model: modelMeta } = resolved;
+  return new GenericOpenAiLLM(getEmbeddingEngineSelection(), modelMeta.id, {
+    basePath: record.baseUrl,
+    apiKey: record.apiKey ?? null,
+    tokenLimit: modelMeta.contextWindow,
+    ...(modelMeta.maxTokens ? { maxTokens: modelMeta.maxTokens } : {}),
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+  });
+}
+
+/**
  * Returns the LLMProvider with its embedder attached via system or via defined provider.
  * @notice Use resolveProviderConnector instead as this function DOES NOT handle the anythingllm-router provider.
  * You should only use this function if you are absolutely sure you are not using the anythingllm-router provider ever in your code.
@@ -680,6 +712,20 @@ async function resolveProviderConnector({
 }) {
   const effectiveProvider = workspace?.chatProvider || process.env.LLM_PROVIDER;
 
+  // CometStream custom providers (Manage models) need an async DB lookup, so
+  // they are resolved here instead of the sync getLLMProvider switch.
+  if (
+    typeof effectiveProvider === "string" &&
+    effectiveProvider.startsWith("custom:")
+  ) {
+    const connector = await getCustomLLMProvider({
+      provider: effectiveProvider,
+      model: workspace?.chatModel,
+      reasoningEffort: workspace?.chatReasoningEffort ?? null,
+    });
+    return { connector, routingMetadata: null, prefetchedContext: null };
+  }
+
   if (effectiveProvider !== "anythingllm-router") {
     return {
       connector: getLLMProvider({
@@ -755,9 +801,10 @@ module.exports = {
   getImageGeneratorProvider,
   maximumChunkLength,
   getVectorDbClass,
+  getLLMProvider,
+  getCustomLLMProvider,
   getLLMProviderClass,
   getBaseLLMProviderModel,
-  getLLMProvider,
   resolveProviderConnector,
   toChunks,
   humanFileSize,

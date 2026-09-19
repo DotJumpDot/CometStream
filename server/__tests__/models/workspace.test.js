@@ -156,6 +156,24 @@ describeValidation("chatModel", () => {
   });
 });
 
+describeValidation("chatReasoningEffort", () => {
+  it("passes valid values through and truncates to 24 chars", () => {
+    expect(Workspace.validations.chatReasoningEffort("off")).toBe("off");
+    expect(Workspace.validations.chatReasoningEffort("on")).toBe("on");
+    expect(Workspace.validations.chatReasoningEffort("high")).toBe("high");
+    expect(Workspace.validations.chatReasoningEffort("a".repeat(30))).toBe(
+      "a".repeat(24)
+    );
+  });
+
+  it("returns null for null, empty, whitespace, or non-string", () => {
+    expect(Workspace.validations.chatReasoningEffort(null)).toBeNull();
+    expect(Workspace.validations.chatReasoningEffort("")).toBeNull();
+    expect(Workspace.validations.chatReasoningEffort("   ")).toBeNull();
+    expect(Workspace.validations.chatReasoningEffort(123)).toBeNull();
+  });
+});
+
 describeValidation("agentProvider", () => {
   it("passes a valid string through", () => {
     expect(Workspace.validations.agentProvider("openai")).toBe("openai");
