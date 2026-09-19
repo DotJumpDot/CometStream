@@ -1,4 +1,5 @@
 import Sidebar from "@/components/SettingsSidebar";
+import SettingsCard from "@/components/SettingsCard";
 import { isMobile } from "react-device-detect";
 import { useTranslation } from "react-i18next";
 import LanguagePreference from "../components/LanguagePreference";
@@ -25,8 +26,10 @@ export default function InterfaceSettings() {
               {t("customization.interface.description")}
             </p>
           </div>
-          <ThemePreference />
-          <LanguagePreference />
+          <SettingsCard>
+            <ThemePreference />
+            <LanguagePreference />
+          </SettingsCard>
         </div>
       </div>
     </div>

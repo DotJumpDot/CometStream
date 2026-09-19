@@ -113,10 +113,17 @@ const TRANSLATIONS = {
     contact: "Contact Support",
     "browser-extension": "Browser Extension",
     "mobile-app": "AnythingLLM Mobile",
+    "agents-and-mcp": "Agents & MCP",
+    "default-system-prompt": "Default System Prompt",
     channels: "Channels",
     "available-channels": {
       telegram: "Telegram",
     },
+  },
+  sidebar: {
+    projects: "Projects",
+    "new-workspace": "New workspace",
+    "agents-mcp": "Agents & MCP",
   },
   login: {
     "multi-user": {

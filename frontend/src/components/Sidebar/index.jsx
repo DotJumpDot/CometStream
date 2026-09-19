@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { List, Plus } from "@phosphor-icons/react";
+import { List, Plus, Plugs } from "@phosphor-icons/react";
 import NewWorkspaceModal, {
   useNewWorkspaceModal,
 } from "../Modals/NewWorkspace";
@@ -16,7 +16,10 @@ import SearchBox from "./SearchBox";
 import { Tooltip } from "react-tooltip";
 import { createPortal } from "react-dom";
 
+export const SIDEBAR_SEARCH_INPUT_ID = "sidebar-search-input";
+
 export default function Sidebar() {
+  const { t } = useTranslation();
   const { user } = useUser();
   const { logo } = useLogo();
   const sidebarRef = useRef(null);
@@ -26,6 +29,23 @@ export default function Sidebar() {
     showModal: showNewWsModal,
     hideModal: hideNewWsModal,
   } = useNewWorkspaceModal();
+
+  // ZCode-style shortcuts: Ctrl+N new workspace, Ctrl+K focuses the search box.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        showNewWsModal();
+      }
+      if (e.key === "k" || e.key === "K") {
+        e.preventDefault();
+        document.getElementById(SIDEBAR_SEARCH_INPUT_ID)?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showNewWsModal]);
 
   return (
     <>
@@ -62,8 +82,17 @@ export default function Sidebar() {
               <div className="flex-grow flex flex-col min-w-[235px] min-h-0">
                 <div className="relative h-[calc(100%-60px)] flex flex-col w-full justify-between pt-[10px] overflow-y-scroll no-scroll">
                   <div className="flex flex-col gap-y-[14px]">
-                    <SearchBox user={user} showNewWsModal={showNewWsModal} />
-                    <ActiveWorkspaces />
+                    <SearchBox />
+                    <SidebarQuickLinks
+                      user={user}
+                      showNewWsModal={showNewWsModal}
+                    />
+                    <div className="flex flex-col gap-y-[6px]">
+                      <p className="text-[10px] uppercase tracking-[0.08em] font-semibold text-theme-text-secondary opacity-60 px-2">
+                        {t("sidebar.projects")}
+                      </p>
+                      <ActiveWorkspaces />
+                    </div>
                   </div>
                 </div>
                 <div className="absolute bottom-0 left-0 right-0 pb-3 rounded-b-[16px] bg-theme-bg-sidebar light:bg-slate-200 bg-opacity-80 backdrop-filter backdrop-blur-md z-10">
@@ -77,6 +106,36 @@ export default function Sidebar() {
       </div>
       <WorkspaceAndThreadTooltips />
     </>
+  );
+}
+
+function SidebarQuickLinks({ user, showNewWsModal }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex flex-col gap-y-[2px]">
+      <button
+        type="button"
+        onClick={showNewWsModal}
+        className="flex items-center gap-x-2.5 h-[34px] px-2.5 rounded-[8px] text-[13px] leading-none text-white light:text-black hover:bg-theme-sidebar-subitem-hover transition-all duration-[200ms] border-none cursor-pointer"
+      >
+        <Plus className="h-4 w-4 shrink-0 opacity-70" weight="bold" />
+        <p className="whitespace-nowrap overflow-hidden">
+          {t("sidebar.new-workspace")}
+        </p>
+      </button>
+      {user?.role !== "default" && (
+        <Link
+          to={paths.settings.agentSkills()}
+          className="flex items-center gap-x-2.5 h-[34px] px-2.5 rounded-[8px] text-[13px] leading-none text-white light:text-black hover:bg-theme-sidebar-subitem-hover transition-all duration-[200ms]"
+        >
+          <Plugs className="h-4 w-4 shrink-0 opacity-70" weight="regular" />
+          <p className="whitespace-nowrap overflow-hidden">
+            {t("sidebar.agents-mcp")}
+          </p>
+        </Link>
+      )}
+    </div>
   );
 }
 

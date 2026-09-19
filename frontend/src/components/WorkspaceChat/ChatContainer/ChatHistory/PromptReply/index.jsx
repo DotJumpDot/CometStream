@@ -47,12 +47,14 @@ const PromptReply = ({ uuid, reply, pending, error, sources = [] }) => {
             changes to tell them the turn ended.
           */}
           <span
-            className="inline-block p-2 rounded-lg bg-red-50 text-red-500"
+            className="inline-flex flex-col gap-y-1 p-3 rounded-lg border border-red-400/25 bg-red-500/10 text-red-400 light:border-red-200 light:bg-red-50 light:text-red-600"
             role="alert"
           >
-            <Warning className="h-4 w-4 mb-1 inline-block" />{" "}
-            {t("chat_window.response_failed")}
-            <span className="text-xs">
+            <span className="flex items-center gap-x-1.5 text-sm font-medium">
+              <Warning weight="fill" className="h-4 w-4 shrink-0" />
+              {t("chat_window.response_failed")}
+            </span>
+            <span className="text-xs opacity-80">
               {t("chat_window.response_failed_reason", {
                 reason: error || "unknown",
               })}

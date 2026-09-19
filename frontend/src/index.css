@@ -97,6 +97,12 @@ body.has-desktop-titlebar {
   padding-top: 38px;
 }
 
+/* Settings cards: hairline dividers between the row components dropped into
+ * a SettingsCard, so grouped rows read as one Trae-style section. */
+.settings-card-rows > * + * {
+  border-top: 1px solid var(--theme-sidebar-border);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .page-transition-root,
   .cs-pop-in {

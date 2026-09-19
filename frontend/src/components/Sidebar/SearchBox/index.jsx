@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, MagnifyingGlass } from "@phosphor-icons/react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import paths from "@/utils/paths";
 import Preloader from "@/components/Preloader";
 import debounce from "lodash.debounce";
 import Workspace from "@/models/workspace";
-import { Tooltip } from "react-tooltip";
 
 const DEFAULT_SEARCH_RESULTS = {
   workspaces: [],
@@ -14,7 +13,7 @@ const DEFAULT_SEARCH_RESULTS = {
 };
 
 const SEARCH_RESULT_SELECTED = "search-result-selected";
-export default function SearchBox({ user, showNewWsModal }) {
+export default function SearchBox() {
   const { t } = useTranslation();
   const searchRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -52,10 +51,11 @@ export default function SearchBox({ user, showNewWsModal }) {
   }, []);
 
   return (
-    <div className="flex gap-x-[5px] w-full items-center h-[32px]">
-      <div className="relative h-full w-full flex">
+    <div className="relative w-full">
+      <div className="relative h-[34px] w-full flex">
         <input
           ref={searchRef}
+          id="sidebar-search-input"
           type="search"
           placeholder={t("common.search")}
           onChange={handleSearch}
@@ -70,10 +70,6 @@ export default function SearchBox({ user, showNewWsModal }) {
           hidden={!!searchTerm}
         />
       </div>
-      <ShortWidthNewWorkspaceButton
-        user={user}
-        showNewWsModal={showNewWsModal}
-      />
       <SearchResults
         searchResults={searchResults}
         searchTerm={searchTerm}
@@ -85,7 +81,7 @@ export default function SearchBox({ user, showNewWsModal }) {
 
 function SearchResultWrapper({ children }) {
   return (
-    <div className="absolute right-0 top-[6.2%] w-full flex flex-col gap-y-[24px] h-auto bg-theme-modal-border light:bg-theme-bg-primary light:border-2 light:border-theme-modal-border rounded-lg p-[16px] z-10 max-h-[calc(100%-24px)] overflow-y-scroll no-scroll">
+    <div className="absolute right-0 top-[calc(100%+8px)] w-full flex flex-col gap-y-[24px] h-auto bg-theme-modal-border light:bg-theme-bg-primary light:border-2 light:border-theme-modal-border rounded-lg p-[16px] z-10 max-h-[calc(100%-24px)] overflow-y-scroll no-scroll">
       {children}
     </div>
   );
@@ -184,33 +180,5 @@ function SearchResultItem({ to, name, hint }) {
         )}
       </p>
     </Link>
-  );
-}
-
-function ShortWidthNewWorkspaceButton({ user, showNewWsModal }) {
-  const { t } = useTranslation();
-  if (!!user && user?.role === "default") return null;
-
-  return (
-    <>
-      <button
-        data-tooltip-id="new-workspace-tooltip"
-        data-tooltip-content={t("new-workspace.title")}
-        onClick={showNewWsModal}
-        className="border-none flex items-center justify-center bg-white  rounded-lg p-[8px] hover:bg-white/80 light:hover:bg-slate-300 transition-all duration-300"
-      >
-        <Plus
-          size={16}
-          weight="bold"
-          className="text-black light:text-slate-500"
-        />
-      </button>
-      <Tooltip
-        id="new-workspace-tooltip"
-        place="top"
-        delayShow={300}
-        className="tooltip !text-xs"
-      />
-    </>
   );
 }

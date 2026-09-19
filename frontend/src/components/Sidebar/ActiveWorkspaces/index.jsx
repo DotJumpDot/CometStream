@@ -7,7 +7,14 @@ import ManageWorkspace, {
 } from "../../Modals/ManageWorkspace";
 import paths from "@/utils/paths";
 import { Link, useParams, useNavigate, useMatch } from "react-router-dom";
-import { GearSix, UploadSimple, DotsSixVertical } from "@phosphor-icons/react";
+import {
+  GearSix,
+  UploadSimple,
+  DotsSixVertical,
+  Folder,
+  FolderOpen,
+  CaretDown,
+} from "@phosphor-icons/react";
 import useUser from "@/hooks/useUser";
 import ThreadContainer from "./ThreadContainer";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
@@ -103,7 +110,7 @@ export default function ActiveWorkspaces() {
           <div
             role="list"
             aria-label="Workspaces"
-            className="flex flex-col gap-y-2"
+            className="flex flex-col gap-y-[2px]"
             ref={provided.innerRef}
             {...provided.droppableProps}
           >
@@ -125,96 +132,129 @@ export default function ActiveWorkspaces() {
                       }`}
                       role="listitem"
                     >
-                      <div className="flex gap-x-2 items-center justify-between">
-                        <Link
-                          to={paths.workspace.chat(workspace.slug)}
-                          aria-current={isActive ? "page" : ""}
-                          className={`
-                            transition-all duration-[200ms]
-                            flex flex-grow w-[75%] gap-x-2 py-[6px] pl-[4px] pr-[6px] rounded-[4px] text-white justify-start items-center
-                            bg-theme-sidebar-item-default
-                            ${isActive ? "light:bg-blue-200 font-bold" : "hover:bg-theme-sidebar-subitem-hover light:hover:bg-slate-300"}
-                          `}
+                      <Link
+                        to={paths.workspace.chat(workspace.slug)}
+                        aria-current={isActive ? "page" : ""}
+                        className={`
+                          flex items-center gap-x-2 w-full h-[34px] px-2.5 rounded-[8px]
+                          text-[13px] leading-none transition-all duration-[200ms]
+                          ${
+                            isActive
+                              ? "bg-theme-sidebar-item-selected light:bg-blue-200 font-semibold text-white light:text-blue-900"
+                              : "text-white light:text-black hover:bg-theme-sidebar-subitem-hover"
+                          }
+                        `}
+                      >
+                        <div
+                          {...provided.dragHandleProps}
+                          className="cursor-grab opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity duration-150"
+                          aria-label="Drag to reorder workspace"
                         >
-                          <div className="flex flex-row justify-between w-full items-center">
-                            <div
-                              {...provided.dragHandleProps}
-                              className="cursor-grab mr-[3px]"
+                          <DotsSixVertical
+                            size={14}
+                            weight="bold"
+                            className="text-theme-text-secondary"
+                          />
+                        </div>
+                        {isActive ? (
+                          <FolderOpen
+                            size={16}
+                            weight="fill"
+                            className="shrink-0 text-cta-button"
+                          />
+                        ) : (
+                          <Folder
+                            size={16}
+                            weight="regular"
+                            className="shrink-0 opacity-60"
+                          />
+                        )}
+                        <p
+                          data-tooltip-id="workspace-name"
+                          data-tooltip-content={workspace.name}
+                          className="flex-grow truncate whitespace-nowrap overflow-hidden"
+                        >
+                          {workspace.name}
+                        </p>
+                        {user?.role !== "default" && (
+                          <div
+                            className={`flex items-center gap-x-[2px] transition-opacity duration-200 shrink-0 ${
+                              isActive
+                                ? "opacity-100"
+                                : "opacity-0 group-hover:opacity-100"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setSelectedWs(workspace);
+                                showModal();
+                              }}
+                              data-tooltip-id="upload-workspace"
+                              data-tooltip-content="Upload documents to this workspace for RAG indexing"
+                              className={`group/upload border-none rounded-md flex items-center justify-center p-[2px] ${
+                                isActive
+                                  ? "hover:bg-zinc-500 light:hover:bg-sky-800/30"
+                                  : "hover:bg-zinc-500 light:hover:bg-slate-400"
+                              }`}
                             >
-                              <DotsSixVertical
-                                size={20}
-                                className={`${isActive ? "text-white light:text-blue-800" : ""}`}
-                                weight="bold"
+                              <UploadSimple
+                                className={`h-[16px] w-[16px] ${
+                                  isActive
+                                    ? "text-zinc-400 hover:text-white light:text-blue-700 light:group-hover/upload:text-blue-900"
+                                    : "text-zinc-400 hover:text-white light:text-slate-600 light:group-hover/upload:text-slate-950"
+                                }`}
                               />
-                            </div>
-                            <div
-                              data-tooltip-id="workspace-name"
-                              data-tooltip-content={workspace.name}
-                              className="flex items-center space-x-2 overflow-hidden flex-grow"
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                navigate(
+                                  isInWorkspaceSettings
+                                    ? paths.workspace.chat(workspace.slug)
+                                    : paths.workspace.settings.generalAppearance(
+                                        workspace.slug
+                                      )
+                                );
+                              }}
+                              className={`group/gear rounded-md flex items-center justify-center p-[2px] ${
+                                isActive
+                                  ? "hover:bg-zinc-500 light:hover:bg-sky-800/30"
+                                  : "hover:bg-zinc-500 light:hover:bg-slate-400"
+                              }`}
+                              aria-label="General appearance settings"
+                              data-tooltip-id="gear-workspace"
+                              data-tooltip-content="General appearance settings"
                             >
-                              <div className="w-[130px] overflow-hidden">
-                                <p
-                                  className={`
-                                  text-[14px] leading-loose whitespace-nowrap overflow-hidden
-                                  ${isActive ? "font-bold text-white light:text-blue-900" : "font-medium "} truncate
-                                  w-full group-hover:w-[130px] group-hover:duration-200
-                                `}
-                                >
-                                  {workspace.name}
-                                </p>
-                              </div>
-                            </div>
-                            {user?.role !== "default" && (
-                              <div
-                                className={`flex items-center gap-x-[2px] transition-opacity duration-200 ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    setSelectedWs(workspace);
-                                    showModal();
-                                  }}
-                                  data-tooltip-id="upload-workspace"
-                                  data-tooltip-content="Upload documents to this workspace for RAG indexing"
-                                  className={`group/upload border-none rounded-md flex items-center justify-center ml-auto p-[2px] ${isActive ? "hover:bg-zinc-500 light:hover:bg-sky-800/30" : "hover:bg-zinc-500 light:hover:bg-slate-400"}`}
-                                >
-                                  <UploadSimple
-                                    className={`h-[20px] w-[20px] ${isActive ? "text-zinc-400 hover:text-white light:text-blue-700 light:group-hover/upload:text-blue-900" : "text-zinc-400 hover:text-white light:text-slate-600 light:group-hover/upload:text-slate-950"}`}
-                                  />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    navigate(
-                                      isInWorkspaceSettings
-                                        ? paths.workspace.chat(workspace.slug)
-                                        : paths.workspace.settings.generalAppearance(
-                                            workspace.slug
-                                          )
-                                    );
-                                  }}
-                                  className={`group/gear rounded-md flex items-center justify-center ml-auto p-[2px] ${isActive ? "hover:bg-zinc-500 light:hover:bg-sky-800/30" : "hover:bg-zinc-500 light:hover:bg-slate-400"}`}
-                                  aria-label="General appearance settings"
-                                  data-tooltip-id="gear-workspace"
-                                  data-tooltip-content="General appearance settings"
-                                >
-                                  <GearSix
-                                    color={
-                                      isInWorkspaceSettings &&
-                                      workspace.slug === slug
-                                        ? "#46C8FF"
-                                        : undefined
-                                    }
-                                    className={`h-[20px] w-[20px] ${isActive ? "text-zinc-400 hover:text-white light:text-blue-700 light:group-hover/gear:text-blue-900" : "text-zinc-400 hover:text-white light:text-slate-600 light:group-hover/gear:text-slate-950"}`}
-                                  />
-                                </button>
-                              </div>
-                            )}
+                              <GearSix
+                                color={
+                                  isInWorkspaceSettings &&
+                                  workspace.slug === slug
+                                    ? "#46C8FF"
+                                    : undefined
+                                }
+                                className={`h-[16px] w-[16px] ${
+                                  isActive
+                                    ? "text-zinc-400 hover:text-white light:text-blue-700 light:group-hover/gear:text-blue-900"
+                                    : "text-zinc-400 hover:text-white light:text-slate-600 light:group-hover/gear:text-slate-950"
+                                }`}
+                              />
+                            </button>
                           </div>
-                        </Link>
-                      </div>
+                        )}
+                        <CaretDown
+                          size={12}
+                          weight="bold"
+                          className={`shrink-0 text-theme-text-secondary transition-transform duration-[200ms] ${
+                            isActive
+                              ? "rotate-0 opacity-80"
+                              : "-rotate-90 opacity-0 group-hover:opacity-40"
+                          }`}
+                          aria-hidden="true"
+                        />
+                      </Link>
                       {isActive && (
                         <ThreadContainer
                           workspace={workspace}
