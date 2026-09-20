@@ -66,13 +66,19 @@ export function useMemoriesSidebar() {
  * Uses a fixed-width wrapper + GPU-composited translateX so opening/closing
  * never triggers layout recalculation on the chat history (which can have
  * 500+ message nodes).
+ * @param {Object} props
+ * @param {boolean} props.isOpen - animates the panel in/out
+ * @param {import("react").ReactNode} props.children - panel content, laid
+ * out against the wrapper's fixed `width`
+ * @param {number} [props.width=366] - wrapper width in px; content wider
+ * than the collapsed state stays hidden via overflow + translateX
  */
-export default function ChatSidebar({ isOpen, children }) {
+export default function ChatSidebar({ isOpen, children, width = 366 }) {
   return (
     <div
       className="h-full flex-shrink-0 overflow-hidden"
       style={{
-        width: isOpen ? "366px" : "0px",
+        width: isOpen ? `${width}px` : "0px",
         transition: "width 400ms cubic-bezier(0.4,0,0.2,1)",
         willChange: isOpen ? "width" : "auto",
         contain: "strict",
@@ -81,7 +87,7 @@ export default function ChatSidebar({ isOpen, children }) {
       <div
         className="h-full"
         style={{
-          width: "366px",
+          width: `${width}px`,
           transform: isOpen ? "translateX(0)" : "translateX(100%)",
           transition: "transform 400ms cubic-bezier(0.4,0,0.2,1)",
         }}

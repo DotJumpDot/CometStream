@@ -1589,6 +1589,7 @@ const TRANSLATIONS = {
     close: "Close panel",
     tab_plan: "Plan",
     tab_changes: "Changes",
+    tab_sources: "Sources",
     plan_empty:
       "The agent's plan will appear here when it starts a multi-step task.",
     changes_empty:

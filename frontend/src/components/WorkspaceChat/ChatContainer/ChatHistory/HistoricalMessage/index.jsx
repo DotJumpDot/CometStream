@@ -2,7 +2,6 @@ import React, { memo, useLayoutEffect, useRef, useState } from "react";
 import { Info, Warning } from "@phosphor-icons/react";
 import Actions from "./Actions";
 import renderMarkdown from "@/utils/chat/markdown";
-import Citations from "../Citation";
 import { v4 } from "uuid";
 import DOMPurify from "@/utils/chat/purify";
 import { EditMessageForm, useEditMessage } from "./Actions/EditMessage";
@@ -43,7 +42,6 @@ const HistoricalMessage = ({
   sources = [],
   attachments = [],
   error = false,
-  feedbackScore = null,
   chatId = null,
   isLastMessage = false,
   regenerateMessage,
@@ -130,7 +128,6 @@ const HistoricalMessage = ({
           </div>
           <Actions
             message={message}
-            feedbackScore={feedbackScore}
             chatId={chatId}
             slug={workspace?.slug}
             isLastMessage={isLastMessage}
@@ -194,7 +191,7 @@ const HistoricalMessage = ({
             />
             <Actions
               message={message}
-              feedbackScore={feedbackScore}
+              sources={sources}
               chatId={chatId}
               slug={workspace?.slug}
               isLastMessage={isLastMessage}
@@ -206,7 +203,6 @@ const HistoricalMessage = ({
             />
           </div>
         )}
-        {role === "assistant" && <Citations sources={sources} />}
       </div>
     </div>
   );

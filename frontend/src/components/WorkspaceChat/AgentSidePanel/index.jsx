@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import {
@@ -10,6 +10,7 @@ import {
   PencilSimple,
   SidebarSimple,
   SpinnerGap,
+  Stack,
   X,
 } from "@phosphor-icons/react";
 import {
@@ -18,19 +19,32 @@ import {
   subscribeAgentActivity,
 } from "@/utils/agentActivity";
 import {
+  getLatestSources,
+  resetLatestSources,
+  subscribeLatestSources,
+} from "@/utils/chat/sourcesStore";
+import {
   splitPath,
   UnifiedDiffView,
 } from "@/components/WorkspaceChat/ChatContainer/ChatHistory/FileChangeCard/shared.jsx";
+import {
+  CitationDetailModal,
+  combineLikeSources,
+} from "@/components/WorkspaceChat/ChatContainer/ChatHistory/Citation";
+import SourceItem from "@/components/WorkspaceChat/ChatContainer/SourcesSidebar/SourceItem";
+import ChatSidebar from "@/components/WorkspaceChat/ChatContainer/ChatSidebar";
 
 /**
  * Right-docked agent side panel (ZCode-style): one merged view of the
  * session's work - Changes on top (aggregated file changes with
- * click-to-expand diffs), Plan below (the todo-write stepper). Hidden by
- * default; opens itself the first time an agent event lands, and can be
- * toggled with the edge button.
+ * click-to-expand diffs), Plan below (the todo-write stepper), and Sources
+ * (the chat's latest citations). Hidden by default; opens itself the first
+ * time an agent event lands, and can be toggled with the edge button.
  *
- * Session-scoped like the chat activity chain: state resets when the active
- * chat changes and nothing is persisted.
+ * Uses the same ChatSidebar animation wrapper as the Sources panel so both
+ * right-side panels share the identical open/close motion. Session-scoped
+ * like the chat activity chain: state resets when the active chat changes
+ * and nothing is persisted.
  */
 export default function AgentSidePanel() {
   const { t } = useTranslation();
@@ -40,13 +54,19 @@ export default function AgentSidePanel() {
 
   const [open, setOpen] = useState(false);
   const [activity, setActivity] = useState(getAgentActivity);
+  const [sources, setSources] = useState(getLatestSources);
 
-  useEffect(() => {
+  // Layout effect on purpose: the sources store is populated by the new
+  // chat's message actions in passive effects, which run after layout
+  // effects - resetting here first means the fresh sources survive.
+  useLayoutEffect(() => {
     resetAgentActivity();
+    resetLatestSources();
     setOpen(false);
   }, [chatKey]);
 
   useEffect(() => subscribeAgentActivity(setActivity), []);
+  useEffect(() => subscribeLatestSources(setSources), []);
 
   // Auto-open once per chat when the agent produces panel content.
   useEffect(() => {
@@ -63,16 +83,20 @@ export default function AgentSidePanel() {
     }),
     { added: 0, removed: 0 }
   );
+  const combinedSources = useMemo(() => combineLikeSources(sources), [sources]);
 
   return (
-    <>
+    // `contents` on md+ keeps the edge button's absolute positioning and the
+    // ChatSidebar flex item laid out by the app-level row, while hiding the
+    // whole panel below the md breakpoint.
+    <div className="hidden md:contents">
       {!open && (
         <button
           type="button"
           onClick={() => setOpen(true)}
           title={t("agent_panel.open")}
           aria-label={t("agent_panel.open")}
-          className="hidden md:flex absolute top-1/2 -translate-y-1/2 right-0 z-30 items-center gap-x-2 rounded-l-lg border border-r-0 border-white/10 light:border-black/10 bg-zinc-900 light:bg-white px-2 py-3 text-zinc-400 light:text-zinc-500 hover:text-white light:hover:text-zinc-900 hover:bg-zinc-800 light:hover:bg-slate-100"
+          className="absolute top-1/2 -translate-y-1/2 right-0 z-30 flex items-center gap-x-2 rounded-l-lg border border-r-0 border-white/10 light:border-black/10 bg-zinc-900 light:bg-white px-2 py-3 text-zinc-400 light:text-zinc-500 hover:text-white light:hover:text-zinc-900 hover:bg-zinc-800 light:hover:bg-slate-100"
         >
           <SidebarSimple className="w-4 h-4" />
           <span className="text-xs font-medium [writing-mode:vertical-rl] rotate-180">
@@ -80,20 +104,25 @@ export default function AgentSidePanel() {
           </span>
         </button>
       )}
-      {open && (
-        <aside className="hidden md:flex w-[340px] xl:w-[380px] shrink-0 flex-col border-l border-white/10 light:border-black/10 bg-zinc-900/70 light:bg-white/70 backdrop-blur-sm h-full">
-          <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-white/10 light:border-black/10">
-            <h2 className="text-sm font-medium text-white light:text-zinc-900">
+      {/* 382 = 350px card + 16px gaps on both sides, so the floating card
+          clears the screen edge the same way the chat card does. */}
+      <ChatSidebar isOpen={open} width={382}>
+        <aside
+          className="mt-4 mx-4 w-[350px] rounded-[16px] bg-zinc-900 light:bg-white light:border-2 light:border-slate-300 flex flex-col overflow-hidden"
+          style={{ height: "calc(100% - 32px)" }}
+        >
+          <div className="flex items-start justify-between px-4 pt-4 pb-3 border-b border-white/10 light:border-black/10">
+            <p className="font-medium text-base leading-6 text-white light:text-slate-900">
               {t("agent_panel.title")}
-            </h2>
+            </p>
             <button
-              type="button"
               onClick={() => setOpen(false)}
+              type="button"
               aria-label={t("agent_panel.close")}
               title={t("agent_panel.close")}
-              className="text-zinc-500 light:text-zinc-400 hover:text-white light:hover:text-zinc-900"
+              className="text-white/60 light:text-slate-400 hover:text-white light:hover:text-slate-900 transition-colors border-none bg-transparent cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <X size={16} weight="bold" />
             </button>
           </div>
 
@@ -137,10 +166,48 @@ export default function AgentSidePanel() {
               />
               <PlanTab items={activity.todo} done={todoDone} />
             </section>
+            {combinedSources.length > 0 && (
+              <section>
+                <SectionHeader
+                  icon={<Stack className="w-3.5 h-3.5" />}
+                  label={t("agent_panel.tab_sources")}
+                  count={combinedSources.length}
+                />
+                <SourcesTab sources={combinedSources} />
+              </section>
+            )}
           </div>
         </aside>
+      </ChatSidebar>
+    </div>
+  );
+}
+
+/**
+ * Lists the chat's citation sources with the same rows the Sources side
+ * panel uses; clicking one opens the full citation text in a modal.
+ * @param {Object} props
+ * @param {Array} props.sources - combined sources (combineLikeSources output)
+ */
+function SourcesTab({ sources }) {
+  const [selected, setSelected] = useState(null);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {sources.map((source, idx) => (
+        <SourceItem
+          key={source.title || idx}
+          source={source}
+          onClick={() => setSelected(source)}
+        />
+      ))}
+      {selected && (
+        <CitationDetailModal
+          source={selected}
+          onClose={() => setSelected(null)}
+        />
       )}
-    </>
+    </div>
   );
 }
 

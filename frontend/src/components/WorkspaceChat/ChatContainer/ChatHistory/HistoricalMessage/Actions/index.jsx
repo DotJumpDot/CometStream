@@ -1,15 +1,16 @@
-import React, { memo, useState } from "react";
+import React, { memo, useEffect } from "react";
 import useCopyText from "@/hooks/useCopyText";
-import { Check, ThumbsUp, ArrowsClockwise, Copy } from "@phosphor-icons/react";
-import Workspace from "@/models/workspace";
+import { Check, Stack, ArrowsClockwise, Copy } from "@phosphor-icons/react";
 import { EditMessageAction } from "./EditMessage";
 import RenderMetrics from "./RenderMetrics";
 import ActionMenu from "./ActionMenu";
 import { useTranslation } from "react-i18next";
+import { useSourcesSidebar } from "@/components/WorkspaceChat/ChatContainer/ChatSidebar";
+import { setLatestSources } from "@/utils/chat/sourcesStore";
 
 const Actions = ({
   message,
-  feedbackScore,
+  sources = [],
   chatId,
   slug,
   isLastMessage,
@@ -19,15 +20,6 @@ const Actions = ({
   role,
   metrics = {},
 }) => {
-  const { t } = useTranslation();
-  const [selectedFeedback, setSelectedFeedback] = useState(feedbackScore);
-  const handleFeedback = async (newFeedback) => {
-    const updatedFeedback =
-      selectedFeedback === newFeedback ? null : newFeedback;
-    await Workspace.updateChatFeedback(chatId, slug, updatedFeedback);
-    setSelectedFeedback(updatedFeedback);
-  };
-
   return (
     <div
       className={`flex w-full flex-wrap items-center gap-y-1 ${role === "user" ? "justify-end" : "justify-between"}`}
@@ -52,13 +44,7 @@ const Actions = ({
             />
           )}
           {chatId && role !== "user" && !isEditing && (
-            <FeedbackButton
-              isSelected={selectedFeedback === true}
-              handleFeedback={() => handleFeedback(true)}
-              tooltipId="feedback-button"
-              tooltipContent={t("chat_window.good_response")}
-              IconComponent={ThumbsUp}
-            />
+            <SourcesAction sources={sources} />
           )}
           <ActionMenu
             chatId={chatId}
@@ -73,25 +59,42 @@ const Actions = ({
   );
 };
 
-function FeedbackButton({
-  isSelected,
-  handleFeedback,
-  tooltipContent,
-  IconComponent,
-}) {
+/**
+ * Opens the Sources side panel with this message's citations. Renders only
+ * when the message actually has sources. As a side effect it also publishes
+ * the sources to the sources store so the Agent panel's Sources section can
+ * list them — mounted messages update it in order, so the latest message
+ * with sources wins.
+ */
+function SourcesAction({ sources }) {
+  const { t } = useTranslation();
+  const {
+    sidebarOpen,
+    openSidebar,
+    closeSidebar,
+    sources: currentSources,
+  } = useSourcesSidebar();
+
+  useEffect(() => {
+    if (sources.length > 0) setLatestSources(sources);
+  }, [sources]);
+
+  if (sources.length === 0) return null;
+  const isCurrent = sidebarOpen && sources === currentSources;
+
   return (
     <div className="mt-3 relative">
       <button
-        onClick={handleFeedback}
-        data-tooltip-id="feedback-button"
-        data-tooltip-content={tooltipContent}
+        onClick={() => (isCurrent ? closeSidebar() : openSidebar(sources))}
+        data-tooltip-id="sources-action-btn"
+        data-tooltip-content={t("chat_window.sources")}
         className="text-zinc-300 light:text-slate-500"
-        aria-label={tooltipContent}
+        aria-label={t("chat_window.sources")}
       >
-        <IconComponent
+        <Stack
           size={20}
           className="mb-1"
-          weight={isSelected ? "fill" : "regular"}
+          weight={isCurrent ? "fill" : "regular"}
         />
       </button>
     </div>
