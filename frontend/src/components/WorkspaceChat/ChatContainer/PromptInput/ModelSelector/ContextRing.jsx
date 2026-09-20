@@ -175,7 +175,7 @@ export default function ContextRing({
             }}
           />
           <div
-            className="cs-pop-in z-40 w-[280px] max-w-[calc(100vw-16px)] rounded-xl border border-theme-modal-border bg-theme-popup-menu-bg shadow-2xl p-3"
+            className="cs-pop-in z-40 w-[280px] max-w-[calc(100vw-16px)] rounded-xl border border-theme-modal-border bg-theme-bg-popup-menu shadow-2xl p-3"
             style={{ ...panelStyle, transformOrigin: "bottom right" }}
           >
             <div className="text-xs font-medium text-theme-text-primary mb-2">

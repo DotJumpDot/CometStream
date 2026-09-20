@@ -299,7 +299,7 @@ export default function ModelSelector({ workspace, chatHistory = [] }) {
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
           <div
-            className="cs-pop-in z-40 w-[340px] max-w-[calc(100vw-16px)] rounded-xl border border-theme-modal-border bg-theme-popup-menu-bg shadow-2xl overflow-hidden"
+            className="cs-pop-in z-40 w-[340px] max-w-[calc(100vw-16px)] rounded-xl border border-theme-modal-border bg-theme-bg-popup-menu shadow-2xl overflow-hidden"
             style={{ ...panelStyle, transformOrigin: "bottom right" }}
           >
             {/* Search */}
@@ -314,7 +314,7 @@ export default function ModelSelector({ workspace, chatHistory = [] }) {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder={t("model_selector.search_models")}
-                  className="bg-transparent border-none outline-none text-xs text-theme-text-primary placeholder:text-theme-placeholder w-full"
+                  className="bg-transparent border-none outline-none text-xs text-theme-text-primary placeholder:text-theme-text-placeholder w-full"
                 />
               </div>
             </div>
@@ -388,7 +388,7 @@ export default function ModelSelector({ workspace, chatHistory = [] }) {
                           {isActive && (
                             <Check
                               size={13}
-                              className="text-theme-button-cta shrink-0"
+                              className="text-cta-button shrink-0"
                             />
                           )}
                         </button>
@@ -421,7 +421,7 @@ export default function ModelSelector({ workspace, chatHistory = [] }) {
                         onClick={() => setReasoning(value)}
                         className={`px-2 py-0.5 rounded-md text-[11px] transition-colors duration-100 ${
                           active
-                            ? "bg-theme-button-cta text-black"
+                            ? "bg-cta-button text-black"
                             : "text-theme-text-secondary hover:bg-white/10"
                         }`}
                       >

@@ -131,7 +131,7 @@ export default function ModeSelector({
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
           <div
-            className="cs-pop-in z-40 w-[300px] max-w-[calc(100vw-16px)] rounded-xl border border-theme-modal-border bg-theme-popup-menu-bg shadow-2xl overflow-hidden"
+            className="cs-pop-in z-40 w-[300px] max-w-[calc(100vw-16px)] rounded-xl border border-theme-modal-border bg-theme-bg-popup-menu shadow-2xl overflow-hidden"
             style={{ ...panelStyle, transformOrigin: "bottom left" }}
           >
             <div className="py-1">
@@ -163,7 +163,7 @@ export default function ModeSelector({
                     {isActive && (
                       <Check
                         size={13}
-                        className="text-theme-button-cta shrink-0 mt-0.5"
+                        className="text-cta-button shrink-0 mt-0.5"
                       />
                     )}
                   </button>

@@ -306,7 +306,7 @@ function ProviderRow({ active, onClick, icon, label, connected, isDefault }) {
       {isDefault && (
         <span
           title={t("manage_models.default_badge")}
-          className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-theme-button-cta/15 text-theme-button-cta shrink-0"
+          className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-cta-button/15 text-cta-button shrink-0"
         >
           {t("manage_models.default_badge")}
         </span>
@@ -341,7 +341,7 @@ function BuiltInPanel({ value, onOpenSettings }) {
       <button
         type="button"
         onClick={onOpenSettings}
-        className="w-fit flex items-center gap-x-1.5 text-xs text-theme-button-cta hover:underline"
+        className="w-fit flex items-center gap-x-1.5 text-xs text-cta-button hover:underline"
       >
         {t("manage_models.open_llm_settings")}
         <CaretRight size={11} />
@@ -407,7 +407,7 @@ function CustomProviderPanel({
           <button
             type="button"
             onClick={saveConnection}
-            className="flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg bg-theme-button-cta text-black text-xs font-medium hover:opacity-90 transition-opacity duration-100"
+            className="flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg bg-cta-button text-black text-xs font-medium hover:opacity-90 transition-opacity duration-100"
           >
             <FloppyDisk size={13} />
             {t("manage_models.save")}
@@ -420,7 +420,7 @@ function CustomProviderPanel({
               title={t("manage_models.set_default_hint")}
               className={`flex items-center gap-x-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors duration-100 disabled:cursor-default ${
                 isDefault
-                  ? "bg-theme-button-cta/15 text-theme-button-cta"
+                  ? "bg-cta-button/15 text-cta-button"
                   : "border border-white/15 text-theme-text-secondary hover:text-theme-text-primary hover:bg-white/5"
               }`}
             >
@@ -565,7 +565,7 @@ function AddProviderDialog({ closeModal, onCreated }) {
           <button
             type="submit"
             disabled={loading || !name || !baseUrl}
-            className="px-3 py-2 rounded-lg bg-theme-button-cta text-black text-xs font-medium hover:opacity-90 transition-opacity duration-100 disabled:opacity-50"
+            className="px-3 py-2 rounded-lg bg-cta-button text-black text-xs font-medium hover:opacity-90 transition-opacity duration-100 disabled:opacity-50"
           >
             {loading ? t("manage_models.creating") : t("manage_models.create")}
           </button>
@@ -635,7 +635,7 @@ function AddModelDialog({ provider, closeModal, onAdded }) {
                     onClick={() => setModelId(id)}
                     className={`text-left text-[11px] px-2 py-1 rounded-md transition-colors duration-100 ${
                       modelId === id
-                        ? "bg-theme-button-cta text-black"
+                        ? "bg-cta-button text-black"
                         : "text-theme-text-secondary hover:bg-white/10"
                     }`}
                   >
@@ -735,7 +735,7 @@ function AddModelDialog({ provider, closeModal, onAdded }) {
           <button
             type="submit"
             disabled={loading || !modelId}
-            className="px-3 py-2 rounded-lg bg-theme-button-cta text-black text-xs font-medium hover:opacity-90 transition-opacity duration-100 disabled:opacity-50"
+            className="px-3 py-2 rounded-lg bg-cta-button text-black text-xs font-medium hover:opacity-90 transition-opacity duration-100 disabled:opacity-50"
           >
             {loading ? t("manage_models.adding") : t("manage_models.add")}
           </button>
