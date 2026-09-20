@@ -8,8 +8,7 @@
 
 <p align="center">
   <a href="./LICENSE">MIT License</a> ·
-  <a href="./docs">Docs</a> ·
-  <a href="./CONTRIBUTING.md">Contributing</a>
+  <a href="./docs">Docs</a>
 </p>
 
 ---
@@ -21,6 +20,8 @@
 - **Chat with anything** — workspaces, documents, embeddings, and all the LLM providers AnythingLLM supports (OpenAI, Anthropic, Ollama, LM Studio, Z AI, and many more).
 - **MCP client, manageable from the UI** — add and edit stdio/SSE/streamable-http MCP servers (Chrome DevTools, Playwright, Filesystem, Memory…) from Admin → Agents → MCP Servers, with one-click presets. No config-file editing required.
 - **SKILL.md skills** — point CometStream at any folder of Claude/ZCode-style skills (a subfolder with a `SKILL.md`) and they become agent tools with progressive disclosure: the model sees the name/description, loads the full instructions on invoke, and reads support files on demand.
+- **Agent-grade chat UX** — ZCode/Trae-style: live activity chains and run summaries, a left-edge jump rail that scrolls long threads turn-by-turn, and an agent side panel with Changes, Plan, Sources, and a VSCode-style file reader. File names in replies render as chips that open that file in the reader. Per-chat tool permission modes (ask / auto-approve) and a live context-usage ring round it out.
+- **Context compaction** — `/compact` on demand, or automatically when a thread nears the model's context window (per-workspace toggle + threshold in Chat Settings). Folded history collapses into an expandable summary divider, and the live view and context ring update immediately.
 - **Monokai themes** — Monokai Night and Monokai Dark Soda shipped alongside the default, light, and system themes (Settings → Customization).
 - **Runs anywhere** — one Docker command, a fully self-contained portable Windows build, or plain Node.js.
 
@@ -72,8 +73,7 @@ collector/  Document processing service (parsing, OCR, scraping)
 desktop/    Electron desktop shell (packaged into the portable build)
 docker/     Docker image & compose files
 docs/       Project documentation
-locales/    README translations from upstream
-extras/     Translation tooling
+extras/     Translation tooling (yarn translations:*)
 ```
 
 ## Credits & license
