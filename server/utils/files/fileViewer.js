@@ -24,6 +24,23 @@ function looksBinary(buffer) {
 }
 
 /**
+ * House path rule (see AGENTS.md): reject user-supplied path segments
+ * before any resolution - no NUL, no absolute paths (POSIX, Windows drive,
+ * UNC), no `..` or malformed segments. The filesystem manager's
+ * validatePath still runs afterwards as the authoritative boundary check;
+ * this guard stops tainted input at the entry point.
+ * @param {string} candidate - raw path from the request
+ * @returns {boolean} true when the path cannot be a safe relative path
+ */
+function hasUnsafeSegments(candidate) {
+  if (candidate.includes("\x00")) return true;
+  if (/^[a-zA-Z]:/.test(candidate) || candidate.startsWith("/")) return true;
+  return candidate
+    .split(/[\\/]+/)
+    .some((seg) => seg === ".." || (seg !== "." && path.basename(seg) !== seg));
+}
+
+/**
  * Reads a file from the agent filesystem sandbox for the chat file viewer.
  * All resolution and traversal/symlink rejection is delegated to the
  * filesystem manager's validatePath - the sandbox root is the only
@@ -48,9 +65,14 @@ async function readFileForViewer(rawPath) {
     return { ok: false, reason: "A file path is required." };
   }
 
+  const trimmed = rawPath.trim();
+  if (hasUnsafeSegments(trimmed)) {
+    return { ok: false, reason: "Could not open path in the agent workspace." };
+  }
+
   let absolutePath;
   try {
-    absolutePath = await filesystemManager.validatePath(rawPath.trim());
+    absolutePath = await filesystemManager.validatePath(trimmed);
   } catch {
     // validatePath throws for traversal/symlink escapes and for paths
     // whose parent directories do not exist - both are unopenable here.
@@ -142,5 +164,6 @@ async function readFileForViewer(rawPath) {
 module.exports = {
   readFileForViewer,
   looksBinary,
+  hasUnsafeSegments,
   MAX_TEXT_BYTES,
 };

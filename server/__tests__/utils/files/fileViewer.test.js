@@ -10,6 +10,7 @@ process.env.STORAGE_DIR = fs.mkdtempSync(
 const {
   readFileForViewer,
   looksBinary,
+  hasUnsafeSegments,
   MAX_TEXT_BYTES,
 } = require("../../../utils/files/fileViewer");
 
@@ -65,6 +66,18 @@ describe("readFileForViewer", () => {
     const result = await readFileForViewer("../../server.pem");
     expect(result.ok).toBe(false);
     expect(result.reason).toMatch(/Could not open/i);
+  });
+
+  test("rejects absolute paths and NUL bytes up front", async () => {
+    await expect(
+      readFileForViewer("C:/Code/CometStream/server/.env")
+    ).resolves.toMatchObject({ ok: false });
+    await expect(readFileForViewer("/etc/passwd")).resolves.toMatchObject({
+      ok: false,
+    });
+    await expect(readFileForViewer("he\x00llo.txt")).resolves.toMatchObject({
+      ok: false,
+    });
   });
 
   test("reports a missing file as kind missing, not an error", async () => {
@@ -123,5 +136,20 @@ describe("looksBinary", () => {
   });
   test("plain ASCII is not binary", () => {
     expect(looksBinary(Buffer.from("just some text\nwith lines"))).toBe(false);
+  });
+});
+
+describe("hasUnsafeSegments", () => {
+  test("relative file paths pass", () => {
+    expect(hasUnsafeSegments("hello.html")).toBe(false);
+    expect(hasUnsafeSegments("src/index.js")).toBe(false);
+    expect(hasUnsafeSegments("src\\nested\\app.css")).toBe(false);
+  });
+  test("absolute, traversal, and NUL inputs are rejected", () => {
+    expect(hasUnsafeSegments("/etc/passwd")).toBe(true);
+    expect(hasUnsafeSegments("C:/windows/system32")).toBe(true);
+    expect(hasUnsafeSegments("../outside.txt")).toBe(true);
+    expect(hasUnsafeSegments("ok/../escape.txt")).toBe(true);
+    expect(hasUnsafeSegments("bad\x00null.txt")).toBe(true);
   });
 });
