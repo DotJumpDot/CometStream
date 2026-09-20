@@ -1614,6 +1614,16 @@ const TRANSLATIONS = {
     workspace: "Workspace",
     thread: "Thread",
   },
+  permission: {
+    title: "Tool approval",
+    mode_ask: "Ask every time",
+    mode_ask_description: "Confirm each tool call before it runs.",
+    mode_auto: "Auto-approve",
+    mode_auto_description: "Approve tool calls in this chat automatically.",
+    mode_auto_remember: "Auto-approve & remember",
+    mode_auto_remember_description:
+      "Approve automatically and whitelist each tool permanently.",
+  },
   agent_summary: {
     title: "Agent finished work",
     worked_for: "Worked for {{duration}}",

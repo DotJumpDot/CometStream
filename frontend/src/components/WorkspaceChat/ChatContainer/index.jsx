@@ -22,6 +22,10 @@ import handleSocketResponse, {
 } from "@/utils/chat/agent";
 import DnDFileUploaderWrapper from "./DnDWrapper";
 import { getAgentActivity } from "@/utils/agentActivity";
+import {
+  getPermissionMode,
+  subscribePermissionMode,
+} from "@/utils/chat/permissions";
 import SpeechRecognition, {
   useSpeechRecognition,
 } from "react-speech-recognition";
@@ -469,6 +473,17 @@ export default function ChatContainer({
         setAgentSessionSocket(socket);
         runStartRef.current = Date.now();
         summaryEmittedRef.current = false;
+        // Seed the chat's tool permission mode so a session opened while
+        // auto-approve is selected never prompts for its first tool call.
+        // The socket is still CONNECTING here, so wait for open.
+        socket.addEventListener("open", () => {
+          socket.send(
+            JSON.stringify({
+              type: "permissionMode",
+              mode: getPermissionMode(),
+            })
+          );
+        });
         // The agent immediately begins working on the prompt that opened
         // this session, so restore the loading state that the closing
         // "Swapping over to agent chat" statusResponse cleared.
@@ -506,6 +521,20 @@ export default function ChatContainer({
       }
     };
   }, [socketId, emitRunSummary]);
+
+  // Push permission-mode changes to a live agent session so the chat-bar pill
+  // applies mid-run, not just at the next session start.
+  const liveSocketRef = useRef(websocket);
+  liveSocketRef.current = websocket;
+  useEffect(
+    () =>
+      subscribePermissionMode((mode) => {
+        const socket = liveSocketRef.current;
+        if (socket?.readyState === WebSocket.OPEN)
+          socket.send(JSON.stringify({ type: "permissionMode", mode }));
+      }),
+    []
+  );
 
   if (isEmpty) {
     return (

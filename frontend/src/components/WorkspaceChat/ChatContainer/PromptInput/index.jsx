@@ -18,6 +18,7 @@ import usePromptInputStorage from "@/hooks/usePromptInputStorage";
 import ToolsMenu, { TOOLS_MENU_KEYBOARD_EVENT } from "./ToolsMenu";
 import ModelSelector from "./ModelSelector";
 import ModeSelector from "./ModeSelector";
+import PermissionSelector from "./PermissionSelector";
 import { useSearchParams } from "react-router-dom";
 import { useIsAgentSessionActive } from "@/utils/chat/agent";
 
@@ -395,6 +396,7 @@ export default function PromptInput({
                       showAgentCommand={showAgentCommand}
                       onOpenTools={() => setShowTools(true)}
                     />
+                    <PermissionSelector />
                     <AgentSessionButton
                       sendCommand={sendCommand}
                       promptInput={promptInput}

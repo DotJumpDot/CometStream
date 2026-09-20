@@ -205,6 +205,22 @@ const websocket = {
           return true;
         };
 
+        // Chat-scoped tool permission mode picked in the chat bar
+        // (Ask every time / auto-approve / auto-approve + remember). Set at
+        // session start and freely switchable mid-session by the client.
+        socket.handlePermissionMode = (message) => {
+          const data = safeJsonParse(message, {});
+          if (data?.type !== "permissionMode") return false;
+          if (!["ask", "auto", "auto-remember"].includes(data.mode)) {
+            console.log(
+              chalk.yellow(`Ignoring unknown permissionMode: ${data.mode}`)
+            );
+            return true;
+          }
+          socket.permissionMode = data.mode;
+          return true;
+        };
+
         /**
          * Request user approval before executing a tool/skill.
          * This sends a request to the frontend and blocks until the user responds.
@@ -251,6 +267,28 @@ const websocket = {
             return {
               approved: true,
               message: "Skill is whitelisted - auto-approved.",
+            };
+          }
+
+          // Chat-scoped permission mode: the user opted out of per-call
+          // approval prompts for this chat. "auto-remember" also persists
+          // each auto-passed tool to the whitelist so the choice survives
+          // future sessions.
+          if (
+            socket.permissionMode === "auto" ||
+            socket.permissionMode === "auto-remember"
+          ) {
+            if (socket.permissionMode === "auto-remember") {
+              await AgentSkillWhitelist.add(skillName, userId);
+            }
+            console.log(
+              chalk.green(
+                `Skill ${skillName} auto-approved by chat permission mode (${socket.permissionMode}).`
+              )
+            );
+            return {
+              approved: true,
+              message: "Auto-approved by chat permission mode.",
             };
           }
 

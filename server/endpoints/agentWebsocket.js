@@ -13,9 +13,11 @@ const truncate = require("truncate");
 
 // Setup listener for incoming messages to relay to socket so it can be handled by agent plugin.
 function relayToSocket(message) {
-  // Tool toggles can arrive while the agent is paused awaiting feedback/approval,
-  // so handle them first. The handler ignores (returns false for) any other message.
+  // Tool toggles and the chat permission mode can arrive while the agent is
+  // paused awaiting feedback/approval, so handle them first. The handlers
+  // ignore (return false for) any other message.
   if (this.handleToolToggle?.(message)) return;
+  if (this.handlePermissionMode?.(message)) return;
   if (this.handleFeedback) return this?.handleFeedback?.(message);
   if (this.handleToolApproval) return this?.handleToolApproval?.(message);
   if (this.handleClarificationResponse)
