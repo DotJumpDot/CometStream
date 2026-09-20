@@ -23,6 +23,29 @@ const Workspace = {
 
     return { workspace, message };
   },
+  /**
+   * Fetches a file from the agent filesystem sandbox for the chat file
+   * viewer (inline file references in messages).
+   * @param {string} slug - workspace slug
+   * @param {string} filePath - sandbox-relative path from the message
+   * @returns {Promise<Object>} {ok, kind, content?, path?, ...} viewer payload
+   */
+  fileContent: async function (slug, filePath) {
+    return fetch(
+      `${API_BASE}/workspace/${encodeURIComponent(
+        slug
+      )}/file-content?path=${encodeURIComponent(filePath)}`,
+      { headers: baseHeaders() }
+    )
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        return { status: res.status, ...body };
+      })
+      .catch(() => ({
+        ok: false,
+        error: "Request failed",
+      }));
+  },
   update: async function (slug, data = {}) {
     const { workspace, message } = await fetch(
       `${API_BASE}/workspace/${slug}/update`,

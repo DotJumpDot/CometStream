@@ -94,6 +94,12 @@ markdown.renderer.rules.code_inline = (tokens, idx) => {
       }).value;
     } catch {}
   }
+  // A chip that is nothing but a file path opens the file reader when
+  // clicked; it keeps its chip styling and gains the ref behavior.
+  if (isFilePathRef(content)) {
+    const attr = body.replace(/"/g, "&quot;");
+    return `<button type="button" class="inline-code cs-file-ref hljs ${activeCodeTheme()}" data-file-ref="${attr}">${body}</button>`;
+  }
   return `<code class="inline-code hljs ${activeCodeTheme()}">${body}</code>`;
 };
 markdown.renderer.rules.link_open = (tokens, idx) => {
@@ -109,6 +115,135 @@ markdown.renderer.rules.link_open = (tokens, idx) => {
 markdown.renderer.rules.table_open = () =>
   '<div class="markdown-table-wrapper"><table>';
 markdown.renderer.rules.table_close = () => "</table></div>";
+
+// ---------------------------------------------------------------------------
+// Inline file references
+//
+// File-looking tokens in chat prose ("see hello.html") become clickable
+// chips that open the agent panel's file reader. Detection is deliberately
+// conservative: a known code/file extension is required, so version
+// strings ("v1.2"), domains ("example.com") and prose never match. The
+// boundary lookarounds reject matches inside URLs (the "/" before a path
+// segment) and inside longer words/paths.
+// ---------------------------------------------------------------------------
+
+const FILE_REF_EXTENSIONS = [
+  "html",
+  "htm",
+  "css",
+  "scss",
+  "less",
+  "js",
+  "jsx",
+  "mjs",
+  "cjs",
+  "ts",
+  "tsx",
+  "json",
+  "jsonc",
+  "md",
+  "mdx",
+  "txt",
+  "rtf",
+  "csv",
+  "tsv",
+  "xml",
+  "yaml",
+  "yml",
+  "toml",
+  "ini",
+  "env",
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "ps1",
+  "bat",
+  "cmd",
+  "py",
+  "rb",
+  "php",
+  "java",
+  "kt",
+  "swift",
+  "go",
+  "rs",
+  "c",
+  "h",
+  "cpp",
+  "hpp",
+  "cs",
+  "sql",
+  "graphql",
+  "prisma",
+  "dockerfile",
+  "lock",
+  "log",
+  "pdf",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "svg",
+  "ico",
+  "mp3",
+  "wav",
+  "ogg",
+  "mp4",
+  "webm",
+  "mov",
+  "zip",
+  "tar",
+  "gz",
+  "ttf",
+  "otf",
+  "woff",
+  "woff2",
+  "eot",
+];
+// Longest-first so the alternation cannot stop early on a prefix ("cpp"
+// before "c", "jpeg" before "jpg").
+const EXT_ALTERNATION = [...FILE_REF_EXTENSIONS]
+  .sort((a, b) => b.length - a.length)
+  .join("|");
+const FILE_REF_REGEX = new RegExp(
+  `(?<![\\w@.\\-/])(?:[\\w@.\\-]+\\/)*[\\w@.\\-]+\\.(?:${EXT_ALTERNATION})(?!\\w)`,
+  "gi"
+);
+// A backticked chip is treated as a path only when it is nothing but one.
+const PURE_PATH_REGEX = new RegExp(
+  `^[\\w@.\\-]+(?:\\/[\\w@.\\-]+)*\\.(?:${EXT_ALTERNATION})$`,
+  "i"
+);
+
+/**
+ * Whether a bare string is a file reference the viewer can open.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isFilePathRef(text) {
+  return PURE_PATH_REGEX.test(text);
+}
+
+/**
+ * Wraps file-path tokens in already-HTML-escaped prose with the clickable
+ * chip markup. The click itself is delegated at the document level by the
+ * agent side panel, so the markup only needs the data attribute.
+ * @param {string} escapedText
+ * @returns {string}
+ */
+function wrapFileRefs(escapedText) {
+  return escapedText.replace(FILE_REF_REGEX, (match) => {
+    const attr = match.replace(/"/g, "&quot;");
+    return `<button type="button" class="cs-file-ref" data-file-ref="${attr}">${match}</button>`;
+  });
+}
+
+// Plain text segments in prose get file-ref chips.
+markdown.renderer.rules.text = (tokens, idx) =>
+  wrapFileRefs(markdown.utils.escapeHtml(tokens[idx].content));
 
 // Custom renderer for responsive images rendered in markdown
 markdown.renderer.rules.image = function (tokens, idx) {

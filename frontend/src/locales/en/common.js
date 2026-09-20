@@ -1619,6 +1619,15 @@ const TRANSLATIONS = {
     status_pending: "Pending",
     changes_total_one: "{{count}} file",
     changes_total_other: "{{count}} files",
+    file_viewer: {
+      back: "Back to panel",
+      not_found: "File not found in the agent workspace.",
+      not_previewable: "Preview is not available for this file type.",
+      too_large: "File is too large to preview.",
+      truncated: "Showing the first part of this file.",
+      lines_capped: "Showing the first {{count}} lines.",
+      open_failed: "Could not open this file.",
+    },
   },
   chat_header: {
     workspace: "Workspace",

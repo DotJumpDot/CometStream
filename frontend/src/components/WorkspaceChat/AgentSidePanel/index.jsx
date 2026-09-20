@@ -33,6 +33,7 @@ import {
 } from "@/components/WorkspaceChat/ChatContainer/ChatHistory/Citation";
 import SourceItem from "@/components/WorkspaceChat/ChatContainer/SourcesSidebar/SourceItem";
 import ChatSidebar from "@/components/WorkspaceChat/ChatContainer/ChatSidebar";
+import FileViewer from "./FileViewer";
 
 /**
  * Right-docked agent side panel (ZCode-style): one merged view of the
@@ -55,6 +56,9 @@ export default function AgentSidePanel() {
   const [open, setOpen] = useState(false);
   const [activity, setActivity] = useState(getAgentActivity);
   const [sources, setSources] = useState(getLatestSources);
+  // Sandbox-relative path being read in the file viewer; null shows the
+  // panel's normal Changes/Plan/Sources sections.
+  const [viewerPath, setViewerPath] = useState(null);
 
   // Layout effect on purpose: the sources store is populated by the new
   // chat's message actions in passive effects, which run after layout
@@ -63,10 +67,29 @@ export default function AgentSidePanel() {
     resetAgentActivity();
     resetLatestSources();
     setOpen(false);
+    setViewerPath(null);
   }, [chatKey]);
 
   useEffect(() => subscribeAgentActivity(setActivity), []);
   useEffect(() => subscribeLatestSources(setSources), []);
+
+  // File references render inside markdown HTML (dangerouslySetInnerHTML),
+  // so clicks are delegated at the document level: any [data-file-ref]
+  // element - in any message, thought, or card - opens the file reader.
+  useEffect(() => {
+    const onClick = (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const ref = target?.closest("[data-file-ref]");
+      if (!ref) return;
+      const filePath = ref.getAttribute("data-file-ref");
+      if (!filePath) return;
+      event.preventDefault();
+      setViewerPath(filePath);
+      setOpen(true);
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, []);
 
   // Auto-open once per chat when the agent produces panel content.
   useEffect(() => {
@@ -111,72 +134,83 @@ export default function AgentSidePanel() {
           className="mt-4 mx-4 w-[350px] rounded-[16px] bg-zinc-900 light:bg-white light:border-2 light:border-slate-300 flex flex-col overflow-hidden"
           style={{ height: "calc(100% - 32px)" }}
         >
-          <div className="flex items-start justify-between px-4 pt-4 pb-3 border-b border-white/10 light:border-black/10">
-            <p className="font-medium text-base leading-6 text-white light:text-slate-900">
-              {t("agent_panel.title")}
-            </p>
-            <button
-              onClick={() => setOpen(false)}
-              type="button"
-              aria-label={t("agent_panel.close")}
-              title={t("agent_panel.close")}
-              className="text-white/60 light:text-slate-400 hover:text-white light:hover:text-slate-900 transition-colors border-none bg-transparent cursor-pointer"
-            >
-              <X size={16} weight="bold" />
-            </button>
-          </div>
+          {viewerPath ? (
+            <FileViewer
+              workspaceSlug={slug}
+              filePath={viewerPath}
+              onBack={() => setViewerPath(null)}
+              onClose={() => setOpen(false)}
+            />
+          ) : (
+            <>
+              <div className="flex items-start justify-between px-4 pt-4 pb-3 border-b border-white/10 light:border-black/10">
+                <p className="font-medium text-base leading-6 text-white light:text-slate-900">
+                  {t("agent_panel.title")}
+                </p>
+                <button
+                  onClick={() => setOpen(false)}
+                  type="button"
+                  aria-label={t("agent_panel.close")}
+                  title={t("agent_panel.close")}
+                  className="text-white/60 light:text-slate-400 hover:text-white light:hover:text-slate-900 transition-colors border-none bg-transparent cursor-pointer"
+                >
+                  <X size={16} weight="bold" />
+                </button>
+              </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
-            <section>
-              <SectionHeader
-                icon={<GitDiff className="w-3.5 h-3.5" />}
-                label={t("agent_panel.tab_changes")}
-                count={activity.fileChanges.length}
-                right={
-                  activity.fileChanges.length > 0 && (
-                    <span className="flex items-center gap-x-1.5 font-mono text-xs">
-                      {totals.added > 0 && (
-                        <span className="text-emerald-500 light:text-emerald-600">
-                          +{totals.added}
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
+                <section>
+                  <SectionHeader
+                    icon={<GitDiff className="w-3.5 h-3.5" />}
+                    label={t("agent_panel.tab_changes")}
+                    count={activity.fileChanges.length}
+                    right={
+                      activity.fileChanges.length > 0 && (
+                        <span className="flex items-center gap-x-1.5 font-mono text-xs">
+                          {totals.added > 0 && (
+                            <span className="text-emerald-500 light:text-emerald-600">
+                              +{totals.added}
+                            </span>
+                          )}
+                          {totals.removed > 0 && (
+                            <span className="text-red-400 light:text-red-500">
+                              &minus;{totals.removed}
+                            </span>
+                          )}
                         </span>
-                      )}
-                      {totals.removed > 0 && (
-                        <span className="text-red-400 light:text-red-500">
-                          &minus;{totals.removed}
+                      )
+                    }
+                  />
+                  <ChangesTab changes={activity.fileChanges} />
+                </section>
+                <section>
+                  <SectionHeader
+                    icon={<ListChecks className="w-3.5 h-3.5" />}
+                    label={t("agent_panel.tab_plan")}
+                    count={activity.todo.length}
+                    right={
+                      activity.todo.length > 0 && (
+                        <span className="text-xs text-zinc-500 light:text-zinc-400 tabular-nums">
+                          {todoDone}/{activity.todo.length}
                         </span>
-                      )}
-                    </span>
-                  )
-                }
-              />
-              <ChangesTab changes={activity.fileChanges} />
-            </section>
-            <section>
-              <SectionHeader
-                icon={<ListChecks className="w-3.5 h-3.5" />}
-                label={t("agent_panel.tab_plan")}
-                count={activity.todo.length}
-                right={
-                  activity.todo.length > 0 && (
-                    <span className="text-xs text-zinc-500 light:text-zinc-400 tabular-nums">
-                      {todoDone}/{activity.todo.length}
-                    </span>
-                  )
-                }
-              />
-              <PlanTab items={activity.todo} done={todoDone} />
-            </section>
-            {combinedSources.length > 0 && (
-              <section>
-                <SectionHeader
-                  icon={<Stack className="w-3.5 h-3.5" />}
-                  label={t("agent_panel.tab_sources")}
-                  count={combinedSources.length}
-                />
-                <SourcesTab sources={combinedSources} />
-              </section>
-            )}
-          </div>
+                      )
+                    }
+                  />
+                  <PlanTab items={activity.todo} done={todoDone} />
+                </section>
+                {combinedSources.length > 0 && (
+                  <section>
+                    <SectionHeader
+                      icon={<Stack className="w-3.5 h-3.5" />}
+                      label={t("agent_panel.tab_sources")}
+                      count={combinedSources.length}
+                    />
+                    <SourcesTab sources={combinedSources} />
+                  </section>
+                )}
+              </div>
+            </>
+          )}
         </aside>
       </ChatSidebar>
     </div>

@@ -23,6 +23,7 @@ const {
 } = require("../models/workspacesSuggestedMessages");
 const { validWorkspaceSlug } = require("../utils/middleware/validWorkspace");
 const { convertToChatHistory } = require("../utils/helpers/chat/responses");
+const { readFileForViewer } = require("../utils/files/fileViewer");
 const { CollectorApi } = require("../utils/collectorApi");
 const { getTTSProvider } = require("../utils/TextToSpeech");
 const { getAudioFileInfo } = require("../utils/TextToSpeech/audioFormat");
@@ -403,6 +404,30 @@ function workspaceEndpoints(app) {
           : await Workspace.get({ slug });
 
         response.status(200).json({ workspace });
+      } catch (e) {
+        console.error(e.message, e);
+        response.sendStatus(500).end();
+      }
+    }
+  );
+
+  // File reader for the chat's inline file references: the viewer panel
+  // fetches a file by sandbox-relative path. All path validation is done by
+  // readFileForViewer via the filesystem manager (traversal + symlink
+  // guards, sandbox root only), so the slug is only used for auth scoping.
+  app.get(
+    "/workspace/:slug/file-content",
+    [validatedRequest, flexUserRoleValid([ROLES.all]), validWorkspaceSlug],
+    async (request, response) => {
+      try {
+        const result = await readFileForViewer(
+          String(request.query.path || "")
+        );
+        if (!result.ok) {
+          response.status(400).json({ error: result.reason });
+          return;
+        }
+        response.status(200).json(result);
       } catch (e) {
         console.error(e.message, e);
         response.sendStatus(500).end();

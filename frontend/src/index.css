@@ -1217,6 +1217,30 @@ dialog::backdrop {
   border-bottom-color: rgba(0, 0, 0, 0.08);
 }
 
+/* Inline file references in chat markdown: mono chips that open the agent
+   panel's file reader on click (delegated at the document level). */
+button.cs-file-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  margin: 0;
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  transition: background-color 150ms ease;
+  white-space: nowrap;
+}
+button.cs-file-ref:hover {
+  background: rgba(255, 255, 255, 0.15);
+  text-decoration: underline;
+}
+[data-theme="light"] button.cs-file-ref {
+  background: rgba(0, 0, 0, 0.06);
+}
+[data-theme="light"] button.cs-file-ref:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
 /* List Styles */
 .markdown ol {
   list-style: decimal-leading-zero;
