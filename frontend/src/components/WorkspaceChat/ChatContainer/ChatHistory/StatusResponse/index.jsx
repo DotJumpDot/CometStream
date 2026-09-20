@@ -21,6 +21,39 @@ import {
 } from "../ChainOfThought";
 
 /**
+ * Collapses raw agent status broadcasts into one readable line each.
+ * The server emits several verbose forms per tool call (assembly dumps,
+ * execution echoes with the full JSON payload) - the expanded chain should
+ * read like a short log, not a protocol trace.
+ * @param {string} raw - statusResponse content
+ * @returns {string|null} display label, or null to drop the line entirely
+ */
+function humanizeAgentStatus(raw = "") {
+  const s = raw.trim();
+  if (!s) return null;
+  // Pre-execution assembly dumps duplicate the execution echo that follows.
+  if (/^Assembling Tool Call:/i.test(s)) return null;
+  if (s.startsWith("@agent is executing")) {
+    const match = s.match(/`([^`]+)`/);
+    return match ? `Called ${cleanToolName(match[1])}` : null;
+  }
+  let out = s.replace(/^@agent:\s*/i, "");
+  // Trailing JSON argument payloads are unreadable noise in a step list.
+  out = out.replace(/\s*\{[\s\S]*\}\s*$/, "").trim();
+  return out || null;
+}
+
+/**
+ * Shortens a tool name for display: drops any parent# namespace and the
+ * long filesystem- prefix so `filesystem-agent#filesystem-write-text-file`
+ * reads as `write-text-file`.
+ * @param {string} name
+ */
+function cleanToolName(name = "") {
+  return name.replace(/^.*#/, "").replace(/^filesystem-/, "");
+}
+
+/**
  * One rolled-up activity chain. Every agent status update and model thought
  * that happens between visible chat messages collapses into a single
  * expandable block instead of stacking one bubble per activity. Nodes are
@@ -73,11 +106,25 @@ export default function StatusResponse({
   const headerLabel = thinkingActive
     ? t("chat_window.thought_in_progress")
     : workingActive
-      ? (lastStatusNode?.content ?? t("chat_window.thought_in_progress"))
+      ? (humanizeAgentStatus(lastStatusNode?.content ?? "") ??
+        t("chat_window.thought_in_progress"))
       : totalDuration
         ? thoughtLabel(false, totalDuration)
         : t("chat_window.thoughts");
   const hasStatusNodes = messages.some((m) => m.type !== "thoughtChain");
+
+  // Pre-compute rendered steps: status lines are humanized and noise lines
+  // (assembly dumps, JSON echoes) drop out entirely. Durations then span to
+  // the next rendered step, absorbing the dropped lines' time.
+  const stepNodes = [];
+  for (const node of messages) {
+    if (node.type === "thoughtChain") {
+      stepNodes.push({ node, label: null });
+      continue;
+    }
+    const label = humanizeAgentStatus(node.content);
+    if (label) stepNodes.push({ node, label });
+  }
 
   return (
     <ChainOfThought open={isExpanded} onOpenChange={setIsExpanded}>
@@ -94,9 +141,9 @@ export default function StatusResponse({
         {headerLabel}
       </ChainOfThoughtHeader>
       <ChainOfThoughtContent>
-        {messages.map((node, index) => {
+        {stepNodes.map(({ node, label }, index) => {
           const start = node.uuid ? arrivals[node.uuid] : null;
-          const end = arrivals[messages[index + 1]?.uuid] ?? finalizedAt;
+          const end = arrivals[stepNodes[index + 1]?.node.uuid] ?? finalizedAt;
           const seconds =
             start && end && end > start ? (end - start) / 1000 : null;
           return (
@@ -104,13 +151,13 @@ export default function StatusResponse({
               key={node.uuid || `activity-${index}`}
               icon={node.type === "thoughtChain" ? Brain : undefined}
               status={
-                active && index === messages.length - 1 ? "active" : "complete"
+                active && index === stepNodes.length - 1 ? "active" : "complete"
               }
               label={
                 node.type === "thoughtChain" ? (
                   <ThoughtNode content={node.content} />
                 ) : (
-                  node.content
+                  label
                 )
               }
               description={seconds ? formatDuration(seconds) : undefined}

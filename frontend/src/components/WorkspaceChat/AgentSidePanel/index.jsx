@@ -22,13 +22,12 @@ import {
   UnifiedDiffView,
 } from "@/components/WorkspaceChat/ChatContainer/ChatHistory/FileChangeCard/shared.jsx";
 
-const TABS = ["plan", "changes"];
-
 /**
- * Right-docked agent side panel (ZCode-style): the Plan tab mirrors the
- * agent's todo-write list, the Changes tab aggregates the session's file
- * changes with click-to-expand diffs. Hidden by default; opens itself the
- * first time an agent event lands, and can be toggled with the edge button.
+ * Right-docked agent side panel (ZCode-style): one merged view of the
+ * session's work - Changes on top (aggregated file changes with
+ * click-to-expand diffs), Plan below (the todo-write stepper). Hidden by
+ * default; opens itself the first time an agent event lands, and can be
+ * toggled with the edge button.
  *
  * Session-scoped like the chat activity chain: state resets when the active
  * chat changes and nothing is persisted.
@@ -40,7 +39,6 @@ export default function AgentSidePanel() {
   const chatKey = `${slug}/${threadSlug}`;
 
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState("plan");
   const [activity, setActivity] = useState(getAgentActivity);
 
   useEffect(() => {
@@ -84,7 +82,7 @@ export default function AgentSidePanel() {
       )}
       {open && (
         <aside className="hidden md:flex w-[340px] xl:w-[380px] shrink-0 flex-col border-l border-white/10 light:border-black/10 bg-zinc-900/70 light:bg-white/70 backdrop-blur-sm h-full">
-          <div className="flex items-center justify-between px-4 pt-4 pb-2">
+          <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-white/10 light:border-black/10">
             <h2 className="text-sm font-medium text-white light:text-zinc-900">
               {t("agent_panel.title")}
             </h2>
@@ -99,52 +97,71 @@ export default function AgentSidePanel() {
             </button>
           </div>
 
-          <div className="flex gap-x-1 px-3 pt-3 pb-2 border-b border-white/10 light:border-black/10">
-            {TABS.map((key) => {
-              const active = tab === key;
-              const count =
-                key === "plan"
-                  ? activity.todo.length
-                  : activity.fileChanges.length;
-              const Icon = key === "plan" ? ListChecks : GitDiff;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setTab(key)}
-                  aria-selected={active}
-                  role="tab"
-                  className={`flex items-center gap-x-1.5 px-2.5 py-1.5 rounded-lg text-[13px] transition-colors ${
-                    active
-                      ? "bg-white/10 light:bg-black/10 text-white light:text-zinc-900"
-                      : "text-zinc-500 light:text-zinc-400 hover:text-zinc-300 light:hover:text-zinc-600"
-                  }`}
-                >
-                  <Icon
-                    className="w-4 h-4"
-                    weight={active ? "fill" : "regular"}
-                  />
-                  {t(`agent_panel.tab_${key}`)}
-                  {count > 0 && (
-                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-white/10 light:bg-black/10 text-[10px] leading-[18px] text-center text-zinc-300 light:text-zinc-500 tabular-nums">
-                      {count}
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
+            <section>
+              <SectionHeader
+                icon={<GitDiff className="w-3.5 h-3.5" />}
+                label={t("agent_panel.tab_changes")}
+                count={activity.fileChanges.length}
+                right={
+                  activity.fileChanges.length > 0 && (
+                    <span className="flex items-center gap-x-1.5 font-mono text-xs">
+                      {totals.added > 0 && (
+                        <span className="text-emerald-500 light:text-emerald-600">
+                          +{totals.added}
+                        </span>
+                      )}
+                      {totals.removed > 0 && (
+                        <span className="text-red-400 light:text-red-500">
+                          &minus;{totals.removed}
+                        </span>
+                      )}
                     </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-4 py-3">
-            {tab === "plan" ? (
+                  )
+                }
+              />
+              <ChangesTab changes={activity.fileChanges} />
+            </section>
+            <section>
+              <SectionHeader
+                icon={<ListChecks className="w-3.5 h-3.5" />}
+                label={t("agent_panel.tab_plan")}
+                count={activity.todo.length}
+                right={
+                  activity.todo.length > 0 && (
+                    <span className="text-xs text-zinc-500 light:text-zinc-400 tabular-nums">
+                      {todoDone}/{activity.todo.length}
+                    </span>
+                  )
+                }
+              />
               <PlanTab items={activity.todo} done={todoDone} />
-            ) : (
-              <ChangesTab changes={activity.fileChanges} totals={totals} />
-            )}
+            </section>
           </div>
         </aside>
       )}
     </>
+  );
+}
+
+/**
+ * Small uppercase section label with an icon, optional count chip, and an
+ * optional right-aligned detail.
+ */
+function SectionHeader({ icon, label, count = 0, right = null }) {
+  return (
+    <div className="flex items-center gap-x-2 mb-2">
+      <span className="flex items-center gap-x-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-500 light:text-zinc-400">
+        {icon}
+        {label}
+      </span>
+      {count > 0 && (
+        <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-white/10 light:bg-black/10 text-[10px] leading-[18px] text-center text-zinc-300 light:text-zinc-500 tabular-nums">
+          {count}
+        </span>
+      )}
+      {right && <span className="ml-auto flex items-center">{right}</span>}
+    </div>
   );
 }
 
@@ -171,7 +188,6 @@ function PlanTab({ items, done }) {
   return (
     <div className="mt-1">
       <div className="flex items-center justify-between text-xs text-zinc-400 light:text-zinc-500 mb-2">
-        <span>{t("agent_panel.progress", { done, total: items.length })}</span>
         <span className="tabular-nums">{percent}%</span>
       </div>
       <div className="h-1.5 rounded-full bg-white/10 light:bg-black/10 overflow-hidden">
@@ -245,9 +261,8 @@ function PlanTab({ items, done }) {
 /**
  * @param {Object} props
  * @param {Array<{path: string, action: string, added: number, removed: number, diff: string, diffTruncated: boolean}>} props.changes
- * @param {{added: number, removed: number}} props.totals
  */
-function ChangesTab({ changes, totals }) {
+function ChangesTab({ changes }) {
   const { t } = useTranslation();
   const [expandedPath, setExpandedPath] = useState(null);
 
@@ -259,18 +274,7 @@ function ChangesTab({ changes, totals }) {
     );
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-x-3 text-xs font-mono">
-        <span className="text-emerald-500 light:text-emerald-600">
-          +{totals.added}
-        </span>
-        <span className="text-red-400 light:text-red-500">
-          &minus;{totals.removed}
-        </span>
-        <span className="text-zinc-500 light:text-zinc-400">
-          {t("agent_panel.changes_total", { count: changes.length })}
-        </span>
-      </div>
+    <div>
       {changes.map((change) => {
         const { basename, dirname } = splitPath(change.path);
         const expanded = expandedPath === change.path;
@@ -285,24 +289,24 @@ function ChangesTab({ changes, totals }) {
               type="button"
               onClick={() => setExpandedPath(expanded ? null : change.path)}
               title={change.path}
-              className="flex items-center gap-x-2.5 w-full rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors"
+              className="flex items-center gap-x-2.5 w-full rounded-lg px-2 py-1 text-left hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors"
             >
               <span
-                className={`flex h-7 w-7 items-center justify-center rounded-lg shrink-0 ${badge}`}
+                className={`flex h-6 w-6 items-center justify-center rounded-md shrink-0 ${badge}`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-3.5 h-3.5" />
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-mono text-[12px] text-zinc-100 light:text-zinc-900 truncate">
+              <span className="min-w-0 flex-1 flex items-baseline gap-x-1.5">
+                <span className="font-mono text-[12px] text-zinc-100 light:text-zinc-900 shrink-0">
                   {basename}
                 </span>
                 {dirname && (
-                  <span className="block font-mono text-[10px] text-zinc-500 light:text-zinc-400 truncate">
+                  <span className="font-mono text-[10px] text-zinc-500 light:text-zinc-400 truncate">
                     {dirname}
                   </span>
                 )}
               </span>
-              <span className="flex flex-col items-end flex-shrink-0 font-mono text-[11px] leading-4">
+              <span className="flex items-center gap-x-1.5 flex-shrink-0 font-mono text-[11px]">
                 {change.added > 0 && (
                   <span className="text-emerald-500 light:text-emerald-600">
                     +{change.added}

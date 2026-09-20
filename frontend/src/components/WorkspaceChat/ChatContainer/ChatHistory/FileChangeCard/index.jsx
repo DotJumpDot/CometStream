@@ -66,7 +66,7 @@ function FileChangeCard({
       : t("chat_window.file_change.edited_file", { path });
 
   return (
-    <div className="not-prose w-full">
+    <div className="not-prose w-full mt-1">
       <button
         type="button"
         onClick={() => hasDiff && setExpanded((v) => !v)}
@@ -74,29 +74,25 @@ function FileChangeCard({
         aria-label={ariaLabel}
         title={path}
         disabled={!hasDiff}
-        className={`flex items-center gap-x-3 w-full max-w-[640px] rounded-lg px-2 py-1.5 text-left text-sm transition-colors duration-150 ${
+        className={`flex items-center gap-x-2.5 w-full max-w-[640px] rounded-lg px-2 py-1 text-left text-sm transition-colors duration-150 ${
           hasDiff
             ? "cursor-pointer hover:bg-white/[0.05] light:hover:bg-black/[0.05]"
             : "cursor-default"
         }`}
       >
         <span
-          className={`flex h-7 w-7 items-center justify-center rounded-lg shrink-0 ${
+          className={`flex h-6 w-6 items-center justify-center rounded-md shrink-0 ${
             ACTION_BADGES[action] ?? "bg-white/5 text-zinc-400"
           }`}
         >
-          <Icon className="w-4 h-4" />
+          <Icon className="w-3.5 h-3.5" />
         </span>
-        <span className="min-w-0 flex-1 flex flex-col">
-          <span className="flex items-baseline gap-x-1.5 min-w-0">
-            <span className="text-[12px] text-zinc-400 light:text-zinc-500 shrink-0">
-              {t(
-                ACTION_VERB_KEYS[action] ?? "chat_window.file_change.verb_edit"
-              )}
-            </span>
-            <span className="font-mono text-[13px] text-zinc-100 light:text-zinc-900 truncate">
-              {segments.basename}
-            </span>
+        <span className="min-w-0 flex-1 flex items-baseline gap-x-1.5">
+          <span className="text-[12px] text-zinc-400 light:text-zinc-500 shrink-0">
+            {t(ACTION_VERB_KEYS[action] ?? "chat_window.file_change.verb_edit")}
+          </span>
+          <span className="font-mono text-[13px] text-zinc-100 light:text-zinc-900 shrink-0">
+            {segments.basename}
           </span>
           {segments.dirname && (
             <span className="font-mono text-[11px] text-zinc-500 light:text-zinc-400 truncate">
