@@ -102,6 +102,14 @@ markdown.renderer.rules.link_open = (tokens, idx) => {
   return `<a href="${HTMLEncode(href[1])}" target="_blank" rel="noopener noreferrer">`;
 };
 
+// Wrap tables in a scrollable card container: the wrapper (styled by
+// .markdown-table-wrapper in index.css) owns the border, radius and
+// background, and lets wide tables scroll horizontally instead of
+// stretching the chat column or getting clipped.
+markdown.renderer.rules.table_open = () =>
+  '<div class="markdown-table-wrapper"><table>';
+markdown.renderer.rules.table_close = () => "</table></div>";
+
 // Custom renderer for responsive images rendered in markdown
 markdown.renderer.rules.image = function (tokens, idx) {
   const token = tokens[idx];

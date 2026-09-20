@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require("uuid");
 const moment = require("moment");
 const { isAbortError } = require("../abortSignals");
+const { safeJsonParse } = require("../../http");
 
 /**
  * Extract reasoning content from a message or delta, checking all known field names.
@@ -202,7 +203,9 @@ function convertToChatHistory(history = []) {
   const compactRows = [];
   for (const record of history) {
     const { prompt, response, createdAt, feedbackScore = null, id } = record;
-    const data = JSON.parse(response);
+    // A corrupt/unparseable response row must not 500 the whole thread
+    // history - skip it like the other bad-record cases below.
+    const data = safeJsonParse(response, null);
 
     // In the event that a bad response was stored - we should skip its entire record
     // because it was likely an error and cannot be used in chats and will fail to render on UI.
@@ -211,7 +214,7 @@ function convertToChatHistory(history = []) {
         `[convertToChatHistory] ChatHistory #${record.id} prompt property is not a string - skipping record.`
       );
       continue;
-    } else if (typeof data.text !== "string") {
+    } else if (typeof data?.text !== "string") {
       console.log(
         `[convertToChatHistory] ChatHistory #${record.id} response.text property is not a string - skipping record.`
       );
