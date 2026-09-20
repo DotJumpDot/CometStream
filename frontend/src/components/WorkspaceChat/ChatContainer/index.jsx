@@ -21,6 +21,7 @@ import handleSocketResponse, {
   setAgentSessionSocket,
 } from "@/utils/chat/agent";
 import DnDFileUploaderWrapper from "./DnDWrapper";
+import { getAgentActivity } from "@/utils/agentActivity";
 import SpeechRecognition, {
   useSpeechRecognition,
 } from "react-speech-recognition";
@@ -55,10 +56,49 @@ export default function ChatContainer({
   const { chatHistoryRef } = useChatContainerQuickScroll();
   const pendingMessageChecked = useRef(false);
   const pendingResetRef = useRef(false);
+  // Wall-clock start of the current agent turn (socket open or follow-up
+  // message) and a once-per-turn guard for the run-summary card. The summary
+  // fires on WAITING_ON_INPUT (agent finished its work, session stays open
+  // awaiting feedback) or on socket close - whichever comes first.
+  const runStartRef = useRef(null);
+  const summaryEmittedRef = useRef(false);
   const activeThreadSlug = threadSlug;
 
   const isEmpty =
     chatHistory.length === 0 && !sessionStorage.getItem(PENDING_HOME_MESSAGE);
+
+  /**
+   * Appends the Trae-style run-summary card once per agent turn, snapshotting
+   * the session activity so the summary stays stable after the live panel
+   * state moves on. Guarded by summaryEmittedRef - WAITING_ON_INPUT and the
+   * socket close can both arrive for the same finished turn.
+   */
+  const emitRunSummary = useCallback(() => {
+    if (summaryEmittedRef.current) return;
+    summaryEmittedRef.current = true;
+    const activity = getAgentActivity();
+    setChatHistory((prev) => [
+      ...prev.filter((msg) => !!msg.content),
+      {
+        uuid: v4(),
+        type: "agentRunSummary",
+        // Truthy content keeps the pending-message sweep from dropping the
+        // card on the next history update.
+        content: "agent-run-summary",
+        role: "assistant",
+        sources: [],
+        closed: true,
+        error: null,
+        animate: false,
+        pending: false,
+        durationMs: runStartRef.current
+          ? Date.now() - runStartRef.current
+          : null,
+        todo: activity.todo,
+        fileChanges: activity.fileChanges,
+      },
+    ]);
+  }, []);
 
   /**
    * Keep chat history bottom-padding in sync with the prompt input's
@@ -314,6 +354,10 @@ export default function ChatContainer({
 
         const attachments = promptMessage?.attachments ?? parseAttachments();
         window.dispatchEvent(new CustomEvent(CLEAR_ATTACHMENTS_EVENT));
+        // A follow-up message starts a new agent turn: reset the run clock
+        // and re-arm the summary card for that turn's end.
+        runStartRef.current = Date.now();
+        summaryEmittedRef.current = false;
         websocket.send(
           JSON.stringify({
             type: "awaitingFeedback",
@@ -393,6 +437,9 @@ export default function ChatContainer({
             const data = safeJsonParse(event.data, null);
             const loadingState = agentEventLoadingState(data);
             if (loadingState !== null) setLoadingResponse(loadingState);
+            // The agent finished its turn and pauses for the user - the run
+            // summary fires here; the socket itself stays open for follow-ups.
+            if (data?.type === "WAITING_ON_INPUT") emitRunSummary();
             handleSocketResponse(socket, event, setChatHistory);
           } catch {
             console.error("Failed to parse data");
@@ -408,26 +455,11 @@ export default function ChatContainer({
           setAgentSessionActive(false);
           setAgentSessionSocket(null);
           window.dispatchEvent(new CustomEvent(AGENT_SESSION_END));
-          // When the close was triggered by /reset, skip the "Agent session
-          // complete." status - the pending /reset flow will clear history.
-          if (pendingResetRef.current) {
-            pendingResetRef.current = false;
-          } else {
-            setChatHistory((prev) => [
-              ...prev.filter((msg) => !!msg.content),
-              {
-                uuid: v4(),
-                type: "statusResponse",
-                content: "Agent session complete.",
-                role: "assistant",
-                sources: [],
-                closed: true,
-                error: null,
-                animate: false,
-                pending: false,
-              },
-            ]);
-          }
+          // When the close was triggered by /reset, skip the run summary -
+          // the pending /reset flow will clear history. A summary already
+          // emitted by WAITING_ON_INPUT is not duplicated.
+          if (!pendingResetRef.current) emitRunSummary();
+          pendingResetRef.current = false;
           setLoadingResponse(false);
           setWebsocket(null);
           setSocketId(null);
@@ -435,6 +467,8 @@ export default function ChatContainer({
         setWebsocket(socket);
         setAgentSessionActive(true);
         setAgentSessionSocket(socket);
+        runStartRef.current = Date.now();
+        summaryEmittedRef.current = false;
         // The agent immediately begins working on the prompt that opened
         // this session, so restore the loading state that the closing
         // "Swapping over to agent chat" statusResponse cleared.
@@ -471,7 +505,7 @@ export default function ChatContainer({
         socket.close();
       }
     };
-  }, [socketId]);
+  }, [socketId, emitRunSummary]);
 
   if (isEmpty) {
     return (

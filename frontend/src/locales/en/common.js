@@ -1604,6 +1604,12 @@ const TRANSLATIONS = {
     workspace: "Workspace",
     thread: "Thread",
   },
+  agent_summary: {
+    title: "Agent finished work",
+    worked_for: "Worked for {{duration}}",
+    files_changed_one: "{{count}} file changed",
+    files_changed_other: "{{count}} files changed",
+  },
   chat_window: {
     attachments_processing: "Attachments are processing. Please wait...",
     generating_response: "Generating response",

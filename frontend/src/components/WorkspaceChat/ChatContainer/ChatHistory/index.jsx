@@ -6,6 +6,7 @@ import ToolApprovalRequest from "./ToolApprovalRequest";
 import ClarifyingQuestionCard from "./ClarifyingQuestion";
 import FileDownloadCard from "./FileDownloadCard";
 import FileChangeCard from "./FileChangeCard";
+import AgentRunSummary from "./AgentRunSummary";
 import ImageGenerationPending from "./ImageGenerationPending";
 import ScheduledJobCreatedCard from "./ScheduledJobCreatedCard";
 import { useManageWorkspaceModal } from "../../../Modals/ManageWorkspace";
@@ -249,6 +250,19 @@ function buildMessages({
 
     if (props?.type === "statusResponse" && !!props.content) {
       pushActivity(acc, props, chainRef);
+      return acc;
+    }
+
+    if (props.type === "agentRunSummary") {
+      chainRef.chain = null;
+      acc.push(
+        <AgentRunSummary
+          key={`run-summary-${props.uuid || index}`}
+          durationMs={props.durationMs}
+          todo={props.todo || []}
+          fileChanges={props.fileChanges || []}
+        />
+      );
       return acc;
     }
 
