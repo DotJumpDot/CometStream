@@ -9,6 +9,13 @@ import {
 import Appearance from "@/models/appearance";
 
 /**
+ * Fired by programmatic scrolls that deliberately leave the bottom (the
+ * chat's jump rail) - follow mode must cut or the streaming pin loop snaps
+ * the viewport straight back down on the next animation frame.
+ */
+export const AUTO_SCROLL_DISENGAGE_EVENT = "chat:disengage-autoscroll";
+
+/**
  * Owns all auto-scroll behavior for the chat history container.
  *
  * Follow model: while `followRef` is true the container is pinned to the
@@ -112,6 +119,15 @@ export default function useAutoScroll(history, imperativeRef) {
     // starts inside the zone gets snapped back down (sticky bottom). This
     // also re-engages at the end of any smooth scrollToBottom() animation.
     if (atBottom && scrolledDown) followRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    const disengage = () => {
+      followRef.current = false;
+    };
+    window.addEventListener(AUTO_SCROLL_DISENGAGE_EVENT, disengage);
+    return () =>
+      window.removeEventListener(AUTO_SCROLL_DISENGAGE_EVENT, disengage);
   }, []);
 
   const handleWheel = useCallback((e) => {

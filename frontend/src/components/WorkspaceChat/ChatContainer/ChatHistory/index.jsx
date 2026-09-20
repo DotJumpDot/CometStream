@@ -8,6 +8,7 @@ import FileDownloadCard from "./FileDownloadCard";
 import FileChangeCard from "./FileChangeCard";
 import ContextCompactCard from "./ContextCompactCard";
 import AgentRunSummary from "./AgentRunSummary";
+import JumpRail, { isJumpTurn } from "./JumpRail";
 import ImageGenerationPending from "./ImageGenerationPending";
 import ScheduledJobCreatedCard from "./ScheduledJobCreatedCard";
 import { useManageWorkspaceModal } from "../../../Modals/ManageWorkspace";
@@ -200,6 +201,7 @@ export default forwardRef(function (
             />
           )}
         </div>
+        <JumpRail history={history} />
         {!isAtBottom && (
           <div className="absolute bottom-40 right-10 z-50 cursor-pointer animate-pulse">
             <div className="flex flex-col items-center">
@@ -245,6 +247,9 @@ function buildMessages({
   // activity into a chain-chip-chain sandwich. Any visible message/card ends
   // the chain; chips do not.
   const chainRef = { chain: null };
+  // Counter for user-prompt markers (data-jump-id); the JumpRail maps its
+  // dashes onto these in DOM order.
+  let jumpId = 0;
   return history.reduce((acc, props, index) => {
     const isLastBotReply =
       index === history.length - 1 && props.role === "assistant";
@@ -404,8 +409,8 @@ function buildMessages({
       // prompt) is about to be pushed - the activity chain ends here.
       chainRef.chain = null;
 
-      if (isLastBotReply && props.animate) {
-        acc.push(
+      const message =
+        isLastBotReply && props.animate ? (
           <PromptReply
             key={`prompt-reply-${props.uuid || index}`}
             uuid={props.uuid}
@@ -415,9 +420,7 @@ function buildMessages({
             error={props.error}
             closed={props.closed}
           />
-        );
-      } else {
-        acc.push(
+        ) : (
           <HistoricalMessage
             key={index}
             uuid={props.uuid}
@@ -438,6 +441,17 @@ function buildMessages({
             clarifyingQuestions={props.clarifyingQuestions}
           />
         );
+      // User prompts get a jump marker so the rail can scroll to them; the
+      // marker is only emitted when isJumpTurn would count the item, keeping
+      // rail dashes and DOM markers one-to-one.
+      if (props.role === "user" && isJumpTurn(props)) {
+        acc.push(
+          <div key={`jump-${index}`} data-jump-id={jumpId++}>
+            {message}
+          </div>
+        );
+      } else {
+        acc.push(message);
       }
     }
     return acc;

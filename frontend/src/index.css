@@ -106,6 +106,27 @@
   }
 }
 
+/* Entrance for the left-edge turn jump rail: a quiet slide-in so dashes
+ * appear settled rather than popping in. */
+@keyframes cs-jump-rail-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.cs-jump-rail-in {
+  animation: cs-jump-rail-in 250ms var(--ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-jump-rail-in {
+    animation: none;
+  }
+}
+
 /* Attention pulse for a pending tool-approval card: the run is blocked on
  * an Approve/Reject, so the card must read as "needs you" - not as an idle
  * chat. Amber ring breathing at a calm 2s loop, dropped under reduced

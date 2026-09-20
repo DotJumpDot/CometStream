@@ -1771,8 +1771,11 @@ const TRANSLATIONS = {
       messages_other: "messages",
       tokens_freed: "tokens freed",
       summary_label: "Compacted summary",
-      no_session:
-        "Nothing to compact yet - start an agent conversation first",
+      no_session: "Nothing to compact yet - start an agent conversation first",
+    },
+    jump: {
+      label: "Conversation turns",
+      jump_to_message: "Jump to message",
     },
     memories: {
       title: "Memories",
