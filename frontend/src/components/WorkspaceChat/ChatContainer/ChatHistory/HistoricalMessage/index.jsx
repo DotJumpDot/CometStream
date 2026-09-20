@@ -76,12 +76,12 @@ const HistoricalMessage = ({
     return (
       <div key={uuid} className="flex justify-start w-full">
         <div className="py-4 pl-0 pr-4 flex flex-col md:max-w-[80%]">
-          <div className="p-2 rounded-lg bg-red-50 text-red-500">
+          <div className="p-2 rounded-lg bg-red-500/10 border border-red-400/25 text-red-400 light:bg-red-50 light:border-red-200 light:text-red-600">
             <span className="inline-block">
               <Warning className="h-4 w-4 mb-1 inline-block" /> Could not
               respond to message.
             </span>
-            <p className="text-xs font-mono mt-2 border-l-2 border-red-300 pl-2 bg-red-200 p-2 rounded-sm">
+            <p className="text-xs font-mono mt-2 border-l-2 border-red-400/40 light:border-red-300 pl-2 bg-red-500/10 light:bg-red-200 p-2 rounded-sm">
               {error}
             </p>
           </div>
