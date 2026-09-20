@@ -7,7 +7,6 @@ const { WorkspaceParsedFiles } = require("../../models/workspaceParsedFiles");
 const { User } = require("../../models/user");
 const { Workspace } = require("../../models/workspace");
 const { WorkspaceChats } = require("../../models/workspaceChats");
-const { safeJsonParse } = require("../http");
 const {
   USER_AGENT,
   WORKSPACE_AGENT,
@@ -19,6 +18,10 @@ const { AgentFlows } = require("../agentFlows");
 const MCPCompatibilityLayer = require("../MCP");
 const { getAndClearInvocationAttachments } = require("../chats/agents");
 const { DocumentManager } = require("../DocumentManager");
+const {
+  agentHistoryFromRows,
+  maybeCompactAgentContext,
+} = require("./contextCompaction");
 
 class AgentHandler {
   #invocationUUID;
@@ -95,31 +98,7 @@ class AgentHandler {
           { id: "desc" }
         )
       ).reverse();
-
-      const { generatedImageAttachments } = require("../files");
-      const agentHistory = [];
-      rawHistory.forEach((chatLog) => {
-        const response = safeJsonParse(chatLog.response, {});
-        // Re-read `/img` generated images off disk as attachments so they reach
-        // the agent as vision context, the same way they do in normal chat.
-        const attachments = generatedImageAttachments(response?.outputs);
-        agentHistory.push(
-          {
-            from: USER_AGENT.name,
-            to: WORKSPACE_AGENT.name,
-            content: chatLog.prompt,
-            state: "success",
-            ...(attachments.length > 0 ? { attachments } : {}),
-          },
-          {
-            from: WORKSPACE_AGENT.name,
-            to: USER_AGENT.name,
-            content: response?.text || "",
-            state: "success",
-          }
-        );
-      });
-      return agentHistory;
+      return agentHistoryFromRows(rawHistory);
     } catch (e) {
       this.log("Error loading chat history", e.message);
       return [];
@@ -899,13 +878,24 @@ class AgentHandler {
     this.aibitat = new AIbitat({
       provider: this.provider ?? "openai",
       model: this.model ?? "gpt-4.1-nano",
-      chats: await this.#chatHistory(20),
+      chats: [],
       handlerProps: {
         invocation: this.invocation,
         log: this.log,
         routingMetadata: this.routingMetadata || null,
       },
     });
+
+    // Auto-compact a long thread before its history is loaded so the very
+    // first request of the session already fits the model's context window.
+    // Emits contextCompactStart/End over the socket while the user waits.
+    await maybeCompactAgentContext({
+      aibitat: this.aibitat,
+      socket: args.socket,
+      trigger: "auto",
+    });
+
+    this.aibitat._chats = await this.#chatHistory(20);
 
     // Register callback to fetch fresh parsed file context on each chat turn
     // This injects parsed files into user messages instead of system prompt

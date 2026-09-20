@@ -143,6 +143,11 @@ model workspaces {
   // provider/model-specific level name (e.g. "low" | "medium" | "high").
   // Only applied for models that declare reasoning support (custom providers).
   chatReasoningEffort          String?                        @map("chat_reasoning_effort")
+  // Context compaction: summarize older thread history into a compact summary
+  // row once it nears the model's context window (threshold = percent of the
+  // window to trigger at). Manual /compact ignores the toggle.
+  autoCompact                  Boolean                        @default(true)
+  compactThreshold             Int                            @default(75)
   router_id                    Int? // No relation to prevent whole table migration (SQLite limitation)
   workspace_users              workspace_users[]
   documents                    workspace_documents[]

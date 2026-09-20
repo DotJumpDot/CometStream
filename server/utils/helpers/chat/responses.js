@@ -196,6 +196,10 @@ function handleDefaultStreamResponseV2(response, stream, responseProps) {
 
 function convertToChatHistory(history = []) {
   const formattedHistory = [];
+  // Compact rows summarize everything older than themselves, so they always
+  // lead the visible history - the divider reads as "older messages were
+  // folded into this" above whatever was kept verbatim.
+  const compactRows = [];
   for (const record of history) {
     const { prompt, response, createdAt, feedbackScore = null, id } = record;
     const data = JSON.parse(response);
@@ -211,6 +215,20 @@ function convertToChatHistory(history = []) {
       console.log(
         `[convertToChatHistory] ChatHistory #${record.id} response.text property is not a string - skipping record.`
       );
+      continue;
+    }
+
+    // Compact rows (written by /compact or auto-compaction) render as a single
+    // "context compressed" divider, not a user/assistant message pair.
+    if (data?.type === "compact") {
+      compactRows.push({
+        type: "compact",
+        role: "assistant",
+        content: data.text,
+        chatId: id,
+        sentAt: moment(createdAt).unix(),
+        metrics: data?.metrics || {},
+      });
       continue;
     }
 
@@ -239,7 +257,7 @@ function convertToChatHistory(history = []) {
     ]);
   }
 
-  return formattedHistory.flat();
+  return [...compactRows, ...formattedHistory.flat()];
 }
 
 /**

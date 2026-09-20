@@ -58,6 +58,8 @@ const Workspace = {
     "vectorSearchMode",
     "chatReasoningEffort",
     "router_id",
+    "autoCompact",
+    "compactThreshold",
   ],
 
   validations: {
@@ -145,6 +147,19 @@ const Workspace = {
       const id = Number(value);
       if (isNaN(id)) return null;
       return id;
+    },
+    // Auto context-compaction toggle; manual /compact always works.
+    autoCompact: (value) => {
+      return value === true || value === "true";
+    },
+    // Context-window percent that triggers auto-compaction (30-95).
+    compactThreshold: (value) => {
+      if (value === null || value === undefined) return 75;
+      const pct = parseInt(value);
+      if (isNullOrNaN(pct)) return 75;
+      if (pct < 30) return 30;
+      if (pct > 95) return 95;
+      return pct;
     },
     lastUpdatedAt: (value) => {
       if (value === null || value === undefined) return new Date();

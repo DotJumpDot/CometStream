@@ -61,6 +61,11 @@ export default function SlashCommandsTab({
         description: t("chat_window.preset_reset_description"),
         autoSubmit: true,
       },
+      {
+        command: "/compact",
+        description: t("chat_window.preset_compact_description"),
+        autoSubmit: true,
+      },
       ...(imageGenEnabled
         ? [
             {

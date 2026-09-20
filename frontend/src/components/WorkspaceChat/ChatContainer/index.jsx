@@ -35,6 +35,7 @@ import useChatContainerQuickScroll from "@/hooks/useChatContainerQuickScroll";
 import { PENDING_HOME_MESSAGE } from "@/utils/constants";
 import { clearPromptInputDraft } from "@/hooks/usePromptInputStorage";
 import { safeJsonParse } from "@/utils/request";
+import showToast from "@/utils/toast";
 import { useTranslation } from "react-i18next";
 import paths from "@/utils/paths";
 import QuickActions from "@/components/lib/QuickActions";
@@ -379,6 +380,26 @@ export default function ChatContainer({
       }
 
       if (!promptMessage || !promptMessage?.userMessage) return false;
+
+      // /compact without an open agent session has nothing to compact - the
+      // server only intercepts the command over the session websocket. Sending
+      // it as a normal prompt would just be handed to the model, so revert the
+      // pending pair and hint instead.
+      if (/^\/compact(\s|$)/i.test(String(promptMessage.userMessage).trim())) {
+        const trimmed = [...remHistory];
+        const last = trimmed[trimmed.length - 1];
+        if (
+          last?.role === "user" &&
+          last?.content === promptMessage.userMessage
+        )
+          trimmed.pop();
+        setChatHistory(trimmed);
+        setLoadingResponse(false);
+        showToast(t("chat_window.compact.no_session"), "info", {
+          clear: true,
+        });
+        return;
+      }
 
       // If running and edit or regeneration, this history will already have attachments
       // so no need to parse the current state.

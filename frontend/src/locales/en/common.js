@@ -254,6 +254,16 @@ const TRANSLATIONS = {
         "The number of previous chats that will be included in the response's short-term memory.",
       recommend: "Recommend 20. ",
     },
+    compaction: {
+      title: "Context compaction",
+      description:
+        "Summarize older conversation history into a compact summary once it nears the model's context window, keeping the most recent exchanges in full. Use /compact in chat to compress manually at any time.",
+      auto_on: "Auto",
+      auto_off: "Manual only",
+      threshold_label: "Trigger threshold (% of context window)",
+      threshold_hint:
+        "Auto-compaction runs when the conversation reaches this percentage of the model's context window. 30–95, default 75.",
+    },
     prompt: {
       title: "System Prompt",
       description:
@@ -1683,6 +1693,8 @@ const TRANSLATIONS = {
     see_less: "See Less",
     see_more: "See More",
     preset_reset_description: "Clear your chat history and begin a new chat",
+    preset_compact_description:
+      "Summarize the conversation so far to free up context",
     preset_img_description: "Generate an image from a text prompt",
     add_new_preset: " Add New Preset",
     add_new: "Add new",
@@ -1749,6 +1761,18 @@ const TRANSLATIONS = {
       batch_submit_all: "Submit all",
       batch_next: "Next",
       answer_skipped: "[user skipped]",
+    },
+    compact: {
+      compressing: "Compressing context",
+      compressed: "Context compressed",
+      failed: "Could not compress context",
+      nothing: "Nothing to compact yet - the conversation is still short",
+      messages: "message",
+      messages_other: "messages",
+      tokens_freed: "tokens freed",
+      summary_label: "Compacted summary",
+      no_session:
+        "Nothing to compact yet - start an agent conversation first",
     },
     memories: {
       title: "Memories",

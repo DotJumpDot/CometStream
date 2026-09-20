@@ -21,6 +21,10 @@ const AGENT_AWAITING_USER_EVENTS = [
   // An inline /img command finished while the session was paused awaiting
   // feedback - it stays paused, so the send button must come back.
   "imageGenerationCard",
+  // Compaction finished. The session is paused waiting on the user (manual
+  // /compact never resumes the agent) - even after an auto-compact at session
+  // start the next status event re-flags the run as loading within moments.
+  "contextCompactEnd",
 ];
 
 // Bookkeeping events that never indicate the agent is actively working. Some
@@ -79,6 +83,8 @@ const handledEvents = [
   "rechartVisualize",
   "toolApprovalRequest",
   "clarificationRequest",
+  "contextCompactStart",
+  "contextCompactEnd",
   // Streaming events
   "reportStreamEvent",
 ];
@@ -508,6 +514,60 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
           error: null,
           animate: false,
           pending: true,
+          metrics: {},
+        },
+      ];
+    });
+  }
+
+  if (data.type === "contextCompactStart") {
+    return setChatHistory((prev) => [
+      ...prev.filter((msg) => !!msg.content),
+      {
+        uuid: v4(),
+        type: "contextCompactPending",
+        content: "compressing-context",
+        role: "assistant",
+        sources: [],
+        closed: false,
+        error: null,
+        animate: false,
+        pending: true,
+        metrics: {},
+      },
+    ]);
+  }
+
+  if (data.type === "contextCompactEnd") {
+    const content = data.content || {};
+    return setChatHistory((prev) => {
+      // Swap the pending "Compressing context" card for the finished one.
+      const base = prev.filter(
+        (msg) => msg.type !== "contextCompactPending" && !!msg.content
+      );
+      // A skipped auto-compact (under threshold / disabled) is silent - the
+      // user asked a question and the agent turn simply proceeds.
+      if (content.ok === false && content.trigger === "auto") return base;
+      return [
+        ...base,
+        {
+          uuid: v4(),
+          type: "contextCompact",
+          content: content.summary || "compacted-context",
+          summary: content.summary || "",
+          compactedMessages: content.compactedMessages ?? null,
+          tokensBefore: content.tokensBefore ?? null,
+          tokensAfter: content.tokensAfter ?? null,
+          failure:
+            content.ok === false
+              ? content.reason || content.error || "failed"
+              : null,
+          role: "assistant",
+          sources: [],
+          closed: true,
+          error: null,
+          animate: false,
+          pending: false,
           metrics: {},
         },
       ];

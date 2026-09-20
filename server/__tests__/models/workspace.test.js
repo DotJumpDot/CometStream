@@ -262,6 +262,38 @@ describeValidation("router_id", () => {
   });
 });
 
+describeValidation("autoCompact", () => {
+  it("accepts booleans and boolean strings", () => {
+    expect(Workspace.validations.autoCompact(true)).toBe(true);
+    expect(Workspace.validations.autoCompact("true")).toBe(true);
+  });
+
+  it("treats everything else as disabled", () => {
+    expect(Workspace.validations.autoCompact(false)).toBe(false);
+    expect(Workspace.validations.autoCompact("false")).toBe(false);
+    expect(Workspace.validations.autoCompact(null)).toBe(false);
+    expect(Workspace.validations.autoCompact(undefined)).toBe(false);
+  });
+});
+
+describeValidation("compactThreshold", () => {
+  it("defaults to 75 for null, undefined, or NaN", () => {
+    expect(Workspace.validations.compactThreshold(null)).toBe(75);
+    expect(Workspace.validations.compactThreshold(undefined)).toBe(75);
+    expect(Workspace.validations.compactThreshold("abc")).toBe(75);
+  });
+
+  it("parses integers from strings", () => {
+    expect(Workspace.validations.compactThreshold("42")).toBe(42);
+    expect(Workspace.validations.compactThreshold(60)).toBe(60);
+  });
+
+  it("clamps to the 30-95 range", () => {
+    expect(Workspace.validations.compactThreshold(10)).toBe(30);
+    expect(Workspace.validations.compactThreshold(200)).toBe(95);
+  });
+});
+
 describeValidation("lastUpdatedAt", () => {
   it("passes a valid ISO date string through as a Date", () => {
     const result = Workspace.validations.lastUpdatedAt(

@@ -70,6 +70,16 @@ function isImageCommand(feedback = "") {
 }
 
 /**
+ * Detects the /compact slash command so it is handled inline during an active
+ * agent session instead of being handed to the agent as a normal prompt.
+ * @param {string} feedback
+ * @returns {boolean}
+ */
+function isCompactCommand(feedback = "") {
+  return /^\/compact(\s|$)/i.test(String(feedback).trim());
+}
+
+/**
  * Generates an image for a /img command issued mid agent session and streams the
  * resulting card back over the socket. Reuses the same generator and persistence
  * path as the standalone /img chat command so it renders and reloads identically.
@@ -482,6 +492,20 @@ const websocket = {
             return;
           }
 
+          // Between turns the in-memory buffer (which also holds intermediate
+          // tool-call traffic) grows unbounded - auto-compact it before the
+          // next turn so long sessions never blow the model's context window.
+          if (!aibitat._aborted) {
+            const {
+              maybeCompactAgentContext,
+            } = require("../../../agents/contextCompaction");
+            await maybeCompactAgentContext({
+              aibitat,
+              socket,
+              trigger: "auto",
+            });
+          }
+
           await aibitat.continue(feedback, attachments);
         });
 
@@ -531,6 +555,22 @@ const websocket = {
                     message: data.feedback,
                   });
                   pendingImageAttachments.push(...attachments);
+                  return;
+                }
+
+                // /compact summarizes the conversation so far into a compact
+                // summary row and rebuilds the session buffer - the agent
+                // session stays paused and awaiting the next message.
+                if (isCompactCommand(data.feedback)) {
+                  armTimeout();
+                  const {
+                    maybeCompactAgentContext,
+                  } = require("../../../agents/contextCompaction");
+                  await maybeCompactAgentContext({
+                    aibitat,
+                    socket,
+                    trigger: "manual",
+                  });
                   return;
                 }
 

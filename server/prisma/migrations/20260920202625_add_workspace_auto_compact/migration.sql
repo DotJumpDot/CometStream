@@ -1,0 +1,2 @@
+ALTER TABLE "workspaces" ADD COLUMN "autoCompact" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "workspaces" ADD COLUMN "compactThreshold" INTEGER NOT NULL DEFAULT 75;

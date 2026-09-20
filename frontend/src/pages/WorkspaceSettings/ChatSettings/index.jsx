@@ -7,6 +7,7 @@ import ChatHistorySettings from "./ChatHistorySettings";
 import ChatPromptSettings from "./ChatPromptSettings";
 import ChatTemperatureSettings from "./ChatTemperatureSettings";
 import ChatModeSelection from "./ChatModeSelection";
+import ContextCompactionSettings from "./ContextCompactionSettings";
 import WorkspaceLLMSelection from "./WorkspaceLLMSelection";
 import ChatQueryRefusalResponse from "./ChatQueryRefusalResponse";
 import CTAButton from "@/components/lib/CTAButton";
@@ -72,6 +73,10 @@ export default function ChatSettings({ workspace }) {
           setHasChanges={setHasChanges}
         />
         <ChatHistorySettings
+          workspace={workspace}
+          setHasChanges={setHasChanges}
+        />
+        <ContextCompactionSettings
           workspace={workspace}
           setHasChanges={setHasChanges}
         />

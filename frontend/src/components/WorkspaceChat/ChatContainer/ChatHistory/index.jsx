@@ -6,6 +6,7 @@ import ToolApprovalRequest from "./ToolApprovalRequest";
 import ClarifyingQuestionCard from "./ClarifyingQuestion";
 import FileDownloadCard from "./FileDownloadCard";
 import FileChangeCard from "./FileChangeCard";
+import ContextCompactCard from "./ContextCompactCard";
 import AgentRunSummary from "./AgentRunSummary";
 import ImageGenerationPending from "./ImageGenerationPending";
 import ScheduledJobCreatedCard from "./ScheduledJobCreatedCard";
@@ -277,6 +278,34 @@ function buildMessages({
           diff={props.diff}
           diffTruncated={props.diffTruncated}
           readLines={props.readLines}
+        />
+      );
+      return acc;
+    }
+
+    if (props.type === "contextCompactPending") {
+      chainRef.chain = null;
+      acc.push(
+        <ContextCompactCard key={`compact-${props.uuid || index}`} pending />
+      );
+      return acc;
+    }
+
+    // Live compaction card (socket events) and the persisted divider row
+    // reloaded from history (type "compact") render as the same card.
+    if (props.type === "contextCompact" || props.type === "compact") {
+      const metrics = props.metrics || {};
+      chainRef.chain = null;
+      acc.push(
+        <ContextCompactCard
+          key={`compact-${props.uuid || props.chatId || index}`}
+          summary={props.type === "compact" ? props.content : props.summary}
+          compactedMessages={
+            props.compactedMessages ?? metrics.compactedMessages ?? null
+          }
+          tokensBefore={props.tokensBefore ?? metrics.tokensBefore ?? null}
+          tokensAfter={props.tokensAfter ?? metrics.tokensAfter ?? null}
+          failure={props.failure ?? null}
         />
       );
       return acc;

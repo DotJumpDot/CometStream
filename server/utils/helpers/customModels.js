@@ -81,6 +81,27 @@ async function getCustomModels(
   basePath = null,
   options = {}
 ) {
+  // CometStream custom providers ("custom:<id>") carry their model list in the
+  // custom_llm_providers table - return it directly, no live API discovery.
+  if (typeof provider === "string" && provider.startsWith("custom:")) {
+    const { CustomLlmProviders } = require("../../models/customLlmProviders");
+    const id = CustomLlmProviders.idFromProviderKey(provider);
+    const rows =
+      id === null
+        ? []
+        : (await CustomLlmProviders.listSafe()).filter((p) => p.id === id);
+    const record = rows[0] ?? null;
+    if (!record) return { models: [], error: "Custom provider not found" };
+    const models = (record.models || []).filter((m) => m.enabled !== false);
+    return {
+      models: models.map((model) => ({
+        id: model.id,
+        name: model.displayName || model.id,
+      })),
+      error: null,
+    };
+  }
+
   if (!SUPPORT_CUSTOM_MODELS.includes(provider))
     return { models: [], error: "Invalid provider for custom models" };
 

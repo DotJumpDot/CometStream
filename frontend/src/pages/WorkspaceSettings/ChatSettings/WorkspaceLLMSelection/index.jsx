@@ -69,7 +69,19 @@ export default function WorkspaceLLMSelection({
     );
     setFilteredLLMs(filtered);
   }, [LLMS, searchQuery, selectedLLM]);
-  const selectedLLMObject = LLMS.find((llm) => llm.value === selectedLLM);
+  // CometStream custom providers ("custom:<id>") are not part of the static
+  // provider list - without the fallback the page crashes on `.logo` when a
+  // workspace has one selected. The placeholder keeps the current selection
+  // intact; picking a listed provider replaces it as usual.
+  const selectedLLMObject = LLMS.find((llm) => llm.value === selectedLLM) ?? {
+    ...LLM_DEFAULT,
+    value: selectedLLM,
+    name: String(selectedLLM).startsWith("custom:")
+      ? "Custom provider (Manage models)"
+      : "System default",
+    description:
+      "This workspace uses a custom model provider. Pick another provider here to change it.",
+  };
 
   return (
     <div className="flex flex-col gap-y-[8px]">
