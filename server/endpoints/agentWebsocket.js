@@ -7,6 +7,9 @@ const {
   WEBSOCKET_BAIL_COMMANDS,
 } = require("../utils/agents/aibitat/plugins/websocket");
 const { safeJsonParse } = require("../utils/http");
+const { WorkspaceThread } = require("../models/workspaceThread");
+const { WorkspaceChats } = require("../models/workspaceChats");
+const truncate = require("truncate");
 
 // Setup listener for incoming messages to relay to socket so it can be handled by agent plugin.
 function relayToSocket(message) {
@@ -32,6 +35,41 @@ function agentWebsocket(app) {
       if (!agentHandler.invocation) {
         socket.close();
         return;
+      }
+
+      // Rename a still-default-named thread from the opening prompt at
+      // session start, so the sidebar reflects the conversation immediately.
+      // The chat-history plugin's rename only fires once a chat row persists,
+      // which for agent turns happens at end-of-turn (or session close) -
+      // minutes after the user sent the message. Guarded by the default name
+      // and chat count so only the thread's first exchange renames it.
+      try {
+        const invocation = agentHandler.invocation;
+        if (invocation?.thread_id) {
+          const thread = await WorkspaceThread.get({
+            id: invocation.thread_id,
+          });
+          if (thread && thread.name === WorkspaceThread.defaultName) {
+            const chatCount = await WorkspaceChats.count({
+              workspaceId: invocation.workspace_id,
+              thread_id: invocation.thread_id,
+              user_id: invocation.user_id ?? null,
+            });
+            if (chatCount <= 1) {
+              const { thread: renamed } = await WorkspaceThread.update(thread, {
+                name: truncate(String(invocation.prompt), 22),
+              });
+              socket?.send(
+                JSON.stringify({
+                  type: "rename_thread",
+                  content: { slug: renamed.slug, name: renamed.name },
+                })
+              );
+            }
+          }
+        }
+      } catch (e) {
+        console.error("agentWebsocket.autoRenameThread", e.message);
       }
 
       socket.on("message", relayToSocket);

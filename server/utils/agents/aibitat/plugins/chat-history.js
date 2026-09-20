@@ -56,6 +56,18 @@ const chatHistory = {
               response: {},
             });
             if (chat) aibitat.registerChatId(chat.id);
+
+            // Rename the thread the moment its first chat is pre-registered
+            // so the sidebar reflects the prompt right away. Waiting for the
+            // reply to store leaves the thread named "Thread" for the whole
+            // (possibly minutes-long) first agent turn. autoRenameThread's
+            // name guard makes this idempotent for later turns.
+            if (!aibitat._threadRenamed) {
+              aibitat._threadRenamed = await this._autoRenameThread(
+                aibitat,
+                userMessage
+              );
+            }
           }
         });
 

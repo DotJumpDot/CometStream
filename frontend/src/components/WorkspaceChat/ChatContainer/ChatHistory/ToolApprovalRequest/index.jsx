@@ -65,7 +65,9 @@ export default function ToolApprovalRequest({
               transition: "all 0.1s ease-in-out",
               borderRadius: "16px",
             }}
-            className="relative bg-zinc-800 light:bg-slate-100 p-4 pb-2 flex flex-col gap-y-1 overflow-hidden"
+            className={`relative bg-zinc-800 light:bg-slate-100 p-4 pb-2 flex flex-col gap-y-1 overflow-hidden ${
+              responded ? "" : "cs-approval-pulse"
+            }`}
           >
             <ToolApprovalHeader
               skillName={skillName}

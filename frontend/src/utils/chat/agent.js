@@ -10,12 +10,13 @@ export const AGENT_SESSION_START = "agentSessionStart";
 export const AGENT_SESSION_END = "agentSessionEnd";
 
 // Socket events where the agent execution loop has paused and is waiting on
-// the user to respond (feedback prompt, tool approval, clarifying questions).
-// While one of these is pending the UI should show the send button instead of
-// the stop generation button.
+// the user to type a response (feedback prompt, clarifying questions). While
+// one of these is pending the UI should show the send button instead of the
+// stop generation button. A pending toolApprovalRequest is deliberately NOT
+// here: the run is mid-execution waiting on an Approve/Reject, and dropping
+// the stop button then makes the chat look finished or frozen.
 const AGENT_AWAITING_USER_EVENTS = [
   "WAITING_ON_INPUT",
-  "toolApprovalRequest",
   "clarificationRequest",
   // An inline /img command finished while the session was paused awaiting
   // feedback - it stays paused, so the send button must come back.

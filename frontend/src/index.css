@@ -91,6 +91,26 @@
   animation: cs-fade-in 150ms var(--ease-out);
 }
 
+/* Attention pulse for a pending tool-approval card: the run is blocked on
+ * an Approve/Reject, so the card must read as "needs you" - not as an idle
+ * chat. Amber ring breathing at a calm 2s loop, dropped under reduced
+ * motion in favor of a static ring. */
+@keyframes cs-approval-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0);
+    border-color: rgba(251, 191, 36, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18);
+    border-color: rgba(251, 191, 36, 0.55);
+  }
+}
+.cs-approval-pulse {
+  border: 1px solid transparent;
+  animation: cs-approval-pulse 2s var(--ease-in-out) infinite;
+}
+
 /* Reserve space for the desktop app's in-page title bar (set by the Electron
  * shell); browsers never apply this class. */
 body.has-desktop-titlebar {
@@ -109,6 +129,11 @@ body.has-desktop-titlebar {
     /* Keep the fade (aids comprehension), drop movement/scale. */
     animation-name: cs-fade-in;
     animation-duration: 120ms;
+  }
+  .cs-approval-pulse {
+    /* Static attention ring, no breathing. */
+    animation: none;
+    border-color: rgba(251, 191, 36, 0.45);
   }
 }
 
