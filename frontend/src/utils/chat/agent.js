@@ -548,29 +548,42 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
       // A skipped auto-compact (under threshold / disabled) is silent - the
       // user asked a question and the agent turn simply proceeds.
       if (content.ok === false && content.trigger === "auto") return base;
-      return [
-        ...base,
-        {
-          uuid: v4(),
-          type: "contextCompact",
-          content: content.summary || "compacted-context",
-          summary: content.summary || "",
-          compactedMessages: content.compactedMessages ?? null,
-          tokensBefore: content.tokensBefore ?? null,
-          tokensAfter: content.tokensAfter ?? null,
-          failure:
-            content.ok === false
-              ? content.reason || content.error || "failed"
-              : null,
-          role: "assistant",
-          sources: [],
-          closed: true,
-          error: null,
-          animate: false,
-          pending: false,
-          metrics: {},
-        },
-      ];
+
+      // A successful compact folded the older rows server-side: drop them
+      // and their live-only cards so the view matches the reloaded thread
+      // and the context ring reflects the freed tokens. Everything from
+      // the first surviving row onward is kept, which always includes the
+      // current pending turn.
+      let kept = base;
+      const keptIds = new Set(content.keptChatIds || []);
+      if (content.ok && keptIds.size > 0) {
+        const firstKeptIdx = base.findIndex((msg) => keptIds.has(msg.chatId));
+        if (firstKeptIdx > 0) kept = base.slice(firstKeptIdx);
+      }
+
+      const card = {
+        uuid: v4(),
+        type: "contextCompact",
+        content: content.summary || "compacted-context",
+        summary: content.summary || "",
+        compactedMessages: content.compactedMessages ?? null,
+        tokensBefore: content.tokensBefore ?? null,
+        tokensAfter: content.tokensAfter ?? null,
+        failure:
+          content.ok === false
+            ? content.reason || content.error || "failed"
+            : null,
+        role: "assistant",
+        sources: [],
+        closed: true,
+        error: null,
+        animate: false,
+        pending: false,
+        metrics: {},
+      };
+      // Success: the divider leads the kept tail, matching the persisted
+      // rendering. Failure: the card reports what went wrong at the bottom.
+      return content.ok === false ? [...kept, card] : [card, ...kept];
     });
   }
 

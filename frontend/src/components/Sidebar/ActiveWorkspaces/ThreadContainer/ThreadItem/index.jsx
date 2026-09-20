@@ -123,7 +123,11 @@ export default function ThreadItem({
       {!!thread.slug && !thread.virtual && (
         <div
           ref={optionsContainer}
-          className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center"
+          // inset-y-0 centering instead of top-1/2 + -translate-y-1/2: a
+          // transform here would create a stacking context that traps the
+          // z-20 options dropdown inside the row, letting later thread rows
+          // paint over the open menu.
+          className="absolute right-1 inset-y-0 flex items-center"
         >
           {ctrlPressed ? (
             <button

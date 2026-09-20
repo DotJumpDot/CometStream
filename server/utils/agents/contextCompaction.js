@@ -377,6 +377,9 @@ async function maybeCompactAgentContext({
       compactedMessages: toCompact.length,
       tokensBefore,
       tokensAfter,
+      // The client trims its rendered history to these surviving rows so the
+      // live view (and the context ring) matches the reloaded thread.
+      keptChatIds: remainingRows.map((row) => row.id),
     });
     return { compacted: true };
   } catch (error) {

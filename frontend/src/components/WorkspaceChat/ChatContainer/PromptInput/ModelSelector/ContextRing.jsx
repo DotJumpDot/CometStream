@@ -36,7 +36,6 @@ export default function ContextRing({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [usage, setUsage] = useState(null);
   const holdTimer = useRef(null);
   const didHold = useRef(false);
   const rootRef = useRef(null);
@@ -55,8 +54,42 @@ export default function ContextRing({
 
   const slug = workspace?.slug;
 
-  const gatherUsage = useCallback(async () => {
-    // Message history estimate (skip tool/status cards without plain content).
+  // Limits that do not change with the conversation: the model's context
+  // window and the parsed-file token count. Fetched on mount/param change
+  // and refreshed whenever the popover opens (uploads may have changed the
+  // file count). Everything else is derived live from chatHistory below, so
+  // the ring tracks the conversation without needing a click.
+  const [limits, setLimits] = useState({
+    contextWindow: null,
+    attachmentTokens: 0,
+  });
+
+  const fetchLimits = useCallback(async () => {
+    const [contextWindow, parsed] = await Promise.all([
+      provider
+        ? CustomLlmProviders.contextWindow(provider, model)
+        : Promise.resolve(null),
+      slug
+        ? Workspace.getParsedFiles(slug).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    setLimits({
+      contextWindow: contextWindow ?? parsed?.contextWindow ?? null,
+      attachmentTokens: parsed?.currentContextTokenCount ?? 0,
+    });
+  }, [provider, model, slug]);
+
+  useEffect(() => {
+    fetchLimits().catch(() => {});
+  }, [fetchLimits]);
+
+  useEffect(() => {
+    if (open) fetchLimits().catch(() => {});
+  }, [open, fetchLimits]);
+
+  // Synchronous estimate from the live history: recomputed on every history
+  // change (new message, streaming chunk, compaction trim, chat switch).
+  const usage = useMemo(() => {
     const messages = (chatHistory ?? [])
       .filter(
         (message) => typeof message?.content === "string" && message.content
@@ -67,33 +100,19 @@ export default function ContextRing({
       0
     );
     const systemPromptTokens = estimateTokens(workspace?.openAiPrompt ?? "");
-
-    const [contextWindow, parsed] = await Promise.all([
-      provider
-        ? CustomLlmProviders.contextWindow(provider, model)
-        : Promise.resolve(null),
-      slug
-        ? Workspace.getParsedFiles(slug).catch(() => null)
-        : Promise.resolve(null),
-    ]);
-
-    const attachmentTokens = parsed?.currentContextTokenCount ?? 0;
-    const limit = contextWindow ?? parsed?.contextWindow ?? null;
-    const used = messageTokens + systemPromptTokens + attachmentTokens;
-    setUsage({
+    const used = messageTokens + systemPromptTokens + limits.attachmentTokens;
+    return {
       messageTokens,
       systemPromptTokens,
-      attachmentTokens,
-      contextWindow: limit,
+      attachmentTokens: limits.attachmentTokens,
+      contextWindow: limits.contextWindow,
       used,
-      ratio: limit ? Math.min(used / limit, 1) : 0,
+      ratio: limits.contextWindow
+        ? Math.min(used / limits.contextWindow, 1)
+        : 0,
       messageCount: messages.length,
-    });
-  }, [chatHistory, provider, model, slug, workspace?.openAiPrompt]);
-
-  useEffect(() => {
-    if (open) gatherUsage();
-  }, [open, gatherUsage]);
+    };
+  }, [chatHistory, workspace?.openAiPrompt, limits]);
 
   // Hold-to-open (like the reference UI) plus a plain click toggle.
   const startHold = () => {
