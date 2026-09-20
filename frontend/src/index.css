@@ -123,6 +123,20 @@ body.has-desktop-titlebar {
   border-top: 1px solid var(--theme-sidebar-border);
 }
 
+/* Inline code chips in rendered chat markdown. The hljs theme files style
+ * `.hljs` with a solid block background; the element selector here keeps
+ * token colors from the theme while making the chip sit inline in prose. */
+code.inline-code.hljs {
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  padding: 0.1em 0.35em;
+  border-radius: 6px;
+  font-size: 0.9em;
+}
+body.light code.inline-code.hljs {
+  background: rgba(0, 0, 0, 0.06);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .page-transition-root,
   .cs-pop-in {

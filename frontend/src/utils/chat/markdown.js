@@ -64,6 +64,38 @@ const markdown = markdownIt({
 // Add custom renderer for strong tags to handle theme colors
 markdown.renderer.rules.strong_open = () => '<strong class="text-white">';
 markdown.renderer.rules.strong_close = () => "</strong>";
+
+/**
+ * Active hljs theme class for the current app theme, shared by block and
+ * inline code rendering.
+ * @returns {"github"|"github-dark"|"monokai"}
+ */
+function activeCodeTheme() {
+  const activeTheme = window.localStorage.getItem("theme");
+  if (activeTheme === "light") return "github";
+  if (activeTheme?.startsWith("monokai")) return "monokai";
+  return "github-dark";
+}
+
+/**
+ * Inline code renderer. Snippets that look like HTML/XML (models routinely
+ * reference tags like <title>...</title> inside plain prose) get hljs
+ * token colors from the same theme the code blocks use; everything else
+ * renders as a plain mono chip.
+ */
+markdown.renderer.rules.code_inline = (tokens, idx) => {
+  const content = tokens[idx].content;
+  let body = HTMLEncode(content);
+  if (/^\s*<\/?[a-zA-Z]/.test(content)) {
+    try {
+      body = hljs.highlight(content, {
+        language: "xml",
+        ignoreIllegals: true,
+      }).value;
+    } catch {}
+  }
+  return `<code class="inline-code hljs ${activeCodeTheme()}">${body}</code>`;
+};
 markdown.renderer.rules.link_open = (tokens, idx) => {
   const token = tokens[idx];
   const href = token.attrs.find((attr) => attr[0] === "href");
@@ -82,8 +114,71 @@ markdown.renderer.rules.image = function (tokens, idx) {
 
 markdown.use(markdownItKatexPlugin);
 
+// A complete HTML element in prose (<title>Hello World</title>) is one unit.
+const HTML_ELEMENT =
+  /<([a-zA-Z][a-zA-Z0-9-]*)((?:\s[^<>\n]*)?)>([^<>\n]*)<\/\1\s*>/;
+// Any single opening/closing/void tag (<h1>, </div>, <br/>).
+const HTML_TAG = /<\/?[a-zA-Z][^<>\n]*\/?>/;
+
+/**
+ * Wrap raw HTML fragments in prose into markdown inline-code spans so they
+ * render highlighted instead of as escaped, unstyled text (HTML rendering is
+ * disabled in markdown-it). Fenced blocks are skipped - the block highlighter
+ * owns those - and existing `code` spans are copied through verbatim so tags
+ * the model already backticked are not double-wrapped.
+ * @param {string} text
+ * @returns {string}
+ */
+function wrapInlineHtml(text = "") {
+  let inFence = false;
+  return text
+    .split("\n")
+    .map((line) => {
+      if (line.trim().startsWith("```")) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) return line;
+      let out = "";
+      let rest = line;
+      while (rest) {
+        const element = rest.match(HTML_ELEMENT);
+        const tag = rest.match(HTML_TAG);
+        const match =
+          element && (!tag || element.index <= tag.index) ? element : tag;
+        const nextTick = rest.indexOf("`");
+
+        // Copy a complete `code` span through verbatim - when it starts here
+        // or begins before the next tag match - so tags the model already
+        // backticked are never double-wrapped.
+        const spanFromStart = rest.match(/^`[^`]*`/);
+        const spanBeforeMatch =
+          nextTick >= 0 && (!match || nextTick < match.index)
+            ? rest.slice(nextTick).match(/^`[^`]*`/)
+            : null;
+        const span = spanFromStart || spanBeforeMatch;
+        if (span) {
+          const start = spanFromStart ? 0 : nextTick;
+          out += rest.slice(0, start) + span[0];
+          rest = rest.slice(start + span[0].length);
+          continue;
+        }
+
+        if (match) {
+          out += rest.slice(0, match.index) + "`" + match[0] + "`";
+          rest = rest.slice(match.index + match[0].length);
+          continue;
+        }
+        out += rest;
+        break;
+      }
+      return out;
+    })
+    .join("\n");
+}
+
 export default function renderMarkdown(text = "") {
-  return markdown.render(text);
+  return markdown.render(wrapInlineHtml(text));
 }
 
 /**
