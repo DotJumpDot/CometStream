@@ -3,6 +3,7 @@ import paths from "@/utils/paths";
 import showToast from "@/utils/toast";
 import { Plus, CircleNotch, Trash } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import ThreadItem from "./ThreadItem";
 import { useNavigate, useParams } from "react-router-dom";
 import useHoverMetaKey from "./hooks";
@@ -155,8 +156,16 @@ export default function ThreadContainer({
 
   if (loading) {
     return (
-      <div className="flex flex-col bg-pulse w-full h-10 items-center justify-center">
-        <p className="text-xs text-white animate-pulse">loading threads....</p>
+      <div
+        className="flex flex-col gap-y-[2px] pt-[2px]"
+        aria-label="Loading threads"
+      >
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="h-[30px] rounded-[8px] bg-white/[0.04] light:bg-black/[0.04] animate-pulse"
+          />
+        ))}
       </div>
     );
   }
@@ -171,43 +180,34 @@ export default function ThreadContainer({
   return (
     <div
       ref={containerRef}
-      className="flex flex-col"
+      className="flex flex-col gap-y-[2px] pt-[2px]"
       role="list"
       aria-label="Threads"
     >
       {defaultThreadHasChats && (
         <ThreadItem
-          idx={0}
-          activeIdx={activeThreadIdx}
           isActive={activeThreadIdx === 0}
           workspace={workspace}
           thread={{ slug: null, name: "default" }}
-          hasNext={threads.length > 0 || showVirtualThread}
         />
       )}
       {threads.map((thread, i) => (
         <ThreadItem
           key={thread.slug}
-          idx={i + (defaultThreadHasChats ? 1 : 0)}
           ctrlPressed={ctrlPressed}
           toggleMarkForDeletion={toggleForDeletion}
           onTogglePinned={togglePinned}
-          activeIdx={activeThreadIdx}
           isActive={activeThreadIdx === i + (defaultThreadHasChats ? 1 : 0)}
           workspace={workspace}
           onRemove={removeThread}
           thread={thread}
-          hasNext={i !== threads.length - 1 || showVirtualThread}
         />
       ))}
       {showVirtualThread && (
         <ThreadItem
-          idx={activeThreadIdx}
-          activeIdx={activeThreadIdx}
           isActive={true}
           workspace={workspace}
           thread={{ slug: null, name: "Draft", virtual: true }}
-          hasNext={false}
         />
       )}
       <DeleteAllThreadButton
@@ -225,6 +225,7 @@ export default function ThreadContainer({
 
 function NewThreadButton({ workspace, onNewThread }) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const onClick = async () => {
     setLoading(true);
@@ -248,60 +249,42 @@ function NewThreadButton({ workspace, onNewThread }) {
   return (
     <button
       onClick={onClick}
-      className="w-full relative flex h-[40px] items-center border-none hover:bg-[var(--theme-sidebar-thread-selected)] light:hover:bg-slate-300 hover:light:bg-theme-sidebar-subitem-hover rounded-lg"
+      className="w-full flex items-center gap-x-2 h-[30px] pl-[32px] pr-2 rounded-[8px] border-none text-zinc-400 light:text-slate-500 hover:text-zinc-200 light:hover:text-slate-800 hover:bg-white/[0.04] light:hover:bg-black/[0.04] transition-colors duration-150 group/new-thread"
     >
-      <div className="flex w-full gap-x-2 items-center pl-4">
-        <div className="bg-zinc-800 light:bg-slate-50 p-2 rounded-lg h-[24px] w-[24px] flex items-center justify-center">
-          {loading ? (
-            <CircleNotch
-              weight="bold"
-              size={14}
-              className="shrink-0 animate-spin text-white light:text-theme-text-primary"
-            />
-          ) : (
-            <Plus
-              weight="bold"
-              size={14}
-              className="shrink-0 text-white light:text-theme-text-primary"
-            />
-          )}
-        </div>
-
-        {loading ? (
-          <p className="text-left text-white light:text-theme-text-primary text-sm">
-            Starting Thread...
-          </p>
-        ) : (
-          <p className="text-left text-white light:text-theme-text-primary text-sm font-semibold">
-            New Thread
-          </p>
-        )}
-      </div>
+      {loading ? (
+        <CircleNotch
+          weight="bold"
+          size={14}
+          className="shrink-0 animate-spin"
+        />
+      ) : (
+        <Plus weight="bold" size={14} className="shrink-0" />
+      )}
+      <p className="text-left text-[13px]">
+        {loading ? t("sidebar.starting_thread") : t("sidebar.new_thread")}
+      </p>
     </button>
   );
 }
 
 function DeleteAllThreadButton({ ctrlPressed, threads, onDelete }) {
+  const { t } = useTranslation();
   if (!ctrlPressed || threads.filter((t) => t.deleted).length === 0)
     return null;
   return (
     <button
       type="button"
       onClick={onDelete}
-      className="w-full relative flex h-[40px] items-center border-none hover:bg-red-400/20 rounded-lg group"
+      className="w-full flex items-center gap-x-2 h-[30px] pl-[32px] pr-2 rounded-[8px] border-none hover:bg-red-400/15 transition-colors duration-150 group/delete-all"
     >
-      <div className="flex w-full gap-x-2 items-center pl-4">
-        <div className="bg-transparent p-2 rounded-lg h-[24px] w-[24px] flex items-center justify-center">
-          <Trash
-            weight="bold"
-            size={14}
-            className="shrink-0 text-white light:text-red-500/50 group-hover:text-red-400"
-          />
-        </div>
-        <p className="text-white light:text-theme-text-secondary text-left text-sm group-hover:text-red-400">
-          Delete Selected
-        </p>
-      </div>
+      <Trash
+        weight="bold"
+        size={14}
+        className="shrink-0 text-zinc-400 group-hover/delete-all:text-red-400 transition-colors"
+      />
+      <p className="text-left text-[13px] text-zinc-400 light:text-theme-text-secondary group-hover/delete-all:text-red-400 transition-colors">
+        {t("sidebar.delete_selected")}
+      </p>
     </button>
   );
 }

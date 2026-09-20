@@ -5,7 +5,8 @@ import showToast from "@/utils/toast";
 import { relativeTime } from "@/utils/dates";
 import {
   ArrowCounterClockwise,
-  DotsThree,
+  ChatCircleText,
+  DotsThreeVertical,
   PencilSimple,
   PushPin,
   Trash,
@@ -15,23 +16,26 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-const THREAD_CALLOUT_DETAIL_WIDTH = 26;
+/**
+ * Flat thread row: chat icon + name with the relative time kept visible at a
+ * whisper; hovering swaps the timestamp for the kebab so the row never
+ * reflows. The kebab and the Ctrl-click mark-for-deletion X share the same
+ * overlay slot.
+ */
 export default function ThreadItem({
-  idx,
-  activeIdx,
   isActive,
   workspace,
   thread,
   onRemove,
   onTogglePinned,
   toggleMarkForDeletion,
-  hasNext,
   ctrlPressed = false,
 }) {
   const { slug: urlSlug, threadSlug = null } = useParams();
   const workspaceSlug = workspace?.slug ?? urlSlug;
   const optionsContainer = useRef(null);
   const [showOptions, setShowOptions] = useState(false);
+  const { t } = useTranslation();
   const linkTo = thread.virtual
     ? "/"
     : !thread.slug
@@ -43,137 +47,126 @@ export default function ThreadItem({
     behavior: "instant",
     block: "center",
   });
-  return (
-    <div
-      className="w-full relative flex h-[40px] items-center border-none rounded-lg"
-      role="listitem"
-    >
-      {/* Curved line Element and leader if required */}
-      <div
-        style={{ width: THREAD_CALLOUT_DETAIL_WIDTH / 2 }}
-        className={`${
-          isActive
-            ? "border-l-2 border-b-2 border-white light:border-blue-800 z-[2]"
-            : "border-l border-b border-zinc-500 light:border-slate-400 z-[1]"
-        } h-[50%] absolute top-0 left-3 rounded-bl-lg`}
-      ></div>
-      {/* Downstroke border for next item */}
-      {hasNext && (
-        <div
-          style={{ width: THREAD_CALLOUT_DETAIL_WIDTH / 2 }}
-          className={`${
-            idx <= activeIdx && !isActive
-              ? "border-l-2 border-white light:border-blue-800 z-[2]"
-              : "border-l border-zinc-500 light:border-slate-400 z-[1]"
-          } h-[100%] absolute top-0 left-3`}
-        ></div>
-      )}
 
-      {/* Curved line inline placeholder for spacing - not visible */}
+  if (thread.deleted) {
+    return (
       <div
-        style={{ width: THREAD_CALLOUT_DETAIL_WIDTH + 8 }}
-        className="h-full"
-      />
-      <div
-        className={`flex w-full items-center justify-between pr-2 group/thread relative ${isActive ? "bg-[var(--theme-sidebar-thread-selected)] light:bg-blue-200" : "hover:bg-theme-sidebar-subitem-hover light:hover:bg-slate-300"} rounded-[4px]`}
+        className="w-full flex items-center justify-between h-[30px] pl-[32px] pr-2 rounded-[8px] group/thread"
+        role="listitem"
       >
-        {thread.deleted ? (
-          <div className="w-full flex justify-between">
-            <div className="w-full pl-2 py-1">
-              <p
-                className={`text-left text-sm text-slate-400/50 light:text-slate-500 italic`}
-              >
-                deleted thread
-              </p>
-            </div>
-            {ctrlPressed && (
-              <button
-                type="button"
-                className="border-none"
-                onClick={() => toggleMarkForDeletion(thread.id)}
-              >
-                <ArrowCounterClockwise
-                  className="text-zinc-300 hover:text-white light:text-theme-text-secondary hover:light:text-theme-text-primary"
-                  size={18}
-                />
-              </button>
-            )}
-          </div>
-        ) : (
-          <Link
-            ref={ref}
-            to={linkTo}
-            data-tooltip-id="workspace-thread-name"
-            data-tooltip-content={thread.name}
-            className="w-full pl-2 py-1 overflow-hidden flex items-center gap-x-1.5 group/thread-name"
-            aria-current={isActive ? "page" : ""}
+        <p className="text-[13px] italic text-theme-text-secondary opacity-60">
+          {t("sidebar.deleted_thread")}
+        </p>
+        {ctrlPressed && (
+          <button
+            type="button"
+            className="border-none"
+            onClick={() => toggleMarkForDeletion(thread.id)}
+            aria-label={t("sidebar.restore_thread")}
           >
-            {thread.pinned && (
-              <PushPin
-                size={10}
-                weight="fill"
-                className="shrink-0 text-cta-button"
-              />
-            )}
-            <p
-              className={`text-left text-sm truncate max-w-[175px] ${
-                isActive
-                  ? "font-semibold text-theme-text-primary light:text-blue-900"
-                  : "text-theme-text-primary font-medium light:text-slate-800"
-              }`}
-            >
-              {thread.name}
-            </p>
-            <span className="ml-auto shrink-0 text-[10px] text-theme-text-secondary opacity-0 group-hover/thread-name:opacity-100 transition-opacity duration-150">
-              {relativeTime(thread.lastUpdatedAt)}
-            </span>
-          </Link>
-        )}
-        {!!thread.slug && !thread.deleted && !thread.virtual && (
-          <div ref={optionsContainer} className="flex items-center">
-            {" "}
-            {/* Added flex and items-center */}
-            {ctrlPressed ? (
-              <button
-                type="button"
-                className="border-none"
-                onClick={() => toggleMarkForDeletion(thread.id)}
-              >
-                <X
-                  className="text-zinc-300 light:text-theme-text-secondary hover:text-white hover:light:text-theme-text-primary"
-                  weight="bold"
-                  size={18}
-                />
-              </button>
-            ) : (
-              <div className="flex items-center w-fit md:invisible md:group-hover/thread:visible md:group-focus-within/thread:visible gap-x-1">
-                <button
-                  type="button"
-                  className="border-none"
-                  onClick={() => setShowOptions(!showOptions)}
-                  aria-label="Thread options"
-                >
-                  <DotsThree
-                    className="text-slate-300 light:text-theme-text-secondary hover:text-white hover:light:text-theme-text-primary"
-                    size={25}
-                  />
-                </button>
-              </div>
-            )}
-            {showOptions && (
-              <OptionsMenu
-                containerRef={optionsContainer}
-                workspace={workspace}
-                thread={thread}
-                onRemove={onRemove}
-                onTogglePinned={onTogglePinned}
-                close={() => setShowOptions(false)}
-                currentThreadSlug={threadSlug}
-              />
-            )}
-          </div>
+            <ArrowCounterClockwise
+              className="text-zinc-400 hover:text-white light:text-theme-text-secondary hover:light:text-theme-text-primary"
+              size={16}
+            />
+          </button>
         )}
       </div>
+    );
+  }
+
+  return (
+    <div className="w-full relative group/thread" role="listitem">
+      <Link
+        ref={ref}
+        to={linkTo}
+        data-tooltip-id="workspace-thread-name"
+        data-tooltip-content={thread.name}
+        aria-current={isActive ? "page" : ""}
+        className={`flex items-center gap-x-2 w-full h-[30px] pl-[32px] pr-2 rounded-[8px] transition-colors duration-150 ${
+          isActive
+            ? "bg-white/[0.07] light:bg-blue-200/70"
+            : "hover:bg-white/[0.04] light:hover:bg-black/[0.04]"
+        }`}
+      >
+        <ChatCircleText
+          size={14}
+          weight={isActive ? "fill" : "regular"}
+          className={`shrink-0 ${
+            isActive
+              ? "text-cta-button"
+              : "text-theme-text-secondary opacity-70"
+          }`}
+        />
+        {thread.pinned && (
+          <PushPin
+            size={10}
+            weight="fill"
+            className="shrink-0 text-cta-button"
+          />
+        )}
+        <p
+          className={`truncate text-[13px] ${
+            isActive
+              ? "font-medium text-white light:text-blue-900"
+              : "text-zinc-300 light:text-slate-600"
+          }`}
+        >
+          {thread.name}
+        </p>
+        {/* Timestamp yields its spot to the kebab on hover/focus so the row
+            never reflows; touch devices have no hover, so both simply stack. */}
+        <span className="ml-auto shrink-0 text-[10px] leading-none text-theme-text-secondary opacity-70 transition-opacity duration-150 group-hover/thread:opacity-0 group-focus-within/thread:opacity-0">
+          {thread.lastUpdatedAt ? relativeTime(thread.lastUpdatedAt) : ""}
+        </span>
+      </Link>
+
+      {!!thread.slug && !thread.virtual && (
+        <div
+          ref={optionsContainer}
+          className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center"
+        >
+          {ctrlPressed ? (
+            <button
+              type="button"
+              className="border-none"
+              onClick={() => toggleMarkForDeletion(thread.id)}
+              aria-label={t("sidebar.mark_for_deletion")}
+            >
+              <X
+                className="text-zinc-400 hover:text-white light:text-theme-text-secondary hover:light:text-theme-text-primary"
+                weight="bold"
+                size={16}
+              />
+            </button>
+          ) : (
+            <div className="flex items-center md:invisible md:group-hover/thread:visible md:group-focus-within/thread:visible">
+              <button
+                type="button"
+                className="border-none rounded-md p-0.5 hover:bg-white/[0.08] light:hover:bg-black/[0.08] transition-colors"
+                onClick={() => setShowOptions(!showOptions)}
+                aria-label={t("sidebar.thread_options")}
+              >
+                <DotsThreeVertical
+                  className="text-zinc-400 hover:text-white light:text-theme-text-secondary hover:light:text-theme-text-primary"
+                  size={16}
+                  weight="bold"
+                />
+              </button>
+            </div>
+          )}
+          {showOptions && (
+            <OptionsMenu
+              containerRef={optionsContainer}
+              workspace={workspace}
+              thread={thread}
+              onRemove={onRemove}
+              onTogglePinned={onTogglePinned}
+              close={() => setShowOptions(false)}
+              currentThreadSlug={threadSlug}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -276,15 +269,15 @@ function OptionsMenu({
   return (
     <div
       ref={menuRef}
-      className="absolute w-fit z-[20] top-[25px] right-[10px] bg-zinc-900 light:bg-theme-bg-sidebar light:border-[1px] light:border-theme-sidebar-border rounded-lg p-1"
+      className="absolute z-20 top-[26px] right-2 w-[170px] rounded-lg border border-white/10 light:border-black/10 bg-zinc-900 light:bg-white shadow-xl p-1"
     >
       <button
         onClick={renameThread}
         type="button"
-        className="w-full rounded-md flex items-center p-2 gap-x-2 hover:bg-slate-500/20 text-slate-300 light:text-theme-text-primary"
+        className="w-full rounded-md flex items-center gap-x-2 px-2 py-1.5 text-[13px] text-zinc-300 light:text-slate-700 hover:bg-white/[0.06] light:hover:bg-black/[0.05] hover:text-white light:hover:text-slate-950 transition-colors"
       >
-        <PencilSimple size={18} />
-        <p className="text-sm">Rename</p>
+        <PencilSimple size={14} />
+        {t("sidebar.rename_thread")}
       </button>
       {onTogglePinned && (
         <button
@@ -293,21 +286,19 @@ function OptionsMenu({
             close();
           }}
           type="button"
-          className="w-full rounded-md flex items-center p-2 gap-x-2 hover:bg-slate-500/20 text-slate-300 light:text-theme-text-primary"
+          className="w-full rounded-md flex items-center gap-x-2 px-2 py-1.5 text-[13px] text-zinc-300 light:text-slate-700 hover:bg-white/[0.06] light:hover:bg-black/[0.05] hover:text-white light:hover:text-slate-950 transition-colors"
         >
-          <PushPin size={18} />
-          <p className="text-sm">
-            {thread.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
-          </p>
+          <PushPin size={14} />
+          {thread.pinned ? t("sidebar.unpin") : t("sidebar.pin")}
         </button>
       )}
       <button
         onClick={handleDelete}
         type="button"
-        className="w-full rounded-md flex items-center p-2 gap-x-2 hover:bg-red-500/20 text-slate-300 light:text-theme-text-primary hover:text-red-100"
+        className="w-full rounded-md flex items-center gap-x-2 px-2 py-1.5 text-[13px] text-zinc-300 light:text-slate-700 hover:bg-red-500/15 hover:text-red-300 light:hover:text-red-600 transition-colors"
       >
-        <Trash size={18} />
-        <p className="text-sm">Delete Thread</p>
+        <Trash size={14} />
+        {t("sidebar.delete_thread")}
       </button>
     </div>
   );
