@@ -20,6 +20,9 @@ Notable areas:
 
 - `src/pages/` — route-level screens (admin, settings, workspace chat).
 - `src/components/` — shared components; `WorkspaceChat/` holds the chat UI and the agent-tools menu.
+- `src/components/WorkspaceChat/ChatContainer/` — the live chat: `ChatHistory/index.jsx` compiles the stream into the activity chain (thought chips, file cards, terminal rows), `StatusResponse` renders each chain, `HistoricalMessage/HistoricalTrace` replays a persisted run on reload, and `MessageQueue/` holds follow-up prompts sent while a run is in flight (dispatched in order when it settles).
+- `src/components/WorkspaceChat/AgentSidePanel/` — the agent side panel: Changes (aggregated file diffs), Plan (todo stepper), Sessions (terminal + subagent rows with expandable output), Sources, and the file reader.
+- `src/utils/chat/` — agent websocket event handling (`agent.js`: cards/statuses/history updates, permission-mode store in `chat/permissions.js`) and `agentActivity.js` (session-scoped stores mirroring panel feeds).
 - `src/hooks/useTheme.js` — theme registry; pairs with CSS variable blocks in `src/index.css` ([THEMES.md](./THEMES.md)).
 - `src/models/` — thin fetch wrappers over the API.
 - `src/locales/` — i18next translations; `en/common.js` is the source of truth.

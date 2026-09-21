@@ -18,8 +18,11 @@ CometStream is a fork of AnythingLLM (Mintplex Labs, MIT) being reshaped into a 
 
 Key internals:
 - **Agents**: `server/utils/agents/` — `aibitat` plugins register functions via `setup(aibitat)`. Loadable ids: plain name, `parent#child`, `@@flow_<uuid>`, `@@mcp_<server>`, `@@skill_<folder>`, `@@<hubId>` (imported).
+- **Batched tool calls**: `providers/helpers/tooled.js` returns every tool call of one LLM turn as `functionCalls` (with `functionCall` = first for older callers); the execution loop in `aibitat/index.js` runs the whole batch sequentially. Do not "simplify" this back to first-call-only — local models emit 3+ calls per turn and rely on it.
 - **MCP client**: `server/utils/MCP/` — hypervisor manages servers from `server/storage/plugins/anythingllm_mcp_servers.json`.
 - **SKILL.md loader**: `server/utils/agents/skillFiles.js`.
+- **Terminal skill**: `aibitat/plugins/terminal.js` — opt-in (`AGENT_ENABLE_TERMINAL` or the `terminal_agent_enabled` setting); the handler re-checks availability on every call, keep that defense-in-depth.
+- **Sessions + trace**: `aibitat/plugins/sessions.js` (in-memory terminal/subagent registry → `sessionCard` events → Agent panel Sessions tab) and `aibitat/plugins/trace.js` (persists the run into `response.trace`). The trace's raw-socket wrapper is the single capture point — new card types must be added to its `RECORDED_TYPES` allowlist or they won't survive reload.
 - **Themes**: CSS variable blocks in `frontend/src/index.css`, registry in `frontend/src/hooks/useTheme.js`.
 
 ## Dev commands
@@ -49,6 +52,7 @@ Frontend and server hot-reload in dev; collector restarts via nodemon.
 - **The SSR page title/meta** is built once at server boot (`server/utils/boot/MetaGenerator.js`), not per request — restart to see branding changes.
 - **Windows/Git Bash**: `MSYS_NO_PATHCONV=1` for anything with `/flags` (robocopy) or `/like` values (`VITE_API_BASE=/api`); use forward slashes in JSON payloads with Windows paths.
 - **dotenv does not override** existing process env — launchers can always force a value via environment.
+- **Local OpenAI-compat LLMs** (llama-server & friends) close idle keep-alive sockets; the openai SDK's node-fetch then rides a dead socket on the tool-call round trip → `ECONNRESET "socket hang up"` kills the agent turn mid-run. `providers/helpers/localFetch.js` swaps in no-keep-alive agents for local/private base URLs — route any new provider's `fetch` through `fetchForBaseURL(baseUrl)`.
 
 ## Security rules (non-negotiable)
 

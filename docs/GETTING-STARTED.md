@@ -61,6 +61,20 @@ yarn translations:verify   # check locale key parity
 
 All dev data (database, documents, vector caches, plugin configs like `anythingllm_mcp_servers.json`) lives under `server/storage/` — that folder is your instance. Delete it to start fresh.
 
+## Agent harness settings
+
+All optional; every one of these can also be set in-app (Admin settings) instead of via env, and env wins when both are set.
+
+| Env var | In-app setting | What it does |
+| --- | --- | --- |
+| `AGENT_ENABLE_TERMINAL=1` | `terminal_agent_enabled` | Turns on the agent terminal skill (off by default). |
+| `AGENT_TERMINAL_ROOT=<path>` | `terminal_agent_root` | Working directory every terminal command runs in (defaults to the agent filesystem sandbox). |
+| `AGENT_TERMINAL_TIMEOUT_MS` | — | Per-command wall-clock limit (default 120000, clamped 5s–600s). |
+| `AGENT_TERMINAL_SHELL` | — | Shell override (defaults to Git Bash on Windows, `/bin/bash` elsewhere). |
+| `AGENT_MAX_TOOL_CALLS` | `agent_max_tool_calls` | Tool-call budget per agent response (default 10, hard cap 200) — raise it for long multi-step runs. |
+
+Terminal commands also refuse a denylist of host-wrecking commands (shutdown, format, diskpart, `dd` to raw devices, fork bombs, recursive deletes of OS roots, …) and ride the normal per-tool approval flow.
+
 ## Troubleshooting
 
 - **`yarn setup` fails on `prisma migrate`** — delete `server/storage/anythingllm.db` and rerun `yarn prisma:setup`.
