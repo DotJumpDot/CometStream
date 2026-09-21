@@ -20,7 +20,13 @@ Notable areas:
 
 - `src/pages/` — route-level screens (admin, settings, workspace chat).
 - `src/components/` — shared components; `WorkspaceChat/` holds the chat UI and the agent-tools menu.
-- `src/components/WorkspaceChat/ChatContainer/` — the live chat: `ChatHistory/index.jsx` compiles the stream into the activity chain (thought chips, file cards, terminal rows), `StatusResponse` renders each chain, `HistoricalMessage/HistoricalTrace` replays a persisted run on reload, and `MessageQueue/` holds follow-up prompts sent while a run is in flight (dispatched in order when it settles).
+- `src/components/WorkspaceChat/ChatContainer/` — the live chat. `ChatHistory/index.jsx` compiles the stream into the activity chain; `StatusResponse` renders each chain; `HistoricalMessage/HistoricalTrace` replays a persisted run on reload; `MessageQueue/` holds follow-up prompts sent while a run is in flight (dispatched in order when it settles). Run-rendering rules:
+  - A settled chain that is one bare tool call with no reasoning hides entirely (live and reload) — the file card after it is the signal.
+  - Reads emit per-file read rows (`fileChangeCard` action `read`), not in-thought statuses. Files a shell command creates or edits are snapshotted before/after and reported as `create`/`edit` cards with real diffs.
+  - Terminal/subagent sessions render as chat rows too (`SessionCard`, updated in place as `running` flips to done, colored Search/Run/Install/Write/Fetch chip, inline expand to full command + output). The side panel mirrors the same events at panel scale.
+  - The agent narrates between tool batches (one lead-in/result sentence per batch); tool-iteration text persists as `agentNote` trace events and renders as reply-styled prose on reload.
+  - Reload regroups thought/status runs through the same `StatusResponse`, so a reopened thread reads like the working view.
+  - Thread switches keep the old chat mounted until the new history arrives, then swap; the side panel keeps its open state instead of slamming shut. Failed runs fill the pre-registered prompt row with the failure; the thread list hides chat-less threads.
 - `src/components/WorkspaceChat/AgentSidePanel/` — the agent side panel: Changes (aggregated file diffs), Plan (todo stepper), Sessions (terminal + subagent rows with expandable output), Sources, and the file reader.
 - `src/utils/chat/` — agent websocket event handling (`agent.js`: cards/statuses/history updates, permission-mode store in `chat/permissions.js`) and `agentActivity.js` (session-scoped stores mirroring panel feeds).
 - `src/hooks/useTheme.js` — theme registry; pairs with CSS variable blocks in `src/index.css` ([THEMES.md](./THEMES.md)).

@@ -94,6 +94,12 @@ const WORKSPACE_AGENT = {
       role +=
         "\n\nWhen you need information from the user (URLs, file paths, preferences, choices, etc.), you MUST use the request-user-input tool. Do not ask questions in your text response - the user cannot reply to text. Only the tool can collect user input.";
 
+    // Narrate the work as it happens: your thought chain stays hidden, so
+    // the short visible sentences you write between tool calls are the only
+    // progress the user sees. Always pair tool batches with them.
+    role +=
+      "\n\nWhile you work, narrate briefly in your visible reply text (outside tool calls and hidden reasoning): before each batch of tool calls write one short sentence saying what you are about to do, and after the results write one short sentence on the outcome and what you will do next. Keep each note to a single plain sentence - no bullet lists, no headers, no detail the final summary will cover.";
+
     return {
       role,
       functions: [

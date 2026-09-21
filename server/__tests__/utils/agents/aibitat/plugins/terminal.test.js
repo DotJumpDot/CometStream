@@ -15,6 +15,10 @@ const {
   capOutput,
   commandTimeoutMs,
   summarizeCommand,
+  categorizeCommand,
+  snapshotWorkdir,
+  detectWorkdirChanges,
+  emitWorkdirFileCards,
   DENIED_COMMAND_PATTERNS,
 } = require("../../../../../utils/agents/aibitat/plugins/terminal");
 
@@ -317,5 +321,109 @@ describe("terminal agent skill", () => {
         expect(combined.test(command)).toBe(false);
       }
     });
+  });
+});
+
+describe("categorizeCommand", () => {
+  it.each([
+    ["cat > app.js << 'EOF'\ncode\nEOF", "Write"],
+    ["cat > miniapp/server.js << 'EOF' …(48 heredoc lines) EOF", "Write"],
+    ["sed -i 's/a/b/' file.txt", "Write"],
+    ["echo hello > out.txt", "Write"],
+    ["grep -r 'hello' .", "Search"],
+    ["rg --files | head", "Search"],
+    ["find . -name '*.js'", "Search"],
+    ["npm install express", "Install"],
+    ["pip install requests", "Install"],
+    ["curl -s http://localhost:4599/api/hello", "Fetch"],
+    ["wget https://example.com/x", "Fetch"],
+    ["cd miniapp && node server.js &", "Run"],
+    ["python script.py", "Run"],
+    ["npm run build", "Run"],
+  ])("classifies %p as %p", (command, expected) => {
+    expect(categorizeCommand(command)).toBe(expected);
+  });
+
+  it.each([
+    ["ls -la", null],
+    ["ls 2>/dev/null", null],
+    ["node server.js 2>&1 | head", "Run"],
+    ["", null],
+    [null, null],
+    ["echo hello", null],
+  ])("leaves %p chipless", (command, expected) => {
+    expect(categorizeCommand(command)).toBe(expected);
+  });
+});
+
+describe("workdir change detection", () => {
+  function makeRoot(files = {}) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "term-test-"));
+    for (const [rel, content] of Object.entries(files)) {
+      const abs = path.join(root, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, content);
+    }
+    return root;
+  }
+
+  it("finds added and modified files", () => {
+    const root = makeRoot({ "a.txt": "one\n", "sub/b.txt": "two\n" });
+    const before = snapshotWorkdir(root);
+    fs.writeFileSync(path.join(root, "new.txt"), "fresh\n");
+    fs.writeFileSync(path.join(root, "a.txt"), "one\ntwo\n");
+    const after = snapshotWorkdir(root);
+    expect(detectWorkdirChanges(before, after)).toEqual({
+      added: ["new.txt"],
+      modified: ["a.txt"],
+    });
+  });
+
+  it("ignores dependency dirs and deletions", () => {
+    const root = makeRoot({
+      "node_modules/dep/index.js": "x",
+      "gone.txt": "bye",
+    });
+    const before = snapshotWorkdir(root);
+    fs.writeFileSync(path.join(root, "node_modules/dep/index.js"), "y");
+    fs.rmSync(path.join(root, "gone.txt"));
+    const after = snapshotWorkdir(root);
+    expect(detectWorkdirChanges(before, after)).toEqual({
+      added: [],
+      modified: [],
+    });
+  });
+
+  it("emits create rows for new text and edit rows with diffs", () => {
+    const root = makeRoot({ "a.txt": "one\n" });
+    const before = snapshotWorkdir(root);
+    fs.writeFileSync(path.join(root, "new.txt"), "fresh\nlines\n");
+    fs.writeFileSync(path.join(root, "a.txt"), "one\ntwo\n");
+    fs.writeFileSync(path.join(root, "blob.bin"), Buffer.from([0, 1, 2]));
+    const after = snapshotWorkdir(root);
+    const sent = [];
+    emitWorkdirFileCards((payload) => sent.push(payload), before, after);
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toMatchObject({
+      action: "create",
+      path: "new.txt",
+      added: 3,
+    });
+    expect(sent[1].action).toBe("edit");
+    expect(sent[1].path).toBe("a.txt");
+    expect(sent[1].added).toBe(1);
+    expect(sent[1].diff).toContain("+two");
+  });
+
+  it("emits nothing when only mtimes touched", () => {
+    const root = makeRoot({ "a.txt": "same\n" });
+    const before = snapshotWorkdir(root);
+    const abs = path.join(root, "a.txt");
+    const later = new Date(Date.now() + 60_000);
+    fs.utimesSync(abs, later, later);
+    const after = snapshotWorkdir(root);
+    const sent = [];
+    emitWorkdirFileCards((payload) => sent.push(payload), before, after);
+    expect(sent).toHaveLength(0);
   });
 });

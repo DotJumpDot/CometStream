@@ -28,9 +28,11 @@ const sessions = new Map();
  * @param {"terminal"|"subagent"} props.kind - session kind
  * @param {string} props.label - one-line human label (already summarized)
  * @param {string} [props.detail] - fuller text shown on expand
- * @returns {{id: number, kind: string, label: string, status: SessionStatus, detail: string, startedAt: number, endedAt: number|null}} The new entry.
+ * @param {string|null} [props.category] - terminal command class for the chat
+ * row chip (Search/Run/Install/Write/Fetch); null renders no chip
+ * @returns {{id: number, kind: string, label: string, status: SessionStatus, detail: string, startedAt: number, endedAt: number|null, category: string|null}} The new entry.
  */
-function startSession({ kind, label, detail = "" }) {
+function startSession({ kind, label, detail = "", category = null }) {
   const entry = {
     id: nextId++,
     kind,
@@ -39,6 +41,7 @@ function startSession({ kind, label, detail = "" }) {
     detail: capDetail(detail),
     startedAt: Date.now(),
     endedAt: null,
+    category: typeof category === "string" && category ? category : null,
   };
   sessions.set(entry.id, entry);
   // Oldest-first eviction keeps memory bounded on marathon runs.

@@ -60,9 +60,9 @@ module.exports.FilesystemReadMultipleFiles = {
                 return "Error: At least one file path must be provided.";
               }
 
-              this.super.introspect(
-                `${this.caller}: Reading ${paths.length} files`
-              );
+              // No "Reading N files" status - each file gets its own read
+              // row in the chat (like single-file reads), which is the
+              // signal. A bare tool call with no statuses hides entirely.
 
               const results = await Promise.all(
                 paths.map(async (filePath) => {
@@ -91,6 +91,13 @@ module.exports.FilesystemReadMultipleFiles = {
 
                     const content = await filesystem.readFileContent(validPath);
 
+                    // Read row for the chat UI - one per file, like
+                    // single-file reads. Images attach visually instead.
+                    this.super.socket?.send?.("fileChangeCard", {
+                      action: "read",
+                      path: filesystem.relativeDisplayPath(validPath),
+                      lines: content.split("\n").length,
+                    });
                     this.super.addCitation?.({
                       id: `fs-${Buffer.from(validPath).toString("base64url").slice(0, 32)}`,
                       title: filename,
@@ -131,16 +138,9 @@ module.exports.FilesystemReadMultipleFiles = {
                 );
               }
 
-              const imageCount = results.filter((r) => r.isImage).length;
-              const textCount = results.filter(
-                (r) => r.success && !r.isImage
-              ).length;
-              let introspectMsg = `Successfully processed ${paths.length} files`;
-              if (imageCount > 0) {
-                introspectMsg += ` (${imageCount} image${imageCount > 1 ? "s" : ""} attached, ${textCount} text file${textCount !== 1 ? "s" : ""} read)`;
-              }
-              this.super.introspect(introspectMsg);
-
+              // No success status - the per-file read rows above are the
+              // signal (and image attachments show inline). Truncation and
+              // errors still report below since those need attention.
               return finalContent;
             } catch (e) {
               this.super.handlerProps.log(

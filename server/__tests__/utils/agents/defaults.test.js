@@ -49,7 +49,8 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
       workspace,
       user
     );
-    expect(definition.role).toBe(expectedPrompt);
+    expect(definition.role.startsWith(expectedPrompt)).toBe(true);
+    expect(definition.role).toContain("narrate briefly");
     expect(SystemPromptVariables.expandSystemPromptVariables).toHaveBeenCalledWith(
       SystemSettings.saneDefaultSystemPrompt,
       user.id,
@@ -80,7 +81,8 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
       user.id,
       workspace.id
     );
-    expect(definition.role).toBe(expandedPrompt);
+    expect(definition.role.startsWith(expandedPrompt)).toBe(true);
+    expect(definition.role).toContain("narrate briefly");
   });
 
   it("should handle workspace system prompt without user context", async () => {
@@ -105,7 +107,8 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
       null,
       workspace.id
     );
-    expect(definition.role).toBe(expandedPrompt);
+    expect(definition.role.startsWith(expandedPrompt)).toBe(true);
+    expect(definition.role).toContain("narrate briefly");
   });
 
   it("should return functions array in definition", async () => {
@@ -132,11 +135,24 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
       null
     );
 
-    expect(definition.role).toBe(await Provider.systemPrompt({ workspace, user }));
+    expect(definition.role.startsWith(await Provider.systemPrompt({ workspace, user }))).toBe(true);
+    expect(definition.role).toContain("narrate briefly");
     expect(SystemPromptVariables.expandSystemPromptVariables).toHaveBeenCalledWith(
       SystemSettings.saneDefaultSystemPrompt,
       null,
       workspace.id
     );
+  });
+
+  it("appends single-sentence progress-narration guidance to the role", async () => {
+    const workspace = { id: 1, openAiPrompt: null };
+    const definition = await WORKSPACE_AGENT.getDefinition(
+      "openai",
+      workspace,
+      null
+    );
+
+    expect(definition.role).toContain("one short sentence");
+    expect(definition.role).toContain("what you will do next");
   });
 });

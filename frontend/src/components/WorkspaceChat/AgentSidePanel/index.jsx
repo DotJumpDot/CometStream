@@ -75,10 +75,12 @@ export default function AgentSidePanel() {
   // Layout effect on purpose: the sources store is populated by the new
   // chat's message actions in passive effects, which run after layout
   // effects - resetting here first means the fresh sources survive.
+  // The panel's open state survives the switch on purpose: slamming it
+  // shut on every thread change reflows the whole screen and reads as a
+  // flash. Only the per-thread content resets.
   useLayoutEffect(() => {
     resetAgentActivity();
     resetLatestSources();
-    setOpen(false);
     setViewerPath(null);
   }, [chatKey]);
 

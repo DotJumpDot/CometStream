@@ -132,6 +132,39 @@ const WorkspaceThread = {
     }
   },
 
+  /**
+   * Threads that actually contain chats, for sidebar-style lists. Thread
+   * rows are pre-created before the first message, so aborted/failed runs
+   * leave chat-less "Thread" rows behind - opening one shows a blank
+   * greeting view, which reads as a broken conversation. Filtering here
+   * keeps the list to conversations with something to show; the thread
+   * route itself still loads a filtered thread fine (it just renders empty).
+   * @param {object} [clause] - where clause for the thread lookup
+   * @returns {Array} Threads with at least one chat each.
+   */
+  listNonEmpty: async function (clause = {}) {
+    try {
+      const threads = await prisma.workspace_threads.findMany({
+        where: clause,
+      });
+      if (threads.length === 0) return [];
+      const counts = await prisma.workspace_chats.groupBy({
+        by: ["thread_id"],
+        where: { thread_id: { in: threads.map((thread) => thread.id) } },
+        _count: { thread_id: true },
+      });
+      const withChats = new Set(
+        counts
+          .filter((count) => count.thread_id != null)
+          .map((count) => count.thread_id)
+      );
+      return threads.filter((thread) => withChats.has(thread.id));
+    } catch (error) {
+      console.error(error.message);
+      return [];
+    }
+  },
+
   migrateToMultiUser: async function (adminUserId) {
     try {
       await prisma.workspace_threads.updateMany({

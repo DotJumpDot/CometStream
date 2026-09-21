@@ -75,6 +75,15 @@ All optional; every one of these can also be set in-app (Admin settings) instead
 
 Terminal commands also refuse a denylist of host-wrecking commands (shutdown, format, diskpart, `dd` to raw devices, fork bombs, recursive deletes of OS roots, …) and ride the normal per-tool approval flow.
 
+## Using a local model (no ENV edits)
+
+Any OpenAI-compatible server works as a chat model, configured entirely in the UI. With `llama-server` serving a model on `http://127.0.0.1:8080`:
+
+1. **Add the provider** — open the model pill in the chat bar → Manage models → new provider: a name (e.g. `Apodex Local`), the base URL (e.g. `http://127.0.0.1:8080/v1`), optional API key. The "fetch from API" button lists the served model ids for you.
+2. **Add the model** — the served model id (e.g. `Apodex-35B`), a display name, context window (e.g. `262144`), and max output tokens. Thinking models want a large max-output budget or reasoning eats the whole reply. Leave reasoning levels empty for a simple on/off toggle.
+3. **Pick it per workspace** — the model pill pins provider + model to the workspace. The Reasoning toggle sends `reasoning_effort: "none"` when Off; anything else leaves the template default (thinking on).
+4. **Give the agent tools** — Admin → Agents → skills: enable `terminal-agent`, `filesystem-agent`, `create-files-agent`, `delegate-task` (in `default_agent_skills`), set `terminal_agent_root` to the project folder, and raise `agent_max_tool_calls` for long runs.
+
 ## Troubleshooting
 
 - **`yarn setup` fails on `prisma migrate`** — delete `server/storage/anythingllm.db` and rerun `yarn prisma:setup`.

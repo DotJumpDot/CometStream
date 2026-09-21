@@ -27,8 +27,9 @@ class GenericOpenAiLLM {
    * @param {number|null} [overrides.tokenLimit]
    * @param {number|null} [overrides.maxTokens]
    * @param {Object} [overrides.customHeaders]
-   * @param {string|null} [overrides.reasoningEffort] - Sent as `reasoning_effort`
-   * when set (model metadata says the model supports reasoning).
+   * @param {string|null} [overrides.reasoningEffort] - Reasoning preference:
+   * "on"/null sends nothing (template default), "off" sends
+   * `reasoning_effort: "none"`, named levels pass straight through.
    */
   constructor(embedder = null, modelPreference = null, overrides = {}) {
     const { OpenAI: OpenAIApi } = require("openai");
@@ -62,11 +63,9 @@ class GenericOpenAiLLM {
     // Instance-level context window (custom provider model metadata). When
     // null the ENV token limit (or 4096) is used like before.
     this.#tokenLimitOverride = overrides.tokenLimit ?? null;
-    // Reasoning effort for models that support it ("off" never sends it).
-    this.reasoningEffort =
-      overrides.reasoningEffort && overrides.reasoningEffort !== "off"
-        ? overrides.reasoningEffort
-        : null;
+    // Reasoning effort for models that support it. "off" is kept (not
+    // nulled) so the request can carry llama.cpp's disable level.
+    this.reasoningEffort = overrides.reasoningEffort ?? null;
     if (!this.model)
       throw new Error("GenericOpenAI must have a valid model set.");
     this.limits = {
@@ -84,9 +83,11 @@ class GenericOpenAiLLM {
 
   /** `reasoning_effort` param for models that support it; empty otherwise. */
   #reasoningParams() {
-    if (!this.reasoningEffort) return {};
-    if (this.reasoningEffort === "on") return {};
-    // Named levels (low/medium/high/...) map straight through to the API.
+    if (!this.reasoningEffort || this.reasoningEffort === "on") return {};
+    // "off" maps to llama.cpp's disable level so a thinking model actually
+    // stops thinking instead of silently ignoring the toggle. Named levels
+    // (low/medium/high/...) map straight through to the API.
+    if (this.reasoningEffort === "off") return { reasoning_effort: "none" };
     return { reasoning_effort: this.reasoningEffort };
   }
 

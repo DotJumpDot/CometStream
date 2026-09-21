@@ -14,6 +14,10 @@
  * - `<think>` reasoning blocks, captured per LLM iteration in the execution
  *   loop (the only place intermediate thoughts exist - only the final text
  *   is ever added to chat history)
+ * - `agentNote` visible progress notes: an iteration's non-think text when
+ *   it also made tool calls (recorded directly, not via socket). These are
+ *   the lead-in/result sentences the model narrates between tool batches -
+ *   without them a reloaded thread loses all mid-run narration.
  *
  * Deliberately NOT recorded: reportStreamEvent chunks (high-volume text
  * streaming, already covered by the final reply), approval prompts
@@ -188,6 +192,28 @@ function wrapRawSocketForTrace(aibitat, socket) {
 }
 
 /**
+ * Records one iteration's visible progress note: the non-think text of a
+ * completion that also made tool calls. Callers must only invoke this on
+ * tool-call iterations - the final text-only iteration is the saved reply,
+ * and recording it too would render the answer twice on reload.
+ * @param {object} aibitat - aibitat instance
+ * @param {any} textResponse - the iteration's text (may be null/undefined)
+ * @returns {string|null} The recorded note, or null when there was nothing
+ * visible to record (think-only or empty iterations).
+ */
+function recordAgentNote(aibitat, textResponse) {
+  if (typeof textResponse !== "string" || !textResponse) return null;
+  const { cleanText } = extractThoughts(textResponse);
+  const note = cleanText.trim();
+  if (!note) return null;
+  const trace = ensureTrace(aibitat);
+  if (trace.length >= MAX_TRACE_EVENTS) return null;
+  const recorded = capText(note, STATUS_MAX_CHARS);
+  trace.push({ type: "agentNote", content: recorded });
+  return recorded;
+}
+
+/**
  * Takes the recorded trace for persistence (defensive copy).
  * @param {object} aibitat - aibitat instance
  * @returns {Array<{type: string, content: any}>} Trace events in order.
@@ -206,6 +232,7 @@ module.exports = {
   ensureTrace,
   recordTraceEvent,
   recordThoughtText,
+  recordAgentNote,
   extractThoughts,
   wrapRawSocketForTrace,
   takeTrace,

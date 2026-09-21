@@ -69,7 +69,9 @@ function workspaceThreadEndpoints(app) {
       try {
         const user = await userFromSession(request, response);
         const workspace = response.locals.workspace;
-        const threads = await WorkspaceThread.where({
+        // Chat-less threads (pre-created rows from aborted/never-sent runs)
+        // open to a blank view, so the list only carries threads with chats.
+        const threads = await WorkspaceThread.listNonEmpty({
           workspace_id: workspace.id,
           user_id: user?.id || null,
         });

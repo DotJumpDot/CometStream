@@ -6,6 +6,7 @@ import ToolApprovalRequest from "./ToolApprovalRequest";
 import ClarifyingQuestionCard from "./ClarifyingQuestion";
 import FileChangeCard from "./FileChangeCard";
 import FileDownloadCard from "./FileDownloadCard";
+import SessionCard from "./SessionCard";
 import ContextCompactCard from "./ContextCompactCard";
 import AgentRunSummary from "./AgentRunSummary";
 import JumpRail, { isJumpTurn } from "./JumpRail";
@@ -291,6 +292,21 @@ function buildMessages({
           diff={props.diff}
           diffTruncated={!!props.diffTruncated}
           readLines={props.readLines ?? null}
+        />
+      );
+      return acc;
+    }
+
+    // Terminal/subagent sessions render as chat rows (updated in place as
+    // `running` flips to `done`/`error`), breaking the activity chain like
+    // file rows so the run reads chronologically. The side panel mirrors
+    // the same events at panel scale.
+    if (props.type === "sessionCard" && !!props.content) {
+      chainRef.chain = null;
+      acc.push(
+        <SessionCard
+          key={`session-${props.content.id ?? props.uuid ?? index}`}
+          session={props.content}
         />
       );
       return acc;

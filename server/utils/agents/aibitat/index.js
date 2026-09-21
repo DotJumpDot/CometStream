@@ -5,7 +5,7 @@ const Providers = require("./providers/index.js");
 const { Telemetry } = require("../../../models/telemetry.js");
 const { v4 } = require("uuid");
 const { ToolReranker } = require("./utils/toolReranker.js");
-const { recordThoughtText } = require("./plugins/trace.js");
+const { recordThoughtText, recordAgentNote } = require("./plugins/trace.js");
 
 /**
  * AIbitat is a class that manages the conversation between agents.
@@ -1110,6 +1110,13 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
         : [];
 
     if (batch.length > 0) {
+      // Tool-call iteration: the visible text (if any) is a progress note,
+      // not the reply - record it for the persisted trace (the final
+      // text-only iteration is saved as the reply instead). Streaming
+      // providers already emit it live under this iteration's uuid.
+      try {
+        recordAgentNote(this, completionStream?.textResponse);
+      } catch {}
       const newMessages = [...messages];
       let executed = 0;
       let hitToolLimit = false;
@@ -1301,6 +1308,19 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
         : [];
 
     if (batch.length > 0) {
+      // Tool-call iteration: record the visible text for the persisted
+      // trace (see the async path) and emit it live - non-streaming
+      // providers send nothing mid-run otherwise, so narration would only
+      // exist in the trace and never appear in the working view.
+      try {
+        const noted = recordAgentNote(this, completion?.textResponse);
+        if (noted)
+          eventHandler?.("reportStreamEvent", {
+            type: "fullTextResponse",
+            uuid: v4(),
+            content: noted,
+          });
+      } catch {}
       const newMessages = [...messages];
       let executed = 0;
       let hitToolLimit = false;

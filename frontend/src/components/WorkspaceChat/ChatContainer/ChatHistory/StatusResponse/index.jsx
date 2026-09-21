@@ -83,11 +83,12 @@ export function cleanToolName(name = "") {
 /**
  * Classifies a humanized status row so the chain can color-code it:
  * tool invocations, shell commands, and pass/fail results each get their
- * own icon + tone instead of one flat white list.
+ * own icon + tone instead of one flat white list. Also shared with
+ * HistoricalTrace for the solo tool-call hide rule.
  * @param {string} label - humanized single-line status label
  * @returns {"toolcall"|"command"|"exit-ok"|"exit-fail"|"status"} step kind
  */
-function classifyStatus(label = "") {
+export function classifyStatus(label = "") {
   if (label.startsWith("Called ")) return "toolcall";
   if (label.startsWith("$ ")) return "command";
   const exit = label.match(/^exit\s+(\d+)/i);
@@ -211,6 +212,30 @@ export default function StatusResponse({
         full: singleLineStatus(node.content, Number.POSITIVE_INFINITY),
       });
   }
+
+  // A chain that is just one bare tool call with no reasoning ("Called
+  // create-text-file" and nothing else) carries no information beyond the
+  // file card that follows it, so it hides completely - but only once
+  // settled, so live progress still shows while the tool runs. Anything
+  // else (reasoning text, several calls, other statuses) stays visible.
+  const hasReasoning = stepNodes.some(
+    ({ node }) =>
+      node.type === "thoughtChain" &&
+      stripThoughtTags(node.content ?? "").trim()
+  );
+  const statusKinds = stepNodes
+    .filter(({ label }) => !!label)
+    .map(({ label }) => classifyStatus(label));
+  // Noise-only chains (every status humanized away, no reasoning) would
+  // render an empty block - hide those too, live or reloaded.
+  if (stepNodes.length === 0) return null;
+  if (
+    !active &&
+    !hasReasoning &&
+    statusKinds.length === 1 &&
+    statusKinds[0] === "toolcall"
+  )
+    return null;
 
   return (
     <ChainOfThought open={isExpanded} onOpenChange={setIsExpanded}>

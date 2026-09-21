@@ -186,7 +186,11 @@ const HistoricalMessage = ({
             <HistoricalOutputs outputs={outputs} trace={trace} />
           </div>
         )}
-        {hasVisibleContent(message) && (
+        {hasVisibleContent(message) && !!chatId && (
+          // Mid-run narration notes carry no chatId (only the persisted
+          // final reply gets one) - they render as bare prose with no
+          // copy/edit/regen row, matching the reload TraceNote. Otherwise
+          // every one-line note drags a full action bar plus spacing.
           <div className="flex items-start md:items-center gap-x-1">
             <TTSMessage
               slug={workspace?.slug}

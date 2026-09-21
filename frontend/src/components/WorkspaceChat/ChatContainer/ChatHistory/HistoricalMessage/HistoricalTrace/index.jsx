@@ -1,45 +1,88 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import DOMPurify from "dompurify";
 import {
-  Brain,
-  CaretDown,
   CheckCircle,
   Circle,
   ListChecks,
-  Robot,
   SpinnerGap,
-  Terminal,
 } from "@phosphor-icons/react";
-import { renderThoughtMarkdown } from "@/utils/chat/markdown";
-import { stripThoughtTags } from "../../ThoughtContainer";
-import { humanizeAgentStatus } from "../../StatusResponse";
+import renderMarkdown from "@/utils/chat/markdown";
+import StatusResponse from "../../StatusResponse";
 import FileChangeCard from "../../FileChangeCard";
 import FileDownloadCard from "../../FileDownloadCard";
-import { formatDuration } from "@/utils/numbers";
+import SessionCard from "../../SessionCard";
 
 /**
  * Renders a persisted agent run trace (see server `plugins/trace.js`) in
  * chronological order above the turn's final reply - the reloaded
- * equivalent of the live activity chain. Live-only stores (agentActivity,
- * per-chain arrival timestamps) are gone after reload, so rows render
- * statically: thoughts collapsed with their own toggle, statuses as dim
- * one-liners, file cards via the shared component, plans and sessions as
- * compact static rows.
+ * equivalent of the live activity chain. Consecutive thought/status events
+ * regroup into chains and render through the same StatusResponse component
+ * as the live chat (settled: collapsed, no live timestamps), so a reopened
+ * thread reads the same as the working view. Visible cards break the run
+ * exactly like they break the live chain, preserving chronological
+ * interleave. Solo bare tool calls hide via the shared StatusResponse rule.
+ * `agentNote` progress sentences render as reply-styled prose between the
+ * runs. Plans and sessions have no live-chain equivalent and keep their compact
+ * static rows.
  * @param {Object} props
  * @param {Array<{type: string, content: any}>} [props.trace] - recorded events
  */
 function HistoricalTrace({ trace = [] }) {
   const events = useMemo(() => (Array.isArray(trace) ? trace : []), [trace]);
-  if (events.length === 0) return null;
+  const rows = useMemo(() => {
+    const out = [];
+    // Two frames arrive per session (`running` then `done`/`error` with the
+    // same id) - only the last one renders, mirroring the live in-place
+    // update. Otherwise a reloaded run shows every session twice.
+    const lastSessionIdx = new Map();
+    events.forEach((event, index) => {
+      if (event?.type === "sessionCard" && event?.content?.id != null)
+        lastSessionIdx.set(event.content.id, index);
+    });
+    let run = null;
+    const flush = () => {
+      if (run) {
+        out.push({ run });
+        run = null;
+      }
+    };
+    events.forEach((event, index) => {
+      if (
+        event?.type === "sessionCard" &&
+        event?.content?.id != null &&
+        lastSessionIdx.get(event.content.id) !== index
+      )
+        return;
+      if (event?.type === "thoughtChain" || event?.type === "statusResponse") {
+        if (!run) run = [];
+        run.push(event);
+      } else {
+        flush();
+        out.push({ event });
+      }
+    });
+    flush();
+    return out;
+  }, [events]);
+  if (rows.length === 0) return null;
   return (
     <div className="not-prose w-full max-w-[640px] flex flex-col gap-y-2 mb-2">
-      {events.map((event, index) => (
-        <TraceRow
-          key={`${event?.type || "event"}-${index}`}
-          event={event || {}}
-        />
-      ))}
+      {rows.map((row, index) =>
+        row.run ? (
+          <StatusResponse
+            key={`trace-chain-${index}`}
+            messages={row.run}
+            isThinking={false}
+            isLastGroup={false}
+          />
+        ) : (
+          <TraceRow
+            key={`${row.event?.type || "event"}-${index}`}
+            event={row.event || {}}
+          />
+        )
+      )}
     </div>
   );
 }
@@ -47,8 +90,12 @@ function HistoricalTrace({ trace = [] }) {
 function TraceRow({ event }) {
   const { type, content } = event;
 
-  if (type === "thoughtChain" && typeof content === "string" && content) {
-    return <TraceThought text={content} />;
+  // Mid-run progress note: the model's visible text from a tool-call
+  // iteration. Renders as plain reply-styled prose (same renderer and
+  // colors as the chat reply) so the reloaded run narrates like the live
+  // one. Like any visible message it breaks the activity run.
+  if (type === "agentNote" && typeof content === "string" && content.trim()) {
+    return <TraceNote text={content} />;
   }
   if (type === "fileChangeCard" && content?.path) {
     return (
@@ -69,66 +116,24 @@ function TraceRow({ event }) {
   if (type === "todoListCard") {
     return <TracePlan items={content?.items} />;
   }
-  if (type === "sessionCard" && content?.label) {
-    return <TraceSession session={content} />;
+  if (type === "sessionCard" && content?.id != null) {
+    return <SessionCard session={content} />;
   }
-  if (
-    type === "statusResponse" &&
-    typeof content === "string" &&
-    content.trim()
-  ) {
-    // Same humanized one-liners as the live chain (verbose echoes and
-    // assembly dumps drop out); noise-only lines render nothing.
-    const label = humanizeAgentStatus(content);
-    if (!label) return null;
-    return (
-      <p
-        title={content}
-        className="truncate text-xs text-zinc-500 light:text-zinc-400 font-mono px-2 py-0.5"
-      >
-        {label}
-      </p>
-    );
-  }
+  // Thoughts and statuses only ever arrive inside a regrouped run (rendered
+  // by StatusResponse above); anything reaching here renders nothing.
   return null;
 }
 
 /**
- * Collapsed reasoning block. No arrival timestamps survive reload, so there
- * is no duration - just the thought text behind a toggle.
+ * One persisted narration sentence, styled like reply prose.
  */
-const TraceThought = memo(function TraceThought({ text }) {
-  const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
-  const html = useMemo(
-    () => DOMPurify.sanitize(renderThoughtMarkdown(stripThoughtTags(text))),
-    [text]
-  );
+const TraceNote = memo(function TraceNote({ text }) {
+  const html = useMemo(() => DOMPurify.sanitize(renderMarkdown(text)), [text]);
   return (
-    <div className="w-full">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        className="flex items-center gap-x-2 w-full rounded-lg px-2 py-1 text-left border-none cursor-pointer bg-transparent hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors"
-      >
-        <Brain className="w-3.5 h-3.5 text-zinc-500 light:text-zinc-400 shrink-0" />
-        <span className="flex-1 min-w-0 truncate text-[12px] text-zinc-400 light:text-zinc-500">
-          {t("chat_window.trace.thought")}
-        </span>
-        <CaretDown
-          className={`w-3 h-3 text-zinc-500 light:text-zinc-400 shrink-0 transition-transform ${
-            expanded ? "rotate-180" : ""
-          }`}
-        />
-      </button>
-      {expanded && (
-        <div
-          className="mx-2 mb-1 px-2 py-1.5 text-[13px] leading-relaxed text-zinc-300 light:text-zinc-700 break-words"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      )}
-    </div>
+    <span
+      className="flex flex-col gap-y-1 text-white light:text-slate-900 max-w-[640px] break-words"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 });
 
@@ -169,55 +174,6 @@ function TracePlan({ items }) {
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-/**
- * Static terminal/subagent row with status dot, duration, and an expandable
- * detail (command output / result text).
- */
-function TraceSession({ session }) {
-  const [expanded, setExpanded] = useState(false);
-  const KindIcon = session.kind === "subagent" ? Robot : Terminal;
-  const dot =
-    session.status === "running"
-      ? "bg-sky-400"
-      : session.status === "error"
-        ? "bg-red-400"
-        : "bg-emerald-400";
-  const ms =
-    session.endedAt != null && session.startedAt != null
-      ? session.endedAt - session.startedAt
-      : null;
-  return (
-    <div className="rounded-lg bg-white/[0.04] light:bg-black/[0.04] overflow-hidden">
-      <button
-        type="button"
-        onClick={() => session.detail && setExpanded((v) => !v)}
-        title={session.label}
-        className="flex items-center gap-x-2 w-full rounded-lg px-2 py-1.5 text-left border-none cursor-pointer bg-transparent hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors"
-      >
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
-        <KindIcon className="w-3.5 h-3.5 text-zinc-400 light:text-zinc-500 shrink-0" />
-        <span
-          className={`flex-1 min-w-0 truncate text-[12px] text-zinc-200 light:text-zinc-800 ${
-            session.kind === "terminal" ? "font-mono" : ""
-          }`}
-        >
-          {session.label}
-        </span>
-        {Number.isFinite(ms) && ms >= 0 && (
-          <span className="text-[10px] text-zinc-500 light:text-zinc-400 tabular-nums shrink-0">
-            {formatDuration(ms / 1000)}
-          </span>
-        )}
-      </button>
-      {expanded && !!session.detail && (
-        <pre className="mx-2 mb-2 p-2 rounded-md bg-zinc-950/70 light:bg-slate-100 text-[11px] leading-relaxed text-zinc-300 light:text-zinc-700 font-mono whitespace-pre-wrap break-words max-h-[260px] overflow-y-auto">
-          {session.detail}
-        </pre>
-      )}
     </div>
   );
 }

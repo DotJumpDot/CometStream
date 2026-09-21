@@ -261,6 +261,249 @@ function summarizeCommand(command, maxChars = SUMMARY_MAX_CHARS) {
 }
 
 /**
+ * Classifies a shell command for the session row chip so the chat reads at
+ * a glance (`Search - $ grep …` vs a bare `$ …`). First match wins in
+ * specificity order: heredoc/redirect writes before anything they chain
+ * with, then installs, searches, fetches, and plain runs.
+ * @param {string} command - Raw shell command line.
+ * @returns {"Search"|"Run"|"Install"|"Write"|"Fetch"|null} Category or null
+ * for anything unrecognized (the row renders chipless).
+ */
+function categorizeCommand(command) {
+  const cmd = String(command ?? "");
+  if (!cmd.trim()) return null;
+  // Heredoc file writes (`cat > file << 'EOF'`) and in-place edits.
+  if (/<<-?\s*['"]?[A-Za-z_]/.test(cmd)) return "Write";
+  if (/\bsed\b[^\n]*\s-i\b/.test(cmd)) return "Write";
+  if (
+    /(^|[|;&\s])\s*(grep|rg|find|findstr|locate|where|which|Select-String)\b/i.test(
+      cmd
+    )
+  )
+    return "Search";
+  if (
+    /\b((npm|yarn|pnpm|bun)\s+(install|i|add|dlx)|pip3?\s+install)\b/i.test(cmd)
+  )
+    return "Install";
+  if (/(^|[|;&\s])\s*(curl|wget|Invoke-WebRequest|\birm\b)\b/i.test(cmd))
+    return "Fetch";
+  // Shell-redirection writes (`> file`, `>> file`) - but not stderr
+  // plumbing (`2>`, `&>`, `>/dev/null`) which accompanies any command.
+  if (/(?<![\d&])>\s*(?!\/dev\/null\b|>)[\w.~/\\-][^|;&\n]*/.test(cmd))
+    return "Write";
+  if (
+    /(^|[|;&\s])\s*(node|python3?|npm\s+(run|start)|yarn\s+(run|start|dev)|go\s+run|dotnet\s+run|uvicorn|gunicorn)\b/i.test(
+      cmd
+    )
+  )
+    return "Run";
+  return null;
+}
+
+// Bounds for terminal workdir change detection (see snapshotWorkdir): the
+// walk stays cheap on project dirs while node_modules-style trees never
+// get scanned at all.
+const WORKDIR_SNAPSHOT_MAX_FILES = 500;
+const WORKDIR_CONTENT_MAX_BYTES = 128 * 1024;
+const WORKDIR_IGNORED_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".pytest_cache",
+  "dist",
+  "build",
+  ".next",
+  "target",
+  "bin",
+  "obj",
+]);
+const WORKDIR_MAX_CARDS = 20;
+
+/**
+ * Lists files under a root as forward-slash relative paths, deterministic
+ * (sorted) and capped so a huge tree cannot stall a tool call. Ignored
+ * dependency/build dirs are never descended into.
+ * @param {string} root - Absolute directory to walk.
+ * @returns {string[]} Relative file paths.
+ */
+function walkWorkdirFiles(root) {
+  const found = [];
+  const stack = [""];
+  while (stack.length > 0 && found.length < WORKDIR_SNAPSHOT_MAX_FILES) {
+    const rel = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(path.join(root, rel), {
+        withFileTypes: true,
+      });
+    } catch {
+      continue; // Raced deletion or unreadable dir - skip it.
+    }
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      if (found.length >= WORKDIR_SNAPSHOT_MAX_FILES) break;
+      const entryRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (!WORKDIR_IGNORED_DIRS.has(entry.name)) stack.push(entryRel);
+      } else if (entry.isFile()) {
+        found.push(entryRel);
+      }
+    }
+  }
+  return found.sort();
+}
+
+/**
+ * Reads a file as UTF-8 text when it is small enough to diff, else null.
+ * Binary (NUL byte) and oversized files never become cards.
+ * @param {string} absPath - Absolute file path.
+ * @returns {string|null} Text content or null.
+ */
+function readSmallTextFile(absPath) {
+  try {
+    const stat = fs.statSync(absPath);
+    if (!stat.isFile() || stat.size > WORKDIR_CONTENT_MAX_BYTES) return null;
+    const buf = fs.readFileSync(absPath);
+    if (buf.includes(0)) return null;
+    return buf.toString("utf-8");
+  } catch {
+    return null; // Raced deletion - treated as no content.
+  }
+}
+
+/**
+ * Snapshots a workdir: stat map for every file plus text content for small
+ * text files (needed as the "before" side of edit diffs).
+ * @param {string} root - Absolute terminal working directory.
+ * @returns {{files: Map<string, {size: number, mtimeMs: number}>, contents: Map<string, string>}}
+ */
+function snapshotWorkdir(root) {
+  const files = new Map();
+  const contents = new Map();
+  for (const rel of walkWorkdirFiles(root)) {
+    const abs = path.join(root, rel);
+    try {
+      const stat = fs.statSync(abs);
+      if (!stat.isFile()) continue;
+      files.set(rel, { size: stat.size, mtimeMs: stat.mtimeMs });
+      const text = readSmallTextFile(abs);
+      if (text !== null) contents.set(rel, text);
+    } catch {
+      continue; // Raced deletion - skip it.
+    }
+  }
+  return { files, contents };
+}
+
+/**
+ * Diffs two workdir snapshots: added files plus files whose size/mtime
+ * changed. Deletions intentionally produce nothing (no delete card exists).
+ * @param {{files: Map}} before - snapshotWorkdir result from before the run
+ * @param {{files: Map}} after - snapshotWorkdir result from after the run
+ * @returns {{added: string[], modified: string[]}} Relative paths.
+ */
+function detectWorkdirChanges(before, after) {
+  const added = [];
+  const modified = [];
+  for (const [rel, a] of after.files) {
+    const b = before.files.get(rel);
+    if (!b) added.push(rel);
+    else if (a.size !== b.size || a.mtimeMs !== b.mtimeMs) modified.push(rel);
+  }
+  return { added, modified };
+}
+
+/**
+ * Counts added/removed lines in a unified diff string, ignoring the
+ * `+++`/`---` file headers. Mirrors countUnifiedDiffLines in the
+ * filesystem lib (kept local: that helper is module-private there).
+ * @param {string} diffText - unified diff
+ * @returns {{added: number, removed: number}}
+ */
+function countWorkdirDiffLines(diffText) {
+  let added = 0;
+  let removed = 0;
+  for (const line of diffText.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) added++;
+    else if (line.startsWith("-")) removed++;
+  }
+  return { added, removed };
+}
+
+/**
+ * Caps a unified diff like capUnifiedDiffLines in the filesystem lib.
+ * @param {string} diffText - unified diff
+ * @param {number} [maxLines] - max lines to keep
+ * @returns {{diff: string, truncated: boolean}}
+ */
+function capWorkdirDiff(diffText, maxLines = 500) {
+  const lines = diffText.split("\n");
+  if (lines.length <= maxLines) return { diff: diffText, truncated: false };
+  return {
+    diff: lines.slice(0, maxLines).join("\n"),
+    truncated: true,
+  };
+}
+
+/**
+ * Emits one fileChangeCard per file a terminal command created or modified
+ * so shell writes (`cat > file <<'EOF'`, `sed -i`, scaffolds) show up in
+ * the chat like file-skill writes do. New files become `create` rows with
+ * a line count; edits become `edit` rows with a real unified diff (same
+ * expandable rendering). Binary, oversized, and mtime-only touches emit
+ * nothing; output is capped so a dependency install cannot spam the chat.
+ * Card emission must never break the tool result - callers wrap in try.
+ * @param {(payload: object) => void} send - fileChangeCard sender
+ * @param {{files: Map, contents: Map}} before - pre-run snapshot
+ * @param {{files: Map, contents: Map}} after - post-run snapshot
+ */
+function emitWorkdirFileCards(send, before, after) {
+  const { createTwoFilesPatch } = require("diff");
+  const { added, modified } = detectWorkdirChanges(before, after);
+  let emitted = 0;
+  for (const rel of added) {
+    if (emitted >= WORKDIR_MAX_CARDS) return;
+    const content = after.contents.get(rel);
+    if (content == null) continue;
+    send({
+      action: "create",
+      path: rel,
+      added: content.split("\n").length,
+    });
+    emitted++;
+  }
+  for (const rel of modified) {
+    if (emitted >= WORKDIR_MAX_CARDS) return;
+    const beforeText = before.contents.get(rel);
+    const afterText = after.contents.get(rel);
+    if (beforeText == null || afterText == null) continue;
+    if (beforeText === afterText) continue; // mtime-only touch, no row.
+    const rawDiff = createTwoFilesPatch(
+      `a/${rel}`,
+      `b/${rel}`,
+      beforeText,
+      afterText,
+      "",
+      ""
+    );
+    const { added: addedLines, removed } = countWorkdirDiffLines(rawDiff);
+    const { diff, truncated } = capWorkdirDiff(rawDiff);
+    send({
+      action: "edit",
+      path: rel,
+      added: addedLines,
+      removed,
+      diff,
+      truncated,
+    });
+    emitted++;
+  }
+}
+
+/**
  * Runs a command inside the terminal root with timeout + output caps.
  * @param {string} command - Shell command line to execute.
  * @param {object} [opts] - Optional overrides.
@@ -398,22 +641,40 @@ const terminalAgent = {
 
               // Session log for the side panel: one row per execution with
               // the full command + output tail on expand.
+              const workdirRoot = await terminalRootAsync();
+              // Snapshot before the run so files the shell creates or edits
+              // can be reported as file cards afterwards.
+              const workdirBefore = snapshotWorkdir(workdirRoot);
               const sessions = require("./sessions.js");
               const session = sessions.startSession({
                 kind: "terminal",
                 label: `$ ${summarizeCommand(command)}`,
                 detail: `$ ${String(command ?? "").trim()}\n`,
+                category: categorizeCommand(command),
               });
               const sessionId = session.id;
               this.super.socket?.send?.("sessionCard", { ...session });
 
               const result = await runCommand(command, {
-                cwd: await terminalRootAsync(),
+                cwd: workdirRoot,
               });
               this.super.introspect(
                 `${this.caller}: exit ${result.exitCode ?? "?"} in ${result.durationMs}ms`
               );
               finishTerminalSession(sessionId, this.super.socket, result);
+              // Shell writes (`cat > file <<'EOF'`, `sed -i`, scaffolds)
+              // show up in the chat like file-skill writes. Card emission
+              // must never break the tool result, so it is guarded.
+              try {
+                emitWorkdirFileCards(
+                  (payload) =>
+                    this.super.socket?.send?.("fileChangeCard", payload),
+                  workdirBefore,
+                  snapshotWorkdir(workdirRoot)
+                );
+              } catch {
+                // File rows are best-effort UI - the result stands either way.
+              }
               return JSON.stringify(result);
             } catch (e) {
               this.super.handlerProps.log(`terminal-agent error: ${e.message}`);
@@ -468,6 +729,10 @@ module.exports = {
   capOutput,
   commandTimeoutMs,
   summarizeCommand,
+  categorizeCommand,
+  snapshotWorkdir,
+  detectWorkdirChanges,
+  emitWorkdirFileCards,
   finishTerminalSession,
   SUMMARY_MAX_CHARS,
   DENIED_COMMAND_PATTERNS,

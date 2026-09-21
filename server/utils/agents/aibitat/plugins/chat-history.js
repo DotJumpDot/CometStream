@@ -31,6 +31,38 @@ const chatHistory = {
           aibitat._aborted = true;
         });
 
+        // A run that dies before any reply (dead model connection, startup
+        // crash) would otherwise leave the pre-registered prompt row with an
+        // empty response - a thread that opens showing the question and
+        // nothing else. Fill it with the failure so the thread reads
+        // honestly. Guarded by _replySaved so a late error can never
+        // overwrite a completed reply.
+        aibitat.onError(async (error) => {
+          try {
+            if (!aibitat.trackedChatId || aibitat._replySaved) return;
+            aibitat._replySaved = true;
+            const invocation = aibitat.handlerProps.invocation;
+            const message =
+              error?.message || "An error occurred while running the agent.";
+            const trace = takeTrace(aibitat);
+            await WorkspaceChats.upsert(aibitat.trackedChatId, {
+              workspaceId: Number(invocation.workspace_id),
+              prompt: aibitat._failedPrompt ?? "",
+              response: {
+                text: `This run failed before producing a reply: ${message}`,
+                sources: [],
+                type: "chat",
+                attachments: [],
+                metrics: {},
+                ...(trace.length > 0 ? { trace } : {}),
+              },
+              user: { id: invocation?.user_id || null },
+              threadId: invocation?.thread_id || null,
+              include: true,
+            });
+          } catch {}
+        });
+
         // pre-register a workspace chat ID to secure it in the DB
         aibitat.onMessage(async (message) => {
           if (message.from !== "USER") return;
@@ -68,6 +100,9 @@ const chatHistory = {
               response: {},
             });
             if (chat) aibitat.registerChatId(chat.id);
+            // Kept for the onError fallback: if the run dies before any
+            // reply, the failure save reuses this prompt.
+            aibitat._failedPrompt = userMessage;
 
             // Rename the thread the moment its first chat is pre-registered
             // so the sidebar reflects the prompt right away. Waiting for the
@@ -150,6 +185,8 @@ const chatHistory = {
           threadId: invocation?.thread_id || null,
           include: true,
         });
+        // A completed save wins over any late error fallback.
+        aibitat._replySaved = true;
 
         if (!aibitat._threadRenamed) {
           aibitat._threadRenamed = await this._autoRenameThread(
@@ -203,6 +240,8 @@ const chatHistory = {
           );
         }
         options?.postSave();
+        // See _store: a completed save wins over any late error fallback.
+        aibitat._replySaved = true;
         this._cleanup(aibitat);
       },
 
@@ -238,6 +277,10 @@ const chatHistory = {
         aibitat.clearClarifyingQuestionSurveys?.();
         clearTrace(aibitat);
         aibitat.clearTrackedChatId();
+        // _replySaved intentionally survives cleanup: the instance is
+        // per-run, and a late error after a completed save must stay a
+        // no-op. Only the prompt scratch resets.
+        aibitat._failedPrompt = "";
       },
     };
   },

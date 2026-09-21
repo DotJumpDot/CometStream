@@ -368,10 +368,40 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
     return;
   }
 
-  // Terminal/subagent session rows render only in the side panel.
+  // Terminal/subagent session rows live in both places: the side panel
+  // feed and the chat stream. Two frames arrive per session (`running` at
+  // start, `done`/`error` at finish with the same id), so the chat item
+  // upserts in place - replacing keeps chronological interleave instead of
+  // appending a duplicate row.
   if (data.type === "sessionCard") {
-    upsertAgentSession(data.content || {});
-    return;
+    const session = data.content || {};
+    upsertAgentSession(session);
+    if (session.id == null) return;
+    return setChatHistory((prev) => {
+      if (prev.some((msg) => msg.sessionId === session.id)) {
+        return prev.map((msg) =>
+          msg.sessionId === session.id
+            ? { ...msg, content: { ...session } }
+            : msg
+        );
+      }
+      return [
+        ...prev.filter((msg) => !!msg.content),
+        {
+          uuid: `session-${session.id}`,
+          sessionId: session.id,
+          type: "sessionCard",
+          role: "assistant",
+          content: { ...session },
+          sources: [],
+          closed: true,
+          error: null,
+          animate: false,
+          pending: false,
+          metrics: {},
+        },
+      ];
+    });
   }
 
   if (data.type === "fileDownloadCard") {

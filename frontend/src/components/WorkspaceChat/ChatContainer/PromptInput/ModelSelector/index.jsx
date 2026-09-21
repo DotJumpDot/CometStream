@@ -409,11 +409,15 @@ export default function ModelSelector({ workspace, chatHistory = [] }) {
                     "off",
                     ...(reasoningLevels.length > 0 ? reasoningLevels : ["on"]),
                   ].map((value) => {
-                    const active =
-                      (value === "off" &&
-                        (!current.reasoningEffort ||
-                          current.reasoningEffort === "off")) ||
-                      value === current.reasoningEffort;
+                    // No stored preference defaults to "on" for simple
+                    // on/off models so thinking models think out of the box
+                    // (the server sends nothing either way - the template
+                    // default). Named-level models default to off until a
+                    // level is picked.
+                    const effective =
+                      current.reasoningEffort ??
+                      (reasoningLevels.length === 0 ? "on" : "off");
+                    const active = value === effective;
                     return (
                       <button
                         key={value}

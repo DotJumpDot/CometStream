@@ -7,6 +7,7 @@ const {
   ensureTrace,
   recordTraceEvent,
   recordThoughtText,
+  recordAgentNote,
   extractThoughts,
   wrapRawSocketForTrace,
   takeTrace,
@@ -112,6 +113,44 @@ describe("agent run trace recorder", () => {
     it("never throws on odd input", () => {
       expect(() => recordThoughtText({}, null)).not.toThrow();
       expect(() => recordThoughtText(null, "<think>x</think>")).not.toThrow();
+    });
+  });
+
+  describe("recordAgentNote", () => {
+    it("records visible text around think blocks and returns it", () => {
+      const aibitat = {};
+      const noted = recordAgentNote(
+        aibitat,
+        "<think>reasoning</think>Creating the files now."
+      );
+      expect(noted).toBe("Creating the files now.");
+      expect(aibitat._pendingTrace).toEqual([
+        { type: "agentNote", content: "Creating the files now." },
+      ]);
+    });
+
+    it("ignores think-only, empty, and non-string iterations", () => {
+      const aibitat = {};
+      expect(recordAgentNote(aibitat, "<think>only</think>")).toBeNull();
+      expect(recordAgentNote(aibitat, "   \n  ")).toBeNull();
+      expect(recordAgentNote(aibitat, "")).toBeNull();
+      expect(recordAgentNote(aibitat, null)).toBeNull();
+      expect(recordAgentNote(aibitat, undefined)).toBeNull();
+      expect(ensureTrace(aibitat)).toHaveLength(0);
+    });
+
+    it("caps long notes and stops past the event cap", () => {
+      const aibitat = {};
+      const noted = recordAgentNote(aibitat, "y".repeat(5_000));
+      expect(noted).toContain("truncated");
+      expect(aibitat._pendingTrace).toHaveLength(1);
+      aibitat._pendingTrace = new Array(MAX_TRACE_EVENTS).fill({});
+      expect(recordAgentNote(aibitat, "one more")).toBeNull();
+    });
+
+    it("never throws on odd input", () => {
+      expect(() => recordAgentNote({}, null)).not.toThrow();
+      expect(() => recordAgentNote(null, "hi")).not.toThrow();
     });
   });
 

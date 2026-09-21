@@ -174,3 +174,47 @@ describe("GenericOpenAiProvider (agent) attachment content", () => {
     });
   });
 });
+
+describe("GenericOpenAiLLM reasoning effort", () => {
+  function providerWithEffort(reasoningEffort) {
+    const provider = new GenericOpenAiLLM(null, "test-model", {
+      ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+    });
+    const calls = [];
+    provider.openai = {
+      chat: {
+        completions: {
+          create: async (payload) => {
+            calls.push(payload);
+            return { choices: [{ message: { content: "hi" } }] };
+          },
+        },
+      },
+    };
+    return { provider, calls };
+  }
+
+  it.each([["on"], [null], [undefined]])(
+    "sends no reasoning param for %p (template default)",
+    async (reasoningEffort) => {
+      const { provider, calls } = providerWithEffort(reasoningEffort);
+      await provider.getChatCompletion([{ role: "user", content: "hi" }], {});
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).not.toHaveProperty("reasoning_effort");
+    }
+  );
+
+  it('maps "off" to reasoning_effort "none" so thinking stops', async () => {
+    const { provider, calls } = providerWithEffort("off");
+    await provider.getChatCompletion([{ role: "user", content: "hi" }], {});
+    expect(calls).toHaveLength(1);
+    expect(calls[0].reasoning_effort).toBe("none");
+  });
+
+  it("passes named levels straight through", async () => {
+    const { provider, calls } = providerWithEffort("high");
+    await provider.getChatCompletion([{ role: "user", content: "hi" }], {});
+    expect(calls).toHaveLength(1);
+    expect(calls[0].reasoning_effort).toBe("high");
+  });
+});
