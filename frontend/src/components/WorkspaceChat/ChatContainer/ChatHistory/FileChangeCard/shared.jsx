@@ -89,13 +89,13 @@ export function UnifiedDiffView({ diff, truncated = false }) {
 
   return (
     <div className="mt-1 rounded-lg border border-white/10 light:border-black/10 overflow-hidden text-[12px] font-mono w-full">
-      <div className="max-h-[420px] overflow-y-auto">
+      <div className="max-h-[420px] overflow-y-auto py-1">
         {rows.map((row, i) => {
           if (row.kind === "hunk")
             return (
               <div
                 key={i}
-                className="px-3 py-0.5 bg-white/5 light:bg-black/5 text-zinc-500 light:text-zinc-400 whitespace-pre-wrap break-words"
+                className="px-3 py-1 bg-white/5 light:bg-black/5 text-zinc-500 light:text-zinc-400 whitespace-pre-wrap break-words leading-[1.7]"
               >
                 {row.text}
               </div>
@@ -104,7 +104,7 @@ export function UnifiedDiffView({ diff, truncated = false }) {
             return (
               <div
                 key={i}
-                className="px-3 py-0.5 text-zinc-600 light:text-zinc-400 italic whitespace-pre-wrap break-words"
+                className="px-3 py-1 text-zinc-600 light:text-zinc-400 italic whitespace-pre-wrap break-words leading-[1.7]"
               >
                 {row.text}
               </div>
@@ -115,14 +115,14 @@ export function UnifiedDiffView({ diff, truncated = false }) {
           return (
             <div
               key={i}
-              className={`flex ${
+              className={`flex py-1 leading-[1.7] ${
                 isAdd ? "bg-emerald-500/10" : isDel ? "bg-red-500/10" : ""
               }`}
             >
-              <span className="w-9 flex-shrink-0 pr-1 text-right text-zinc-600 light:text-zinc-400 select-none">
+              <span className="w-9 flex-shrink-0 pr-1 text-right text-zinc-500 light:text-zinc-400 select-none tabular-nums">
                 {row.old ?? ""}
               </span>
-              <span className="w-9 flex-shrink-0 pr-1 text-right text-zinc-600 light:text-zinc-400 select-none border-r border-white/5 light:border-black/10 mr-2">
+              <span className="w-9 flex-shrink-0 pr-1 text-right text-zinc-500 light:text-zinc-400 select-none border-r border-white/5 light:border-black/10 mr-3 tabular-nums">
                 {row.new ?? ""}
               </span>
               <span

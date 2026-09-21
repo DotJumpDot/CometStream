@@ -3,6 +3,7 @@ const Provider = require("./ai-provider.js");
 const InheritMultiple = require("./helpers/classes.js");
 const UnTooled = require("./helpers/untooled.js");
 const { tooledStream, tooledComplete } = require("./helpers/tooled.js");
+const { fetchForBaseURL } = require("./helpers/localFetch.js");
 const { RetryError } = require("../error.js");
 const { getAnythingLLMUserAgent } = require("../../../../endpoints/utils");
 const {
@@ -57,6 +58,9 @@ class CustomOpenAiProvider extends InheritMultiple([Provider, UnTooled]) {
       defaultHeaders: {
         "User-Agent": getAnythingLLMUserAgent(),
       },
+      // Local inference servers close idle keep-alive sockets between agent
+      // turns (ECONNRESET "socket hang up"); use fresh connections for them.
+      fetch: fetchForBaseURL(resolved.provider.baseUrl),
     });
     // Re-bind the session abort signal now that the client exists (see class doc).
     this.attachAbortSignal(this.abortSignal);

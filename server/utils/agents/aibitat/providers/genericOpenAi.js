@@ -3,6 +3,7 @@ const Provider = require("./ai-provider.js");
 const InheritMultiple = require("./helpers/classes.js");
 const UnTooled = require("./helpers/untooled.js");
 const { tooledStream, tooledComplete } = require("./helpers/tooled.js");
+const { fetchForBaseURL } = require("./helpers/localFetch.js");
 const { RetryError } = require("../error.js");
 const { toValidNumber } = require("../../../http/index.js");
 const { getAnythingLLMUserAgent } = require("../../../../endpoints/utils");
@@ -29,6 +30,9 @@ class GenericOpenAiProvider extends InheritMultiple([Provider, UnTooled]) {
         "User-Agent": getAnythingLLMUserAgent(),
         ...GenericOpenAiLLM.parseCustomHeaders(),
       },
+      // Local inference servers close idle keep-alive sockets between agent
+      // turns (ECONNRESET "socket hang up"); use fresh connections for them.
+      fetch: fetchForBaseURL(process.env.GENERIC_OPEN_AI_BASE_PATH),
     });
 
     this._client = client;

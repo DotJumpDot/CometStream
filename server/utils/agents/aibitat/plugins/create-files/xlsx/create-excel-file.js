@@ -341,9 +341,8 @@ module.exports.CreateExcelFile = {
                 fileSize: savedFile.fileSize,
               });
 
-              this.super.introspect(
-                `${this.caller}: Successfully created Excel file "${displayFilename}"`
-              );
+              // The fileDownloadCard above is the success signal in the chat -
+              // no separate "successfully created" status row needed.
 
               let result = `Successfully created Excel spreadsheet "${displayFilename}" (${bufferSizeKB}KB) with ${sheetDefinitions.length} sheet(s).`;
 

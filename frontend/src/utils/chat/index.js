@@ -1,7 +1,11 @@
 import { THREAD_RENAME_EVENT } from "@/components/Sidebar/ActiveWorkspaces/ThreadContainer";
 import { emitAssistantMessageCompleteEvent } from "@/components/contexts/TTSProvider";
 import { getAgentSessionActive } from "@/utils/chat/agent";
-import { addAgentFileChange, setAgentTodo } from "@/utils/agentActivity";
+import {
+  addAgentFileChange,
+  setAgentTodo,
+  upsertAgentSession,
+} from "@/utils/agentActivity";
 export const ABORT_STREAM_EVENT = "abort-chat-stream";
 
 // For handling of chat responses in the frontend by their various types.
@@ -215,6 +219,9 @@ export default function handleChat(
   } else if (type === "todoListCard") {
     // Plan updates render only in the agent side panel - no chat bubble.
     setAgentTodo(chatResult.content?.items || []);
+  } else if (type === "sessionCard") {
+    // Terminal/subagent session rows render only in the side panel.
+    upsertAgentSession(chatResult.content || {});
   } else if (type === "stopGeneration") {
     const chatIdx = _chatHistory.length - 1;
     const existingHistory = { ..._chatHistory[chatIdx] };

@@ -1,5 +1,11 @@
 const { WorkspaceChats } = require("../../../../models/workspaceChats");
 const { WorkspaceThread } = require("../../../../models/workspaceThread");
+const {
+  ensureTrace,
+  takeTrace,
+  clearTrace,
+  extractThoughts,
+} = require("./trace.js");
 
 /**
  * Plugin to save chat history to AnythingLLM DB.
@@ -13,6 +19,12 @@ const chatHistory = {
     return {
       name: this.name,
       setup: function (aibitat) {
+        // Persistable run history: per-iteration thoughts record via the
+        // execution loop and the socket stream records via the websocket
+        // plugin's raw-send wrapper (see plugins/trace.js), so reopening
+        // the thread restores the run, not just the final reply.
+        ensureTrace(aibitat);
+
         // If the agent is aborted (e.g. user sent /reset mid-response), skip
         // the pending save so a completing in-flight response doesn't reappear.
         aibitat.onAbort(() => {
@@ -116,17 +128,23 @@ const chatHistory = {
         const outputs = aibitat._pendingOutputs ?? [];
         const clarifyingQuestions =
           aibitat._pendingClarifyingQuestionSurveys ?? [];
+        // The run trace (thoughts/statuses/cards in order) restores the run
+        // on reload. Thoughts are stripped from the saved reply since they
+        // now live in the trace - otherwise the final thought renders twice.
+        const trace = takeTrace(aibitat);
+        const { cleanText } = extractThoughts(response);
         await WorkspaceChats.upsert(aibitat.trackedChatId, {
           workspaceId: Number(invocation.workspace_id),
           prompt,
           response: {
-            text: response,
+            text: cleanText,
             sources: citations,
             type: "chat",
             attachments,
             metrics,
             ...(outputs.length > 0 ? { outputs } : {}),
             ...(clarifyingQuestions.length > 0 ? { clarifyingQuestions } : {}),
+            ...(trace.length > 0 ? { trace } : {}),
           },
           user: { id: invocation?.user_id || null },
           threadId: invocation?.thread_id || null,
@@ -152,6 +170,12 @@ const chatHistory = {
         const clarifyingQuestions =
           aibitat._pendingClarifyingQuestionSurveys ?? [];
         const existingSources = options?.sources ?? [];
+        const storedText = options.hasOwnProperty("storedResponse")
+          ? options.storedResponse(response)
+          : response;
+        // See _store: thoughts live in the trace, not the saved reply.
+        const trace = takeTrace(aibitat);
+        const { cleanText } = extractThoughts(storedText);
         await WorkspaceChats.upsert(aibitat.trackedChatId, {
           workspaceId: Number(invocation.workspace_id),
           prompt,
@@ -159,14 +183,13 @@ const chatHistory = {
             sources: [...existingSources, ...citations],
             // when we have a _storeSpecial called the options param can include a storedResponse() function
             // that will override the text property to store extra information in, depending on the special type of chat.
-            text: options.hasOwnProperty("storedResponse")
-              ? options.storedResponse(response)
-              : response,
+            text: cleanText,
             type: options?.saveAsType ?? "chat",
             attachments,
             metrics,
             ...(outputs.length > 0 ? { outputs } : {}),
             ...(clarifyingQuestions.length > 0 ? { clarifyingQuestions } : {}),
+            ...(trace.length > 0 ? { trace } : {}),
           },
           user: { id: invocation?.user_id || null },
           threadId: invocation?.thread_id || null,
@@ -213,6 +236,7 @@ const chatHistory = {
         aibitat.clearCitations?.();
         aibitat._pendingOutputs = [];
         aibitat.clearClarifyingQuestionSurveys?.();
+        clearTrace(aibitat);
         aibitat.clearTrackedChatId();
       },
     };

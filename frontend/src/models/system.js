@@ -860,6 +860,22 @@ const System = {
   },
 
   /**
+   * Checks if the terminal-agent skill is available.
+   * The terminal-agent skill is only available when the operator opted in
+   * with AGENT_ENABLE_TERMINAL=1 (local installs).
+   * @returns {Promise<boolean>}
+   */
+  isTerminalAgentAvailable: async function () {
+    return fetch(`${API_BASE}/agent-skills/terminal-agent/is-available`, {
+      method: "GET",
+      headers: baseHeaders(),
+    })
+      .then((res) => res.json())
+      .then((res) => res?.available ?? false)
+      .catch(() => false);
+  },
+
+  /**
    * Checks if the create-files-agent skill is available.
    * The create-files-agent skill is only available when running in a Docker container.
    * @returns {Promise<boolean>}

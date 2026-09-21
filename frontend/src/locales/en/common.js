@@ -438,6 +438,11 @@ const TRANSLATIONS = {
           },
         },
       },
+      terminal: {
+        title: "Terminal",
+        description:
+          "Let the agent run shell commands (install dependencies, scaffold projects, start dev servers, self-test with curl). Requires the AGENT_ENABLE_TERMINAL=1 opt-in on the server; commands run in the configured AGENT_TERMINAL_ROOT directory and go through tool approval.",
+      },
       createFiles: {
         title: "Document Creation",
         description:
@@ -1609,10 +1614,18 @@ const TRANSLATIONS = {
     tab_plan: "Plan",
     tab_changes: "Changes",
     tab_sources: "Sources",
+    tab_sessions: "Sessions",
     plan_empty:
       "The agent's plan will appear here when it starts a multi-step task.",
     changes_empty:
       "File changes the agent makes will be listed here with their diffs.",
+    sessions_empty:
+      "Terminal runs and subagent tasks will appear here while the agent works. Click any row for full output.",
+    sessions_running: "running",
+    sessions_filter_all: "All",
+    sessions_filter_terminal: "Terminal",
+    sessions_filter_subagent: "Subagents",
+    sessions_filter_empty: "Nothing here for this filter yet.",
     progress: "{{done}} of {{total}} steps",
     status_done: "Done",
     status_in_progress: "In progress",
@@ -1664,6 +1677,12 @@ const TRANSLATIONS = {
       lines_one: "{{count}} line",
       lines_other: "{{count}} lines",
       diff_capped: "Diff truncated for display",
+    },
+    trace: {
+      thought: "Thought",
+    },
+    file: {
+      download: "Download",
     },
     response_failed: "Could not respond to message.",
     response_failed_reason: "Reason: {{reason}}",
@@ -1734,8 +1753,22 @@ const TRANSLATIONS = {
     no_tools_found: "No matching tools found",
     loading_mcp_servers: "Loading MCP servers...",
     start_agent_session: "Start Agent Session",
+    sessions_terminal: "Terminal sessions",
+    sessions_subagents: "Subagent runs",
     agent_skills_disabled_in_session:
       "Can't modify skills during an active agent session. Use /exit to end the session first.",
+    queue: {
+      title: "Queued ({{count}})",
+      continue: "Continue queue",
+      halted:
+        "Queue paused — the last run stopped or errored. Nothing was deleted.",
+      edit_blocked:
+        "Clear the message box first, then edit the queued message.",
+      move_up: "Move up",
+      move_down: "Move down",
+      edit: "Edit queued message",
+      delete: "Delete queued message",
+    },
     use_agent_session_to_use_tools:
       "You can use tools in chat by starting an agent session with '@agent' at the beginning of your prompt.",
     workspace_llm_manager: {

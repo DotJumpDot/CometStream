@@ -118,9 +118,8 @@ module.exports.CreatePdfFile = {
                 fileSize: savedFile.fileSize,
               });
 
-              this.super.introspect(
-                `${this.caller}: Successfully created PDF document "${displayFilename}"`
-              );
+              // The fileDownloadCard above is the success signal in the chat -
+              // no separate "successfully created" status row needed.
 
               return `Successfully created PDF document "${displayFilename}" (${bufferSizeKB}KB).`;
             } catch (e) {

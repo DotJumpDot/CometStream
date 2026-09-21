@@ -1,7 +1,13 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import DOMPurify from "dompurify";
-import { Brain } from "@phosphor-icons/react";
+import {
+  Brain,
+  CheckCircle,
+  Terminal,
+  Wrench,
+  XCircle,
+} from "@phosphor-icons/react";
 import AgentAnimation from "@/media/animations/agent-animation.webm";
 import AgentStatic from "@/media/animations/agent-static.png";
 import { renderThoughtMarkdown } from "@/utils/chat/markdown";
@@ -21,37 +27,89 @@ import {
 } from "../ChainOfThought";
 
 /**
+ * Maximum characters for one activity-chain row. Rows are single-line by
+ * design - the full text stays available on hover (see the step `title`).
+ */
+const STATUS_LABEL_MAX_CHARS = 120;
+
+/**
+ * Flattens a status line to a single capped line so long tool commands
+ * (e.g. a chained shell one-liner) render as one truncated row instead of
+ * a multi-line wall of text.
+ * @param {string} text - raw status line
+ * @returns {string} single-line label, capped with an ellipsis
+ */
+function singleLineStatus(text = "", max = STATUS_LABEL_MAX_CHARS) {
+  const flat = String(text).replace(/\s+/g, " ").trim();
+  if (flat.length <= max) return flat;
+  return `${flat.slice(0, max - 1).trimEnd()}…`;
+}
+
+/**
  * Collapses raw agent status broadcasts into one readable line each.
  * The server emits several verbose forms per tool call (assembly dumps,
  * execution echoes with the full JSON payload) - the expanded chain should
- * read like a short log, not a protocol trace.
+ * read like a short log, not a protocol trace. Also reused by
+ * HistoricalTrace so reloaded threads read the same as live ones.
  * @param {string} raw - statusResponse content
  * @returns {string|null} display label, or null to drop the line entirely
  */
-function humanizeAgentStatus(raw = "") {
+export function humanizeAgentStatus(raw = "") {
   const s = raw.trim();
   if (!s) return null;
   // Pre-execution assembly dumps duplicate the execution echo that follows.
   if (/^Assembling Tool Call:/i.test(s)) return null;
   if (s.startsWith("@agent is executing")) {
     const match = s.match(/`([^`]+)`/);
-    return match ? `Called ${cleanToolName(match[1])}` : null;
+    return match ? singleLineStatus(`Called ${cleanToolName(match[1])}`) : null;
   }
   let out = s.replace(/^@agent:\s*/i, "");
   // Trailing JSON argument payloads are unreadable noise in a step list.
   out = out.replace(/\s*\{[\s\S]*\}\s*$/, "").trim();
-  return out || null;
+  const label = singleLineStatus(out);
+  return label || null;
 }
 
 /**
  * Shortens a tool name for display: drops any parent# namespace and the
  * long filesystem- prefix so `filesystem-agent#filesystem-write-text-file`
- * reads as `write-text-file`.
+ * reads as `write-text-file`. Shared with HistoricalTrace.
  * @param {string} name
  */
-function cleanToolName(name = "") {
+export function cleanToolName(name = "") {
   return name.replace(/^.*#/, "").replace(/^filesystem-/, "");
 }
+
+/**
+ * Classifies a humanized status row so the chain can color-code it:
+ * tool invocations, shell commands, and pass/fail results each get their
+ * own icon + tone instead of one flat white list.
+ * @param {string} label - humanized single-line status label
+ * @returns {"toolcall"|"command"|"exit-ok"|"exit-fail"|"status"} step kind
+ */
+function classifyStatus(label = "") {
+  if (label.startsWith("Called ")) return "toolcall";
+  if (label.startsWith("$ ")) return "command";
+  const exit = label.match(/^exit\s+(\d+)/i);
+  if (exit) return Number(exit[1]) === 0 ? "exit-ok" : "exit-fail";
+  return "status";
+}
+
+const STEP_KIND_ICON = {
+  toolcall: Wrench,
+  command: Terminal,
+  "exit-ok": CheckCircle,
+  "exit-fail": XCircle,
+};
+
+// Tones paint the label line only - durations keep their own dim style.
+const STEP_KIND_TONE = {
+  toolcall: "text-sky-300 light:text-sky-700 font-medium",
+  command: "text-zinc-200 light:text-zinc-800",
+  "exit-ok": "text-emerald-400 light:text-emerald-600",
+  "exit-fail": "text-red-400 light:text-red-600 font-medium",
+  status: undefined,
+};
 
 /**
  * One rolled-up activity chain. Every agent status update and model thought
@@ -73,11 +131,13 @@ export default function StatusResponse({
 }) {
   const { t } = useTranslation();
   const chainId = messages[0]?.uuid;
-  const { expanded: persistedExpanded, setExpanded: setPersistedExpanded } =
-    useThoughtExpansion(chainId);
+  const {
+    expanded: persistedExpanded,
+    setExpanded: setPersistedExpanded,
+    touched: persistedTouched,
+  } = useThoughtExpansion(chainId);
   const [localExpanded, setLocalExpanded] = useState(false);
-  const isExpanded = chainId ? persistedExpanded : localExpanded;
-  const setIsExpanded = chainId ? setPersistedExpanded : setLocalExpanded;
+  const [localTouched, setLocalTouched] = useState(false);
 
   const lastNode = messages[messages.length - 1];
   const lastIsThought = lastNode?.type === "thoughtChain";
@@ -96,6 +156,26 @@ export default function StatusResponse({
   const active = thinkingActive || workingActive;
 
   const { arrivals, finalizedAt } = useActivityTimestamps(messages, active);
+
+  // A chain the user never toggled mirrors the run: open while work is in
+  // flight so the activity is visible without clicking, auto-collapsed once
+  // finished. An explicit toggle always wins afterwards.
+  const touched = chainId ? persistedTouched : localTouched;
+  const isExpanded = touched
+    ? chainId
+      ? persistedExpanded
+      : localExpanded
+    : active;
+  const setIsExpanded = (next) => {
+    if (chainId) {
+      // Persisting the choice also marks the chain as user-toggled.
+      setPersistedExpanded(next);
+    } else {
+      setLocalTouched(true);
+      setLocalExpanded(next);
+    }
+  };
+
   const firstArrival = chainId ? arrivals[chainId] : null;
   const totalDuration =
     finalizedAt && firstArrival ? (finalizedAt - firstArrival) / 1000 : null;
@@ -115,15 +195,21 @@ export default function StatusResponse({
 
   // Pre-compute rendered steps: status lines are humanized and noise lines
   // (assembly dumps, JSON echoes) drop out entirely. Durations then span to
-  // the next rendered step, absorbing the dropped lines' time.
+  // the next rendered step, absorbing the dropped lines' time. `full` keeps
+  // the uncapped single-line text for the hover tooltip.
   const stepNodes = [];
   for (const node of messages) {
     if (node.type === "thoughtChain") {
-      stepNodes.push({ node, label: null });
+      stepNodes.push({ node, label: null, full: null });
       continue;
     }
     const label = humanizeAgentStatus(node.content);
-    if (label) stepNodes.push({ node, label });
+    if (label)
+      stepNodes.push({
+        node,
+        label,
+        full: singleLineStatus(node.content, Number.POSITIVE_INFINITY),
+      });
   }
 
   return (
@@ -141,25 +227,24 @@ export default function StatusResponse({
         {headerLabel}
       </ChainOfThoughtHeader>
       <ChainOfThoughtContent>
-        {stepNodes.map(({ node, label }, index) => {
+        {stepNodes.map(({ node, label, full }, index) => {
           const start = node.uuid ? arrivals[node.uuid] : null;
           const end = arrivals[stepNodes[index + 1]?.node.uuid] ?? finalizedAt;
           const seconds =
             start && end && end > start ? (end - start) / 1000 : null;
+          const isThought = node.type === "thoughtChain";
+          const kind = isThought ? null : classifyStatus(label);
           return (
             <ChainOfThoughtStep
               key={node.uuid || `activity-${index}`}
-              icon={node.type === "thoughtChain" ? Brain : undefined}
+              icon={isThought ? Brain : STEP_KIND_ICON[kind]}
               status={
                 active && index === stepNodes.length - 1 ? "active" : "complete"
               }
-              label={
-                node.type === "thoughtChain" ? (
-                  <ThoughtNode content={node.content} />
-                ) : (
-                  label
-                )
-              }
+              label={isThought ? <ThoughtNode content={node.content} /> : label}
+              labelClassName={isThought ? undefined : STEP_KIND_TONE[kind]}
+              // Full command on hover; the visible row stays one line.
+              title={isThought ? undefined : full}
               description={seconds ? formatDuration(seconds) : undefined}
             />
           );
@@ -214,7 +299,10 @@ const ThoughtNode = memo(function ThoughtNode({ content }) {
     [content]
   );
   return (
-    <div className="break-words" dangerouslySetInnerHTML={{ __html: html }} />
+    <div
+      className="break-words text-zinc-300 light:text-zinc-700 text-[13px] leading-relaxed"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 });
 

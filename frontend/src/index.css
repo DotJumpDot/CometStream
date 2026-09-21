@@ -1243,22 +1243,33 @@ button.cs-file-ref:hover {
 
 /* List Styles */
 .markdown ol {
-  list-style: decimal-leading-zero;
+  /* Custom counter markers ("1)", "2)", ...) instead of decimal-leading-zero:
+     the plain "01." style reads poorly in dense agent replies. */
+  list-style: none;
+  counter-reset: chat-ol;
   padding-left: 0px;
   padding-top: 10px;
   margin: 10px;
 }
 
 .markdown ol li {
+  counter-increment: chat-ol;
   margin-left: 20px;
-  padding-left: 10px;
+  padding-left: 12px;
+  margin-bottom: 6px;
   position: relative;
   transition: all 0.3s ease;
-  line-height: 1.4rem;
+  line-height: 1.6rem;
 }
 
 .markdown ol li::marker {
-  padding-top: 10px;
+  content: counter(chat-ol) ") ";
+  color: #7dd3fc;
+  font-weight: 600;
+}
+
+[data-theme="light"] .markdown ol li::marker {
+  color: #0284c7;
 }
 
 .markdown ol li p {

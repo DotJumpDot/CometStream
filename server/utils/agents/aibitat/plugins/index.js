@@ -16,6 +16,8 @@ const { requestUserInput } = require("./request-user-input.js");
 const { createScheduledJob } = require("./create-scheduled-job/index.js");
 const { modelRouterCooldown } = require("./model-router-cooldown.js");
 const { agentTodo } = require("./agent-todo.js");
+const { terminalAgent } = require("./terminal.js");
+const { delegateAgent } = require("./delegate.js");
 
 module.exports = {
   webScraping,
@@ -36,6 +38,8 @@ module.exports = {
   createScheduledJob,
   modelRouterCooldown,
   agentTodo,
+  terminalAgent,
+  delegateAgent,
 
   // Plugin name aliases so they can be pulled by slug as well.
   [webScraping.name]: webScraping,
@@ -56,4 +60,6 @@ module.exports = {
   [createScheduledJob.name]: createScheduledJob,
   [modelRouterCooldown.name]: modelRouterCooldown,
   [agentTodo.name]: agentTodo,
+  [terminalAgent.name]: terminalAgent,
+  [delegateAgent.name]: delegateAgent,
 };

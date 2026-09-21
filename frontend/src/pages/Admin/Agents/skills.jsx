@@ -16,6 +16,7 @@ import {
   FilePlus,
   CalendarCheck,
   ImageSquare,
+  Terminal,
 } from "@phosphor-icons/react";
 import RAGImage from "@/media/agents/rag-memory.png";
 import SummarizeImage from "@/media/agents/view-summarize.png";
@@ -67,6 +68,8 @@ export const getDefaultSkills = (t) => ({
  * @param {function} t - The translation function.
  * @param {object} options - The options for the configurable skills.
  * @param {boolean} options.fileSystemAgentAvailable - Whether the file system agent is available.
+ * @param {boolean} options.terminalAgentAvailable - Whether the terminal skill is available
+ * (operator opted in with AGENT_ENABLE_TERMINAL=1).
  * @param {boolean} options.createFilesAgentAvailable - Whether the create files agent is available.
  * @param {boolean} options.imageGenerationAvailable - Whether an image generation provider is
  * configured. Only the in-chat skills menu passes this - the admin page always lists the skill so
@@ -77,6 +80,7 @@ export const getConfigurableSkills = (
   t,
   {
     fileSystemAgentAvailable = true,
+    terminalAgentAvailable = false,
     createFilesAgentAvailable = true,
     imageGenerationAvailable = true,
   } = {}
@@ -99,6 +103,15 @@ export const getConfigurableSkills = (
       skill: "create-files-agent",
       icon: FilePlus,
       image: GenerateSaveImages,
+    },
+  }),
+  ...(terminalAgentAvailable && {
+    "terminal-agent": {
+      title: t("agent.skill.terminal.title"),
+      description: t("agent.skill.terminal.description"),
+      component: GenericSkillPanel,
+      skill: "terminal-agent",
+      icon: Terminal,
     },
   }),
   "create-chart": {

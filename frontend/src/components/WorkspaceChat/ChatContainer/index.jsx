@@ -45,6 +45,7 @@ import { ChatSidebarProvider } from "./ChatSidebar";
 import SourcesSidebar from "./SourcesSidebar";
 import MemoriesSidebar from "./MemoriesSidebar";
 import ActiveGenerationGuard from "./ActiveGenerationGuard";
+import { isComposerNonEmpty } from "./MessageQueue";
 
 export default function ChatContainer({
   workspace,
@@ -68,6 +69,19 @@ export default function ChatContainer({
   const runStartRef = useRef(null);
   const summaryEmittedRef = useRef(false);
   const activeThreadSlug = threadSlug;
+
+  // Queued follow-up messages submitted while a run is in flight. Each item
+  // dispatches via the normal sendCommand path once the previous run
+  // settles, so queued turns never race an active generation.
+  const [messageQueue, setMessageQueue] = useState([]);
+  const [queueHalted, setQueueHalted] = useState(false);
+  const messageQueueRef = useRef([]);
+  messageQueueRef.current = messageQueue;
+  const queueHaltedRef = useRef(false);
+  queueHaltedRef.current = queueHalted;
+  const loadingResponseRef = useRef(false);
+  loadingResponseRef.current = loadingResponse;
+  const prevLoadingRef = useRef(false);
 
   const isEmpty =
     chatHistory.length === 0 && !sessionStorage.getItem(PENDING_HOME_MESSAGE);
@@ -302,6 +316,142 @@ export default function ChatContainer({
   const chatHistoryRef2 = useRef(chatHistory);
   chatHistoryRef2.current = chatHistory;
 
+  /**
+   * Reset the follow-up queue when switching threads/workspaces - queued
+   * prompts belong to the conversation they were written in.
+   */
+  useEffect(() => {
+    setMessageQueue([]);
+    messageQueueRef.current = [];
+    setQueueHalted(false);
+    queueHaltedRef.current = false;
+  }, [activeThreadSlug, workspace?.slug]);
+
+  /**
+   * A manual stop aborts the run AND halts auto-dispatch: the remaining
+   * queue is kept so the user can review and continue it explicitly.
+   */
+  useEffect(() => {
+    const onAbort = () => {
+      setQueueHalted(true);
+      queueHaltedRef.current = true;
+    };
+    window.addEventListener(ABORT_STREAM_EVENT, onAbort);
+    return () => window.removeEventListener(ABORT_STREAM_EVENT, onAbort);
+  }, []);
+
+  /**
+   * Dispatch the next queued message via the normal send path. Error runs
+   * halt the queue instead of chaining into a broken turn; the queue itself
+   * is preserved for an explicit continue.
+   */
+  const dispatchQueuedMessage = useCallback(() => {
+    const next = messageQueueRef.current[0];
+    if (!next || loadingResponseRef.current) return;
+    setMessageQueue((prev) => {
+      const updated = prev.filter((item) => item.id !== next.id);
+      messageQueueRef.current = updated;
+      return updated;
+    });
+    sendCommandRef.current?.({
+      text: next.text,
+      autoSubmit: true,
+      attachments: next.attachments ?? [],
+    });
+  }, []);
+
+  const continueQueue = useCallback(() => {
+    setQueueHalted(false);
+    queueHaltedRef.current = false;
+    // Dispatch on next tick so the halted flag settles first.
+    setTimeout(() => dispatchQueuedMessage(), 0);
+  }, [dispatchQueuedMessage]);
+
+  // When a run settles (loading true->false), auto-dispatch the next queued
+  // message unless halted or the finished turn errored.
+  useEffect(() => {
+    const was = prevLoadingRef.current;
+    prevLoadingRef.current = loadingResponse;
+    if (!was || loadingResponse) return;
+    if (queueHaltedRef.current) return;
+    if (messageQueueRef.current.length === 0) return;
+    const history = chatHistoryRef2.current;
+    const last = history[history.length - 1];
+    if (last?.role === "assistant" && last?.error) {
+      setQueueHalted(true);
+      queueHaltedRef.current = true;
+      return;
+    }
+    dispatchQueuedMessage();
+  }, [loadingResponse, messageQueue, dispatchQueuedMessage]);
+
+  /**
+   * Queue the current composer text as a follow-up turn. Attachments are
+   * snapshotted now so later picks don't leak into earlier items.
+   */
+  const queueMessage = useCallback(
+    (text) => {
+      const trimmed = String(text ?? "").trim();
+      if (!trimmed) return false;
+      const item = {
+        id: v4(),
+        text: trimmed,
+        attachments: parseAttachments(),
+      };
+      setMessageQueue((prev) => {
+        const updated = [...prev, item];
+        messageQueueRef.current = updated;
+        return updated;
+      });
+      // No toast on queue: the panel row appearing is the confirmation.
+      // (A toast per queued message is noisy on long runs.)
+      return true;
+    },
+    [parseAttachments]
+  );
+
+  const moveQueueItem = useCallback((id, dir) => {
+    setMessageQueue((prev) => {
+      const idx = prev.findIndex((item) => item.id === id);
+      const swap = idx + dir;
+      if (idx < 0 || swap < 0 || swap >= prev.length) return prev;
+      const updated = [...prev];
+      [updated[idx], updated[swap]] = [updated[swap], updated[idx]];
+      messageQueueRef.current = updated;
+      return updated;
+    });
+  }, []);
+
+  const deleteQueueItem = useCallback((id) => {
+    setMessageQueue((prev) => {
+      const updated = prev.filter((item) => item.id !== id);
+      messageQueueRef.current = updated;
+      return updated;
+    });
+  }, []);
+
+  /**
+   * Move a queued prompt back into the composer for editing. Refused when
+   * the box already holds text so nothing gets overwritten.
+   */
+  const editQueueItem = useCallback(
+    (id) => {
+      const item = messageQueueRef.current.find((entry) => entry.id === id);
+      if (!item) return;
+      if (isComposerNonEmpty()) {
+        showToast(t("chat_window.queue.edit_blocked"), "warning");
+        return;
+      }
+      setMessageQueue((prev) => {
+        const updated = prev.filter((entry) => entry.id !== id);
+        messageQueueRef.current = updated;
+        return updated;
+      });
+      setMessageEmit(item.text, "replace");
+    },
+    [t]
+  );
+
   const regenerateAssistantMessage = useCallback(
     (chatId) => {
       const filteredHistory = chatHistoryRef2.current.slice(0, -1);
@@ -355,28 +505,41 @@ export default function ChatContainer({
         // begins working on the invocation prompt itself on connect, so there
         // is no feedback to relay yet - sending here would both throw
         // (InvalidStateError) and duplicate the opening prompt.
-        if (websocket.readyState !== WebSocket.OPEN) return;
+        if (websocket.readyState === WebSocket.CONNECTING) return;
 
-        const attachments = promptMessage?.attachments ?? parseAttachments();
-        window.dispatchEvent(new CustomEvent(CLEAR_ATTACHMENTS_EVENT));
-        // A follow-up message starts a new agent turn: reset the run clock
-        // and re-arm the summary card for that turn's end.
-        runStartRef.current = Date.now();
-        summaryEmittedRef.current = false;
-        websocket.send(
-          JSON.stringify({
-            type: "awaitingFeedback",
-            feedback: promptMessage?.userMessage,
-            attachments,
-          })
-        );
+        // A stale socket (server restart, network drop) must not orphan the
+        // message: drop it and fall through to a fresh send below. Without
+        // this the optimistic bubble renders but nothing ever runs.
+        if (websocket.readyState !== WebSocket.OPEN) {
+          try {
+            websocket.close();
+          } catch {}
+          setWebsocket(null);
+          setSocketId(null);
+          setAgentSessionActive(false);
+          setAgentSessionSocket(null);
+        } else {
+          const attachments = promptMessage?.attachments ?? parseAttachments();
+          window.dispatchEvent(new CustomEvent(CLEAR_ATTACHMENTS_EVENT));
+          // A follow-up message starts a new agent turn: reset the run clock
+          // and re-arm the summary card for that turn's end.
+          runStartRef.current = Date.now();
+          summaryEmittedRef.current = false;
+          websocket.send(
+            JSON.stringify({
+              type: "awaitingFeedback",
+              feedback: promptMessage?.userMessage,
+              attachments,
+            })
+          );
 
-        // /reset during an active agent session should end the session AND
-        // clear the chat in a single action. The send above triggers the
-        // server to abort the agent and close the socket; fall through to the
-        // /reset flow below which resets memory + clears chat history.
-        if (promptMessage.userMessage.trim() !== "/reset") return;
-        pendingResetRef.current = true;
+          // /reset during an active agent session should end the session AND
+          // clear the chat in a single action. The send above triggers the
+          // server to abort the agent and close the socket; fall through to the
+          // /reset flow below which resets memory + clears chat history.
+          if (promptMessage.userMessage.trim() !== "/reset") return;
+          pendingResetRef.current = true;
+        }
       }
 
       if (!promptMessage || !promptMessage?.userMessage) return false;
@@ -562,7 +725,7 @@ export default function ChatContainer({
       <ChatSidebarProvider>
         <div
           style={{ height: isMobile ? "100%" : "calc(100% - 32px)" }}
-          className="relative flex md:ml-[2px] md:mr-[16px] md:my-[16px] w-full h-full z-[2]"
+          className="relative flex md:ml-[2px] md:mr-[16px] md:my-[16px] w-full h-full min-w-0 z-[2]"
         >
           <div className="flex-1 min-w-0 relative md:rounded-[16px] bg-zinc-900 light:bg-white w-full h-full overflow-hidden border-none light:border-solid light:border light:border-theme-modal-border">
             {isMobile && <SidebarMobileHeader />}
@@ -629,7 +792,7 @@ export default function ChatContainer({
       <ActiveGenerationGuard isGenerating={loadingResponse} />
       <div
         style={{ height: isMobile ? "100%" : "calc(100% - 32px)" }}
-        className="relative flex md:ml-[2px] md:mr-[16px] md:my-[16px] w-full h-full z-[2]"
+        className="relative flex md:ml-[2px] md:mr-[16px] md:my-[16px] w-full h-full min-w-0 z-[2]"
       >
         <div className="flex-1 min-w-0 relative md:rounded-[16px] bg-zinc-900 light:bg-white text-white light:text-slate-900 h-full overflow-hidden border-none light:border-solid light:border light:border-theme-modal-border">
           {isMobile && <SidebarMobileHeader />}
@@ -663,6 +826,13 @@ export default function ChatContainer({
                   attachments={files}
                   centered={false}
                   chatHistory={chatHistory}
+                  messageQueue={messageQueue}
+                  queueHalted={queueHalted}
+                  onQueueMessage={queueMessage}
+                  onQueueMove={moveQueueItem}
+                  onQueueEdit={editQueueItem}
+                  onQueueDelete={deleteQueueItem}
+                  onQueueContinue={continueQueue}
                 />
               </div>
             </div>

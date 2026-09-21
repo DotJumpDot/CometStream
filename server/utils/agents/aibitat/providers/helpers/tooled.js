@@ -196,8 +196,10 @@ function serviceTierParam(serviceTier, log = null) {
 
 /**
  * Stream a chat completion using native OpenAI-compatible tool calling.
- * Handles parallel tool calls by tracking each tool call by its streaming
- * index, then returning only the first one for the agent framework to process.
+ * Tracks each streamed tool call by its index and returns ALL of them in
+ * `functionCalls` (a model may request several tools in one turn), with
+ * `functionCall` kept as the first call for provider/agent paths that
+ * predate batching.
  *
  * @param {import("openai").OpenAI} client - OpenAI-compatible client
  * @param {string} model - Model identifier
@@ -208,7 +210,7 @@ function serviceTierParam(serviceTier, log = null) {
  *   - provider: If passed, automatically handles usage tracking via provider.resetUsage()/recordUsage()
  *   - maxTokens: If passed as a positive number, sent as `max_tokens` on the request
  *   - serviceTier: If passed, sent as `service_tier` on the request
- * @returns {Promise<{textResponse: string, functionCall: object|null, uuid: string, usage: object|null}>}
+ * @returns {Promise<{textResponse: string, functionCall: object|null, functionCalls: Array<object>, uuid: string, usage: object|null}>}
  */
 async function tooledStream(
   client,
@@ -350,27 +352,41 @@ async function tooledStream(
     });
   }
 
-  const toolCallIndices = Object.keys(toolCallsByIndex).map(Number);
-  if (toolCallIndices.length > 0) {
-    const firstToolCall = toolCallsByIndex[Math.min(...toolCallIndices)];
-    result.functionCall = {
-      id: firstToolCall.id,
-      name: firstToolCall.name,
-      arguments: safeJsonParse(firstToolCall.arguments, {}),
-      ...(firstToolCall.extra_content
-        ? { extra_content: firstToolCall.extra_content }
-        : {}),
-    };
-  }
+  // Index order = the order the model requested the calls in. Sorted
+  // numerically because Object.keys() returns strings ("10" < "2" lexically).
+  const toolCallIndices = Object.keys(toolCallsByIndex)
+    .map(Number)
+    .sort((a, b) => a - b);
+  const functionCalls = toolCallIndices
+    .map((idx) => {
+      const call = toolCallsByIndex[idx];
+      return {
+        id: call.id,
+        name: call.name,
+        arguments: safeJsonParse(call.arguments, {}),
+        ...(call.extra_content ? { extra_content: call.extra_content } : {}),
+      };
+    })
+    // A streaming glitch can leave a slot with an id but no name - executing
+    // a nameless call would only confuse the model with a "not found" round.
+    .filter((call) => !!call.name);
+
+  result.functionCall = functionCalls[0] ?? null;
+  result.functionCalls = functionCalls;
 
   let textResponse = result.textResponse;
-  if (reasoningText.trim().length > 0 && !result.functionCall) {
+  if (reasoningText.trim().length > 0) {
+    // Wrapped on tool-call turns too: the execution loop discards
+    // textResponse when tools ran, but the run-trace recorder extracts the
+    // turn's reasoning from it - without the wrap, batched turns would lose
+    // their thoughts on reload.
     textResponse = `<think>${reasoningText}</think>${textResponse}`;
   }
 
   return {
     textResponse,
     functionCall: result.functionCall,
+    functionCalls: result.functionCalls,
     uuid: msgUUID,
     usage,
   };
@@ -378,7 +394,9 @@ async function tooledStream(
 
 /**
  * Non-streaming chat completion using native OpenAI-compatible tool calling.
- * Returns the first tool call if the model requests any, otherwise the text response.
+ * Returns every tool call the model requested in `functionCalls` (with
+ * `functionCall` kept as the first for pre-batching callers); when no tools
+ * were requested, the text response is returned.
  *
  * @param {import("openai").OpenAI} client - OpenAI-compatible client
  * @param {string} model - Model identifier
@@ -388,7 +406,7 @@ async function tooledStream(
  * @param {{injectReasoningContent?: boolean, provider?: object, maxTokens?: number}} options - Provider-specific options
  *   - provider: If passed, automatically handles usage tracking via provider.resetUsage()/recordUsage()
  *   - maxTokens: If passed as a positive number, sent as `max_tokens` on the request
- * @returns {Promise<{textResponse: string|null, functionCall: object|null, cost: number, usage: object|null}>}
+ * @returns {Promise<{textResponse: string|null, functionCall: object|null, functionCalls: Array<object>, cost: number, usage: object|null}>}
  */
 async function tooledComplete(
   client,
@@ -431,40 +449,45 @@ async function tooledComplete(
   }
 
   if (completion.tool_calls && completion.tool_calls.length > 0) {
-    const toolCall = completion.tool_calls[0];
-    const functionArgs = safeJsonParse(toolCall.function.arguments, null);
+    const functionCalls = [];
+    for (const toolCall of completion.tool_calls) {
+      const functionArgs = safeJsonParse(toolCall.function.arguments, null);
 
-    if (functionArgs === null) {
-      return {
-        textResponse: null,
-        retryWithError: {
-          role: "function",
-          name: toolCall.function.name,
-          content: `Failed to parse tool call arguments as JSON. Raw arguments: ${toolCall.function.arguments}`,
-          originalFunctionCall: {
-            id: toolCall.id,
+      if (functionArgs === null) {
+        return {
+          textResponse: null,
+          retryWithError: {
+            role: "function",
             name: toolCall.function.name,
-            arguments: toolCall.function.arguments,
-            ...(toolCall.extra_content
-              ? { extra_content: toolCall.extra_content }
-              : {}),
+            content: `Failed to parse tool call arguments as JSON. Raw arguments: ${toolCall.function.arguments}`,
+            originalFunctionCall: {
+              id: toolCall.id,
+              name: toolCall.function.name,
+              arguments: toolCall.function.arguments,
+              ...(toolCall.extra_content
+                ? { extra_content: toolCall.extra_content }
+                : {}),
+            },
           },
-        },
-        cost,
-        usage,
-      };
-    }
+          cost,
+          usage,
+        };
+      }
 
-    return {
-      textResponse: null,
-      functionCall: {
+      functionCalls.push({
         id: toolCall.id,
         name: toolCall.function.name,
         arguments: functionArgs,
         ...(toolCall.extra_content
           ? { extra_content: toolCall.extra_content }
           : {}),
-      },
+      });
+    }
+
+    return {
+      textResponse: null,
+      functionCall: functionCalls[0] ?? null,
+      functionCalls,
       cost,
       usage,
     };

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import debounce from "lodash.debounce";
-import { ArrowUp, At } from "@phosphor-icons/react";
+import { ArrowUp, At, Robot, Terminal } from "@phosphor-icons/react";
 import StopGenerationButton from "./StopGenerationButton";
 import SpeechToText from "./SpeechToText";
 import { Tooltip } from "react-tooltip";
@@ -21,6 +21,12 @@ import ModeSelector from "./ModeSelector";
 import PermissionSelector from "./PermissionSelector";
 import { useSearchParams } from "react-router-dom";
 import { useIsAgentSessionActive } from "@/utils/chat/agent";
+import MessageQueue from "../MessageQueue";
+import { AGENT_PANEL_OPEN_EVENT } from "@/components/WorkspaceChat/AgentSidePanel";
+import {
+  getAgentActivity,
+  subscribeAgentActivity,
+} from "@/utils/agentActivity";
 
 export const PROMPT_INPUT_ID = "primary-prompt-input";
 export const PROMPT_INPUT_EVENT = "set_prompt_input";
@@ -36,6 +42,13 @@ const MAX_EDIT_STACK_SIZE = 100;
  * @param {string} [props.workspaceSlug] - workspace slug for home page context
  * @param {string} [props.threadSlug] - thread slug for home page context
  * @param {Array} [props.chatHistory] - current conversation (context ring estimate)
+ * @param {Array} [props.messageQueue] - follow-ups queued while streaming
+ * @param {boolean} [props.queueHalted] - queue auto-dispatch paused
+ * @param {function} [props.onQueueMessage] - queue composer text instead of sending
+ * @param {function} [props.onQueueMove] - reorder a queued message (id, dir)
+ * @param {function} [props.onQueueEdit] - move a queued message back to the box
+ * @param {function} [props.onQueueDelete] - drop a queued message
+ * @param {function} [props.onQueueContinue] - resume a halted queue
  */
 export default function PromptInput({
   workspace = {},
@@ -47,6 +60,13 @@ export default function PromptInput({
   workspaceSlug = null,
   threadSlug = null,
   chatHistory = [],
+  messageQueue = [],
+  queueHalted = false,
+  onQueueMessage = null,
+  onQueueMove = null,
+  onQueueEdit = null,
+  onQueueDelete = null,
+  onQueueContinue = null,
 }) {
   const { t } = useTranslation();
   const { showAgentCommand = true } = workspace ?? {};
@@ -133,7 +153,29 @@ export default function PromptInput({
     if (e.target !== e.currentTarget) return;
     setFocused(false);
     setShowTools(false);
+    // Mid-run submits become queued follow-ups instead of racing the
+    // active generation. The box clears so the next prompt starts fresh.
+    if (isStreaming && !isDisabled && onQueueMessage && queueCurrentInput())
+      return;
     submit(e);
+  }
+
+  /**
+   * Move the current composer text into the follow-up queue. Returns true
+   * when something was queued (caller should skip the normal submit).
+   * Reads the live DOM value as a fallback so programmatic fills that
+   * bypass React state still queue correctly.
+   * @returns {boolean}
+   */
+  function queueCurrentInput() {
+    const domValue = document.getElementById(PROMPT_INPUT_ID)?.value ?? "";
+    const text = (promptInput.trim() || domValue.trim()).trim();
+    if (!text) return false;
+    const queued = onQueueMessage?.(text) ?? false;
+    if (!queued) return false;
+    setPromptInput("");
+    resetTextAreaHeight();
+    return true;
   }
 
   function resetTextAreaHeight() {
@@ -196,7 +238,12 @@ export default function PromptInput({
     // Is simple enter key press w/o shift key
     if (event.keyCode === 13 && !event.shiftKey) {
       event.preventDefault();
-      if (isStreaming || isDisabled) return; // Prevent submission if streaming or disabled
+      if (isDisabled) return; // Prevent submission while disabled
+      // Streaming no longer swallows the prompt: it queues as a follow-up.
+      if (isStreaming) {
+        if (onQueueMessage) queueCurrentInput();
+        return;
+      }
       setShowTools(false);
       return submit(event);
     }
@@ -332,9 +379,19 @@ export default function PromptInput({
       className={
         centered
           ? "w-full relative flex justify-center items-center px-4"
-          : "w-full fixed md:absolute bottom-0 left-0 z-10 flex justify-center items-center px-4 pwa:pb-5"
+          : "w-full fixed md:absolute bottom-0 left-0 z-10 flex flex-col justify-center items-center px-4 pwa:pb-5"
       }
     >
+      {!centered && (
+        <MessageQueue
+          items={messageQueue}
+          halted={queueHalted}
+          onMove={onQueueMove}
+          onEdit={onQueueEdit}
+          onDelete={onQueueDelete}
+          onContinue={onQueueContinue}
+        />
+      )}
       <form
         onSubmit={handleSubmit}
         className={
@@ -383,8 +440,11 @@ export default function PromptInput({
                   placeholder={t("chat_window.send_message")}
                 />
               </div>
-              <div className="flex justify-between items-center pt-3.5 pb-3">
-                <div className="flex items-center gap-x-0.25">
+              {/* Toolbar wraps on narrow widths so the composer never sets a
+                  wide minimum content width that would push side panels
+                  off-screen. */}
+              <div className="flex justify-between items-center flex-wrap gap-x-2 gap-y-2 pt-3.5 pb-3">
+                <div className="flex items-center gap-x-0.25 flex-wrap min-w-0">
                   <div className="flex items-center gap-x-1">
                     <AttachItem
                       workspaceSlug={workspaceSlug}
@@ -410,8 +470,9 @@ export default function PromptInput({
                     textareaRef={textareaRef}
                     autoOpenedToolsRef={autoOpenedToolsRef}
                   />
+                  <SessionPanelButtons />
                 </div>
-                <div className="flex gap-x-2 items-center">
+                <div className="flex gap-x-2 items-center flex-wrap min-w-0 justify-end">
                   <ModelSelector
                     workspace={workspace}
                     chatHistory={chatHistory}
@@ -475,6 +536,79 @@ function AgentSessionButton({
         delayShow={300}
         className="tooltip !text-xs z-99"
       />
+    </>
+  );
+}
+
+/**
+ * Minimal terminal + subagent buttons: open the agent side panel scrolled
+ * to the Sessions list (running/finished terminal executions and subagent
+ * runs, click any row for full output). Each button shows its live running
+ * count to the left of the icon (hidden when zero) so the composer doubles
+ * as the run's activity monitor.
+ */
+function SessionPanelButtons() {
+  const { t } = useTranslation();
+  const [sessions, setSessions] = useState(
+    () => getAgentActivity().sessions ?? []
+  );
+
+  useEffect(
+    () => subscribeAgentActivity((state) => setSessions(state.sessions ?? [])),
+    []
+  );
+
+  function openSessions() {
+    window.dispatchEvent(
+      new CustomEvent(AGENT_PANEL_OPEN_EVENT, {
+        detail: { section: "sessions" },
+      })
+    );
+  }
+
+  const runningTerminal = sessions.filter(
+    (s) => s.kind === "terminal" && s.status === "running"
+  ).length;
+  const runningSubagents = sessions.filter(
+    (s) => s.kind === "subagent" && s.status === "running"
+  ).length;
+
+  const btn =
+    "group border-none cursor-pointer flex items-center justify-center gap-x-1 h-6 min-w-6 px-1 rounded-full text-zinc-400 light:text-slate-500 hover:text-white light:hover:text-slate-900 hover:bg-zinc-700 light:hover:bg-slate-200 transition-colors tabular-nums";
+  const count =
+    "text-[11px] font-semibold leading-none text-sky-400 light:text-sky-600";
+  return (
+    <>
+      <button
+        type="button"
+        onClick={openSessions}
+        title={t("chat_window.sessions_terminal")}
+        aria-label={`${t("chat_window.sessions_terminal")}${runningTerminal > 0 ? ` (${runningTerminal})` : ""}`}
+        className={btn}
+      >
+        {runningTerminal > 0 && (
+          <span className={count}>{runningTerminal}</span>
+        )}
+        <Terminal size={15} className="pointer-events-none shrink-0" />
+        {runningTerminal > 0 && (
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse shrink-0" />
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={openSessions}
+        title={t("chat_window.sessions_subagents")}
+        aria-label={`${t("chat_window.sessions_subagents")}${runningSubagents > 0 ? ` (${runningSubagents})` : ""}`}
+        className={btn}
+      >
+        {runningSubagents > 0 && (
+          <span className={count}>{runningSubagents}</span>
+        )}
+        <Robot size={15} className="pointer-events-none shrink-0" />
+        {runningSubagents > 0 && (
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse shrink-0" />
+        )}
+      </button>
     </>
   );
 }

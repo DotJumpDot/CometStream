@@ -3,6 +3,7 @@ const { Telemetry } = require("../../../../models/telemetry");
 const { v4: uuidv4 } = require("uuid");
 const { safeJsonParse } = require("../../../http");
 const { skillIsAutoApproved } = require("../../../helpers/agents");
+const { ensureTrace, wrapRawSocketForTrace } = require("./trace.js");
 const { ROLES } = require("../../../middleware/multiUserProtected");
 
 /**
@@ -191,6 +192,12 @@ const websocket = {
             socket.send(JSON.stringify({ type, content }));
           },
         };
+
+        // Persistable run history (plugins/trace.js): capture the raw
+        // stream here - the single funnel for introspect() statuses and
+        // aibitat.socket card sends - so a reloaded thread restores the run.
+        ensureTrace(aibitat);
+        wrapRawSocketForTrace(aibitat, socket);
 
         // Toggle a tool/skill on or off for the running agent mid-session. The
         // change applies on the agent's next turn. Returns true once handled so

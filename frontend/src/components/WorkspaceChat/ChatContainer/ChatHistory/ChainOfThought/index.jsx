@@ -62,10 +62,7 @@ export function ChainOfThought({
   return (
     <ChainOfThoughtContext.Provider value={chainOfThoughtContext}>
       <div
-        className={cn(
-          "not-prose max-w-prose space-y-1.5 mt-2 mb-2.5",
-          className
-        )}
+        className={cn("not-prose max-w-prose space-y-1.5 mt-3 mb-3", className)}
         {...props}
       >
         {children}
@@ -130,6 +127,8 @@ export function ChainOfThoughtHeader({
  * @param {React.ElementType} [props.icon] - marker icon, defaults to a dot
  * @param {React.ReactNode} props.label - keep this a primitive (string) where
  *   possible so the memo on this component can skip unchanged steps.
+ * @param {string} [props.labelClassName] - extra classes for the label line
+ *   (tone/color). Kept separate from `label` so string labels stay memo-able.
  * @param {React.ReactNode} [props.description]
  * @param {"complete" | "active" | "pending"} [props.status]
  */
@@ -137,6 +136,7 @@ export const ChainOfThoughtStep = memo(function ChainOfThoughtStep({
   className,
   icon: Icon,
   label,
+  labelClassName,
   description,
   status = "complete",
   children,
@@ -169,7 +169,22 @@ export const ChainOfThoughtStep = memo(function ChainOfThoughtStep({
         )}
       </div>
       <div className="flex-1 space-y-2 overflow-hidden">
-        <div>{label}</div>
+        {/*
+          String labels are protocol one-liners (tool commands, status
+          echoes) - truncate them to a single visual line. Thought nodes
+          render prose and must not be clamped.
+        */}
+        <div
+          className={cn(
+            typeof label === "string" && "truncate",
+            typeof label === "string" &&
+              label.startsWith("$") &&
+              "font-mono text-[13px]",
+            labelClassName
+          )}
+        >
+          {label}
+        </div>
         {description && (
           <div className="text-xs text-zinc-400 light:text-zinc-500">
             {description}

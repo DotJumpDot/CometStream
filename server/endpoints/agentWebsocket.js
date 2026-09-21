@@ -18,17 +18,49 @@ function relayToSocket(message) {
   // ignore (return false for) any other message.
   if (this.handleToolToggle?.(message)) return;
   if (this.handlePermissionMode?.(message)) return;
+  // The client pushes its permission mode on socket open, which usually lands
+  // before createAIbitat attaches the handlers above - stash it so it can be
+  // applied after setup instead of falling back to ask-every-time for the
+  // session's first tool calls.
+  const earlyMode = readPermissionMode(message);
+  if (earlyMode && !this.handlePermissionMode) {
+    this._pendingPermissionMode = earlyMode;
+    return;
+  }
   if (this.handleFeedback) return this?.handleFeedback?.(message);
   if (this.handleToolApproval) return this?.handleToolApproval?.(message);
   if (this.handleClarificationResponse)
     return this?.handleClarificationResponse?.(message);
-  this.checkBailCommand(message);
+  // checkBailCommand is attached later in setup - an early non-permission
+  // frame (e.g. a duplicate open push) must not throw here.
+  this.checkBailCommand?.(message);
+}
+
+/**
+ * Reads a chat permission mode out of a raw socket message.
+ * Accepts only the modes the client can send - anything else is ignored so
+ * a malformed early frame can never put the session in a bad state.
+ * @param {string} message - raw socket message
+ * @returns {"ask"|"auto"|"auto-remember"|null} The mode, or null.
+ */
+function readPermissionMode(message) {
+  const data = safeJsonParse(message, {});
+  if (data?.type !== "permissionMode") return null;
+  if (!["ask", "auto", "auto-remember"].includes(data.mode)) return null;
+  return data.mode;
 }
 
 function agentWebsocket(app) {
   if (!app) return;
 
   app.ws("/agent-invocation/:uuid", async function (socket, request) {
+    // Attach the message relay synchronously, before any await below. The
+    // client pushes its permission mode on socket open (within milliseconds
+    // on localhost), and frames arriving before a "message" listener exists
+    // are dropped by `ws` - a late attach silently loses the session's
+    // auto-approve mode. The relay tolerates missing handlers (optional
+    // chaining + the _pendingPermissionMode stash) until setup completes.
+    socket.on("message", relayToSocket);
     try {
       const agentHandler = await new AgentHandler({
         uuid: String(request.params.uuid),
@@ -74,7 +106,8 @@ function agentWebsocket(app) {
         console.error("agentWebsocket.autoRenameThread", e.message);
       }
 
-      socket.on("message", relayToSocket);
+      // Message relay is attached synchronously at the top of this handler
+      // (see above) so the session-start permission push is never missed.
       socket.on("close", () => {
         // Abort the running agent loop (stop button, tab close, disconnect) so
         // in-flight LLM requests are cancelled and no further turns run.
@@ -100,6 +133,18 @@ function agentWebsocket(app) {
 
       await Telemetry.sendTelemetry("agent_chat_started");
       await agentHandler.createAIbitat({ socket });
+      // A permission mode pushed on socket open can arrive before the
+      // handlers above existed - apply the stashed value now so
+      // auto-approve covers the session from its first tool call.
+      if (socket._pendingPermissionMode && socket.handlePermissionMode) {
+        socket.handlePermissionMode(
+          JSON.stringify({
+            type: "permissionMode",
+            mode: socket._pendingPermissionMode,
+          })
+        );
+        delete socket._pendingPermissionMode;
+      }
       // Socket can close while aibitat is being built - don't start a session nobody is listening to.
       if (socket.readyState !== socket.OPEN) return;
       await agentHandler.startAgentCluster();
@@ -111,4 +156,4 @@ function agentWebsocket(app) {
   });
 }
 
-module.exports = { agentWebsocket };
+module.exports = { agentWebsocket, relayToSocket, readPermissionMode };

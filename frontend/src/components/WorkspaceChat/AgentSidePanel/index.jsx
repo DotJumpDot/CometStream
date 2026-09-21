@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import {
@@ -8,9 +8,11 @@ import {
   GitDiff,
   ListChecks,
   PencilSimple,
+  Robot,
   SidebarSimple,
   SpinnerGap,
   Stack,
+  Terminal,
   X,
 } from "@phosphor-icons/react";
 import {
@@ -36,11 +38,20 @@ import ChatSidebar from "@/components/WorkspaceChat/ChatContainer/ChatSidebar";
 import FileViewer from "./FileViewer";
 
 /**
+ * Window event that opens the side panel (e.g. from composer toolbar
+ * buttons). `detail.section` optionally scrolls to a section id.
+ * @type {string}
+ */
+export const AGENT_PANEL_OPEN_EVENT = "agent-side-panel-open";
+
+/**
  * Right-docked agent side panel (ZCode-style): one merged view of the
  * session's work - Changes on top (aggregated file changes with
- * click-to-expand diffs), Plan below (the todo-write stepper), and Sources
+ * click-to-expand diffs), Plan below (the todo-write stepper), Sessions
+ * (terminal executions + subagent runs with expandable output), and Sources
  * (the chat's latest citations). Hidden by default; opens itself the first
- * time an agent event lands, and can be toggled with the edge button.
+ * time an agent event lands, and can be toggled with the edge button or the
+ * composer toolbar buttons.
  *
  * Uses the same ChatSidebar animation wrapper as the Sources panel so both
  * right-side panels share the identical open/close motion. Session-scoped
@@ -59,6 +70,7 @@ export default function AgentSidePanel() {
   // Sandbox-relative path being read in the file viewer; null shows the
   // panel's normal Changes/Plan/Sources sections.
   const [viewerPath, setViewerPath] = useState(null);
+  const sessionsRef = useRef(null);
 
   // Layout effect on purpose: the sources store is populated by the new
   // chat's message actions in passive effects, which run after layout
@@ -72,6 +84,27 @@ export default function AgentSidePanel() {
 
   useEffect(() => subscribeAgentActivity(setActivity), []);
   useEffect(() => subscribeLatestSources(setSources), []);
+
+  // Composer toolbar buttons (terminal / subagent) open the panel here.
+  // `detail.section` scrolls to a section anchor (currently "sessions").
+  useEffect(() => {
+    const onOpen = (event) => {
+      setViewerPath(null);
+      setOpen(true);
+      const section = event?.detail?.section;
+      if (section === "sessions") {
+        // Wait a tick for the panel to lay out before scrolling.
+        setTimeout(() => {
+          sessionsRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }, 100);
+      }
+    };
+    window.addEventListener(AGENT_PANEL_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(AGENT_PANEL_OPEN_EVENT, onOpen);
+  }, []);
 
   // File references render inside markdown HTML (dangerouslySetInnerHTML),
   // so clicks are delegated at the document level: any [data-file-ref]
@@ -197,6 +230,22 @@ export default function AgentSidePanel() {
                     }
                   />
                   <PlanTab items={activity.todo} done={todoDone} />
+                </section>
+                <section ref={sessionsRef} className="scroll-mt-2">
+                  <SectionHeader
+                    icon={<Terminal className="w-3.5 h-3.5" />}
+                    label={t("agent_panel.tab_sessions")}
+                    count={activity.sessions.length}
+                    right={
+                      activity.sessions.some((s) => s.status === "running") && (
+                        <span className="flex items-center gap-x-1 text-[11px] text-sky-400 light:text-sky-600">
+                          <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                          {t("agent_panel.sessions_running")}
+                        </span>
+                      )
+                    }
+                  />
+                  <SessionsTab sessions={activity.sessions} />
                 </section>
                 {combinedSources.length > 0 && (
                   <section>
@@ -355,6 +404,108 @@ function PlanTab({ items, done }) {
           );
         })}
       </ol>
+    </div>
+  );
+}
+
+/**
+ * Sessions tab: terminal executions + subagent runs, newest first. Each row
+ * shows live status; clicking expands the full command / output / result so
+ * the panel doubles as the session inspector. Filter chips narrow by kind.
+ * @param {Object} props
+ * @param {Array<{id: number|string, kind: string, label: string, status: string, detail: string, startedAt: number, endedAt: number|null}>} props.sessions
+ */
+function SessionsTab({ sessions }) {
+  const { t } = useTranslation();
+  const [filter, setFilter] = useState("all");
+  const [expandedId, setExpandedId] = useState(null);
+
+  if (sessions.length === 0)
+    return (
+      <p className="text-xs text-zinc-500 light:text-zinc-400 mt-4">
+        {t("agent_panel.sessions_empty")}
+      </p>
+    );
+
+  const visible =
+    filter === "all" ? sessions : sessions.filter((s) => s.kind === filter);
+
+  return (
+    <div className="mt-1">
+      <div className="flex items-center gap-x-1.5 mb-2">
+        {[
+          { key: "all", label: t("agent_panel.sessions_filter_all") },
+          { key: "terminal", label: t("agent_panel.sessions_filter_terminal") },
+          { key: "subagent", label: t("agent_panel.sessions_filter_subagent") },
+        ].map((chip) => (
+          <button
+            key={chip.key}
+            type="button"
+            onClick={() => setFilter(chip.key)}
+            className={`border-none cursor-pointer rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+              filter === chip.key
+                ? "bg-white/15 light:bg-black/10 text-white light:text-zinc-900"
+                : "text-zinc-500 light:text-zinc-400 hover:text-zinc-300 light:hover:text-zinc-600"
+            }`}
+          >
+            {chip.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-col gap-y-1">
+        {visible.map((session) => {
+          const expanded = expandedId === session.id;
+          const KindIcon = session.kind === "subagent" ? Robot : Terminal;
+          const dot =
+            session.status === "running"
+              ? "bg-sky-400 animate-pulse"
+              : session.status === "error"
+                ? "bg-red-400"
+                : "bg-emerald-400";
+          const ms =
+            session.endedAt != null && session.startedAt != null
+              ? session.endedAt - session.startedAt
+              : null;
+          return (
+            <div
+              key={session.id}
+              className="rounded-lg bg-white/[0.04] light:bg-black/[0.04] overflow-hidden"
+            >
+              <button
+                type="button"
+                onClick={() => setExpandedId(expanded ? null : session.id)}
+                title={session.label}
+                className="flex items-center gap-x-2 w-full rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors border-none cursor-pointer"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+                <KindIcon className="w-3.5 h-3.5 text-zinc-400 light:text-zinc-500 shrink-0" />
+                <span
+                  className={`flex-1 min-w-0 truncate text-[12px] text-zinc-200 light:text-zinc-800 ${
+                    session.kind === "terminal" ? "font-mono" : ""
+                  }`}
+                >
+                  {session.label}
+                </span>
+                {Number.isFinite(ms) && ms >= 0 && (
+                  <span className="text-[10px] text-zinc-500 light:text-zinc-400 tabular-nums shrink-0">
+                    {ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`}
+                  </span>
+                )}
+              </button>
+              {expanded && !!session.detail && (
+                <pre className="mx-2 mb-2 p-2 rounded-md bg-zinc-950/70 light:bg-slate-100 text-[11px] leading-relaxed text-zinc-300 light:text-zinc-700 font-mono whitespace-pre-wrap break-words max-h-[260px] overflow-y-auto">
+                  {session.detail}
+                </pre>
+              )}
+            </div>
+          );
+        })}
+        {visible.length === 0 && (
+          <p className="text-xs text-zinc-500 light:text-zinc-400">
+            {t("agent_panel.sessions_filter_empty")}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

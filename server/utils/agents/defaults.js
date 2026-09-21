@@ -29,6 +29,14 @@ const SKILL_FILTER_CONFIG = {
       require("./aibitat/plugins/filesystem/lib").isToolAvailable(),
     disabledSettingKey: "disabled_filesystem_skills",
   },
+  "terminal-agent": {
+    getAvailability: async () =>
+      require("./aibitat/plugins/terminal").isEnabled(),
+    // The terminal skill is a single function; the opt-in (ENV or in-app
+    // setting) is the only gate, but the config shape requires a setting
+    // key for sub-skill lists.
+    disabledSettingKey: "disabled_terminal_skills",
+  },
   "create-files-agent": {
     getAvailability: () =>
       require("./aibitat/plugins/create-files/lib").isToolAvailable(),

@@ -46,6 +46,24 @@ function agentSkillWhitelistEndpoints(app) {
   );
 
   app.get(
+    "/agent-skills/terminal-agent/is-available",
+    [validatedRequest],
+    async (_request, response) => {
+      try {
+        const terminalTool = require("../utils/agents/aibitat/plugins/terminal");
+        return response
+          .status(200)
+          .json({ available: terminalTool.isToolAvailable() });
+      } catch (e) {
+        console.error(e);
+        return response
+          .status(500)
+          .json({ available: false, error: e.message });
+      }
+    }
+  );
+
+  app.get(
     "/agent-skills/image-generation/is-available",
     [validatedRequest],
     async (_request, response) => {

@@ -552,6 +552,7 @@ class EphemeralAgentHandler extends AgentHandler {
       provider: this.provider ?? "openai",
       model: this.model ?? "gpt-4.1-nano",
       chats: await this.#chatHistory(20),
+      maxToolCalls: await AIbitat.resolveMaxToolCalls(),
       handlerProps: {
         invocation: {
           workspace: this.#workspace,

@@ -11,6 +11,7 @@ const listeners = new Set();
 let state = {
   todo: [],
   fileChanges: [],
+  sessions: [],
 };
 
 function emit() {
@@ -19,7 +20,7 @@ function emit() {
 
 /**
  * Subscribe to store updates. Returns an unsubscribe function.
- * @param {(state: {todo: Array, fileChanges: Array}) => void} listener
+ * @param {(state: {todo: Array, fileChanges: Array, sessions: Array}) => void} listener
  * @returns {() => void}
  */
 export function subscribeAgentActivity(listener) {
@@ -84,6 +85,34 @@ export function setAgentTodo(items) {
 
 /** Clears the store (chat switched or session reset). */
 export function resetAgentActivity() {
-  state = { todo: [], fileChanges: [] };
+  state = { todo: [], fileChanges: [], sessions: [] };
+  emit();
+}
+
+/**
+ * Inserts or replaces a terminal/subagent session row by id. Newest first,
+ * capped so a marathon run cannot grow the panel without bound.
+ * @param {{id: number|string, kind?: string, label?: string, status?: string, detail?: string, startedAt?: number, endedAt?: number|null}} session
+ */
+export function upsertAgentSession(session = {}) {
+  if (session?.id == null) return;
+  const entry = {
+    id: session.id,
+    kind: session.kind === "subagent" ? "subagent" : "terminal",
+    label: String(session.label ?? "").slice(0, 300) || "(untitled)",
+    status: ["running", "done", "error"].includes(session.status)
+      ? session.status
+      : "running",
+    detail: String(session.detail ?? "").slice(-8000),
+    startedAt: Number(session.startedAt) || Date.now(),
+    endedAt: session.endedAt ?? null,
+  };
+  state = {
+    ...state,
+    sessions: [entry, ...state.sessions.filter((s) => s.id !== entry.id)].slice(
+      0,
+      50
+    ),
+  };
   emit();
 }

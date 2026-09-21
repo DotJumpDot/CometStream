@@ -8,6 +8,7 @@ import {
   THOUGHT_REGEX_CLOSE,
   THOUGHT_REGEX_COMPLETE,
   THOUGHT_REGEX_OPEN,
+  stripToolCalls,
 } from "../ThoughtContainer";
 
 const PromptReply = ({ uuid, reply, pending, error, sources = [] }) => {
@@ -81,9 +82,13 @@ const PromptReply = ({ uuid, reply, pending, error, sources = [] }) => {
 function RenderAssistantChatContent({ message }) {
   // Thought segments are rendered by the activity chain (buildMessages splits
   // them out) - this only renders the visible remainder of the reply.
+  // Tool-call protocol blocks are dropped too: the chain already logs each
+  // call as a one-line step, so they would only duplicate as a text wall.
   if (message.match(THOUGHT_REGEX_OPEN) && !message.match(THOUGHT_REGEX_CLOSE))
     return null;
-  const msgToRender = message.replace(THOUGHT_REGEX_COMPLETE, "");
+  const msgToRender = stripToolCalls(
+    message.replace(THOUGHT_REGEX_COMPLETE, "")
+  );
   if (!msgToRender.trim().length) return null;
 
   return (

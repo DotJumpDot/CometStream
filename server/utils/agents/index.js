@@ -879,6 +879,7 @@ class AgentHandler {
       provider: this.provider ?? "openai",
       model: this.model ?? "gpt-4.1-nano",
       chats: [],
+      maxToolCalls: await AIbitat.resolveMaxToolCalls(),
       handlerProps: {
         invocation: this.invocation,
         log: this.log,

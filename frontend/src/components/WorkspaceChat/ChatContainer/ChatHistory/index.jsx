@@ -4,8 +4,8 @@ import PromptReply from "./PromptReply";
 import StatusResponse from "./StatusResponse";
 import ToolApprovalRequest from "./ToolApprovalRequest";
 import ClarifyingQuestionCard from "./ClarifyingQuestion";
-import FileDownloadCard from "./FileDownloadCard";
 import FileChangeCard from "./FileChangeCard";
+import FileDownloadCard from "./FileDownloadCard";
 import ContextCompactCard from "./ContextCompactCard";
 import AgentRunSummary from "./AgentRunSummary";
 import JumpRail, { isJumpTurn } from "./JumpRail";
@@ -28,6 +28,7 @@ import {
   THOUGHT_REGEX_OPEN,
   THOUGHT_REGEX_CLOSE,
   THOUGHT_REGEX_COMPLETE,
+  stripToolCalls,
 } from "./ThoughtContainer";
 import { MessageActionsProvider } from "./MessageActionsContext";
 
@@ -177,6 +178,13 @@ export default forwardRef(function (
     },
     [compiledHistory.length, runIsLive]
   );
+  const renderedHistory = useMemo(
+    () =>
+      compiledHistory.map((item, index) =>
+        Array.isArray(item) ? renderStatusResponse(item, index) : item
+      ),
+    [compiledHistory, renderStatusResponse]
+  );
 
   return (
     <MessageActionsProvider>
@@ -189,11 +197,7 @@ export default forwardRef(function (
         >
           {/* ~85% column with real side gutters, ZCode-style: chat content
               never runs edge-to-edge against the panel border. */}
-          <div className="w-full md:w-[85%]">
-            {compiledHistory.map((item, index) =>
-              Array.isArray(item) ? renderStatusResponse(item, index) : item
-            )}
-          </div>
+          <div className="w-full md:w-[85%]">{renderedHistory}</div>
           {showing && (
             <ManageWorkspace
               hideModal={hideModal}
@@ -242,10 +246,9 @@ function buildMessages({
   forkThread,
   websocket,
 }) {
-  // Tracks the activity chain that statuses are currently rolling up into, so
-  // file-change chips interleaved with statuses do not split one run's
-  // activity into a chain-chip-chain sandwich. Any visible message/card ends
-  // the chain; chips do not.
+  // Tracks the activity chain that statuses are currently rolling up into.
+  // Any visible message/card ends the chain, so the compiled order stays
+  // chronological: thought block, file row, thought block, tool row.
   const chainRef = { chain: null };
   // Counter for user-prompt markers (data-jump-id); the JumpRail maps its
   // dashes onto these in DOM order.
@@ -273,16 +276,21 @@ function buildMessages({
     }
 
     if (props.type === "fileChangeCard" && !!props.content) {
+      // File rows break the activity chain like any other visible card, so
+      // the compiled order stays chronological: thought block, file row,
+      // thought block, file row. Cards render flat, one per file - no batch
+      // group wrapper.
+      chainRef.chain = null;
       acc.push(
         <FileChangeCard
           key={`file-change-${props.uuid || index}`}
-          action={props.action}
+          action={props.action || "edit"}
           path={props.path}
           added={props.added}
           removed={props.removed}
           diff={props.diff}
-          diffTruncated={props.diffTruncated}
-          readLines={props.readLines}
+          diffTruncated={!!props.diffTruncated}
+          readLines={props.readLines ?? null}
         />
       );
       return acc;
@@ -371,8 +379,14 @@ function buildMessages({
       chainRef.chain = null;
       acc.push(<Chartable key={props.uuid} props={props} />);
     } else if (props.type === "fileDownloadCard" && !!props.content) {
+      // See fileChangeCard: breaks the chain, renders flat.
       chainRef.chain = null;
-      acc.push(<FileDownloadCard key={props.uuid} props={props} />);
+      acc.push(
+        <FileDownloadCard
+          key={`file-download-${props.uuid || index}`}
+          props={{ content: props.content }}
+        />
+      );
     } else if (props.type === "scheduledJobCreated" && !!props.content) {
       chainRef.chain = null;
       acc.push(<ScheduledJobCreatedCard key={props.uuid} props={props} />);
@@ -439,6 +453,7 @@ function buildMessages({
             metrics={props.metrics}
             outputs={props.outputs}
             clarifyingQuestions={props.clarifyingQuestions}
+            trace={props.trace}
           />
         );
       // User prompts get a jump marker so the rail can scroll to them; the
@@ -461,9 +476,9 @@ function buildMessages({
 /**
  * Appends an activity node (agent status or thought segment) to the current
  * activity chain, or starts a new chain when the previous compiled item is a
- * visible message/card - visible content is what breaks a chain. File-change
- * chips between statuses do not break a chain: a status arriving after chips
- * continues the chain that sits above them in the compiled output.
+ * visible message/card - visible content is what breaks a chain, so file
+ * rows render in chronological order between thought blocks instead of
+ * piling up after one big Thought.
  * @param {Array} acc - the compiled history being built
  * @param {Object} node - statusResponse history item or thoughtChain node
  * @param {{chain: Array|null}} chainRef - the chain statuses are rolling into
@@ -507,10 +522,10 @@ function splitAssistantThought(props) {
 
   const visibleText =
     thought === null
-      ? content
+      ? stripToolCalls(content)
       : thought === content
         ? ""
-        : content.replace(THOUGHT_REGEX_COMPLETE, "");
+        : stripToolCalls(content.replace(THOUGHT_REGEX_COMPLETE, ""));
   const hasVisible =
     visibleText.trim().length > 0 ||
     !!props.pending ||

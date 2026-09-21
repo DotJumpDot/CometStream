@@ -17,6 +17,7 @@ export default function useAgentSkillsState(defaultSkills) {
   // Core skill state
   const [fileSystemAgentAvailable, setFileSystemAgentAvailable] =
     useState(false);
+  const [terminalAgentAvailable, setTerminalAgentAvailable] = useState(false);
   const [imageGenerationAvailable, setImageGenerationAvailable] =
     useState(false);
   const [isMultiUser, setIsMultiUser] = useState(false);
@@ -46,6 +47,7 @@ export default function useAgentSkillsState(defaultSkills) {
         prefs,
         flowsRes,
         fsAgentAvailable,
+        terminalAvailable,
         multiUserMode,
         imageGenAvailable,
       ] = await Promise.all([
@@ -57,6 +59,7 @@ export default function useAgentSkillsState(defaultSkills) {
         ]),
         AgentFlows.listFlows(),
         System.isFileSystemAgentAvailable(),
+        System.isTerminalAgentAvailable(),
         System.isMultiUserMode(),
         System.isImageGenerationAvailable(),
       ]);
@@ -69,6 +72,7 @@ export default function useAgentSkillsState(defaultSkills) {
       }
       if (flowsRes?.flows) setFlows(flowsRes.flows);
       setFileSystemAgentAvailable(fsAgentAvailable);
+      setTerminalAgentAvailable(terminalAvailable);
       setImageGenerationAvailable(imageGenAvailable);
       setIsMultiUser(!!multiUserMode);
     } catch (e) {
@@ -204,6 +208,7 @@ export default function useAgentSkillsState(defaultSkills) {
   return {
     // State
     fileSystemAgentAvailable,
+    terminalAgentAvailable,
     imageGenerationAvailable,
     isMultiUser,
     disabledDefaults,

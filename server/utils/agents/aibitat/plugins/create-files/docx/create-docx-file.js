@@ -279,9 +279,8 @@ module.exports.CreateDocxFile = {
                 fileSize: savedFile.fileSize,
               });
 
-              this.super.introspect(
-                `${this.caller}: Successfully created Word document "${displayFilename}"`
-              );
+              // The fileDownloadCard above is the success signal in the chat -
+              // no separate "successfully created" status row needed.
 
               const styleInfo = [
                 theme !== "neutral" ? `${theme} theme` : null,

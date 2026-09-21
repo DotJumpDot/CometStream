@@ -33,6 +33,7 @@ export default function AgentSkillsTab({
   // All skill state management
   const {
     fileSystemAgentAvailable,
+    terminalAgentAvailable,
     imageGenerationAvailable,
     importedSkills,
     flows,
@@ -54,6 +55,7 @@ export default function AgentSkillsTab({
 
   const configurableSkills = getConfigurableSkills(t, {
     fileSystemAgentAvailable,
+    terminalAgentAvailable,
     imageGenerationAvailable,
   });
 

@@ -11,20 +11,22 @@ import {
   THOUGHT_REGEX_CLOSE,
   THOUGHT_REGEX_COMPLETE,
   THOUGHT_REGEX_OPEN,
+  stripToolCalls,
 } from "../ThoughtContainer";
 import paths from "@/utils/paths";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { chatQueryRefusalResponse } from "@/utils/chat";
 import HistoricalOutputs from "./HistoricalOutputs";
+import HistoricalTrace from "./HistoricalTrace";
 import HistoricalClarifyingQuestions from "./HistoricalClarifyingQuestions";
 import { openImageLightbox } from "@/components/ImageLightbox";
 
 function hasVisibleContent(message) {
   if (!message) return false;
-  const stripped = message
-    .replace(new RegExp(THOUGHT_REGEX_COMPLETE, "g"), "")
-    .trim();
+  const stripped = stripToolCalls(
+    message.replace(new RegExp(THOUGHT_REGEX_COMPLETE, "g"), "")
+  ).trim();
   if (!stripped) return false;
   if (
     stripped.match(THOUGHT_REGEX_OPEN) &&
@@ -50,6 +52,7 @@ const HistoricalMessage = ({
   metrics = {},
   outputs = [],
   clarifyingQuestions = [],
+  trace = [],
 }) => {
   // Freeze uuid on first render. User messages arrive without a uuid and this value
   // is used as the wrapper div's `key` — a default param fallback would regenerate
@@ -161,6 +164,7 @@ const HistoricalMessage = ({
         ) : (
           <div className="break-words">
             <HistoricalClarifyingQuestions surveys={clarifyingQuestions} />
+            <HistoricalTrace trace={trace} />
             <RenderChatContent role={role} message={message} />
             {isRefusalMessage && (
               <Link
@@ -179,7 +183,7 @@ const HistoricalMessage = ({
               </Link>
             )}
             <ChatAttachments attachments={attachments} />
-            <HistoricalOutputs outputs={outputs} />
+            <HistoricalOutputs outputs={outputs} trace={trace} />
           </div>
         )}
         {hasVisibleContent(message) && (
@@ -328,12 +332,16 @@ const RenderChatContent = memo(
 
     // Thought segments are rendered by the activity chain (buildMessages
     // splits them out) - this only renders the visible remainder.
+    // Tool-call protocol blocks are dropped too: the chain already logs
+    // each call as a one-line step.
     if (
       message.match(THOUGHT_REGEX_OPEN) &&
       !message.match(THOUGHT_REGEX_CLOSE)
     )
       return null;
-    const msgToRender = message.replace(THOUGHT_REGEX_COMPLETE, "");
+    const msgToRender = stripToolCalls(
+      message.replace(THOUGHT_REGEX_COMPLETE, "")
+    );
     if (!msgToRender.trim().length) return null;
 
     return (

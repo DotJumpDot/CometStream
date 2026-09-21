@@ -66,7 +66,7 @@ function FileChangeCard({
       : t("chat_window.file_change.edited_file", { path });
 
   return (
-    <div className="not-prose w-full mt-1">
+    <div className="not-prose w-full mt-2 mb-2">
       <button
         type="button"
         onClick={() => hasDiff && setExpanded((v) => !v)}

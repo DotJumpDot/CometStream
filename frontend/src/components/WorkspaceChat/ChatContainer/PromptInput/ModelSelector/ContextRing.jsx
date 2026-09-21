@@ -7,8 +7,9 @@ import useAnchoredOverlay from "./useAnchoredOverlay";
 /**
  * Context-usage ring beside the model selector. The small ring fills with the
  * share of the model's context window the current conversation is estimated
- * to use; holding (or clicking) it opens a popover with the breakdown -
- * messages, system prompt, and attached/parsed files. Token counts are
+ * to use; hovering it (or holding/clicking) opens a popover with the
+ * breakdown - messages, system prompt, and attached/parsed files. Hover
+ * peeks and auto-closes on leave; a click pins it open. Token counts are
  * estimates (chars/4) except where the backend reports real counts.
  */
 
@@ -36,9 +37,57 @@ export default function ContextRing({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  // A click (or hold) "pins" the popover: the invisible full-viewport
+  // click-outside backdrop only renders for pinned opens. For hover peeks
+  // the backdrop must NOT exist - it would sit between the cursor and the
+  // ring, fire mouseleave, close the panel, and loop open/close forever.
+  const [pinned, setPinned] = useState(false);
   const holdTimer = useRef(null);
   const didHold = useRef(false);
   const rootRef = useRef(null);
+  const hoverOpenTimer = useRef(null);
+  const hoverCloseTimer = useRef(null);
+  const HOVER_OPEN_MS = 200;
+  const HOVER_CLOSE_GRACE_MS = 350;
+  const hoverPeek = open && !pinned;
+
+  const clearHoverTimers = () => {
+    if (hoverOpenTimer.current) clearTimeout(hoverOpenTimer.current);
+    if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+    hoverOpenTimer.current = null;
+    hoverCloseTimer.current = null;
+  };
+
+  const closePanel = useCallback(() => {
+    clearHoverTimers();
+    setPinned(false);
+    setOpen(false);
+  }, []);
+
+  const onRingHoverEnter = () => {
+    if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+    hoverCloseTimer.current = null;
+    if (open || hoverOpenTimer.current) return;
+    hoverOpenTimer.current = setTimeout(() => {
+      hoverOpenTimer.current = null;
+      setPinned(false);
+      setOpen(true);
+    }, HOVER_OPEN_MS);
+  };
+
+  const onHoverLeave = () => {
+    if (hoverOpenTimer.current) clearTimeout(hoverOpenTimer.current);
+    hoverOpenTimer.current = null;
+    // Only hover peeks close on leave; pinned panels need a click/Esc.
+    if (!hoverPeek || hoverCloseTimer.current) return;
+    hoverCloseTimer.current = setTimeout(() => {
+      hoverCloseTimer.current = null;
+      setOpen(false);
+    }, HOVER_CLOSE_GRACE_MS);
+  };
+
+  useEffect(() => clearHoverTimers, []);
+
   // Fixed-position popover so the input box's overflow-hidden cannot clip it.
   const panelStyle = useAnchoredOverlay(open, rootRef, "right");
 
@@ -46,11 +95,11 @@ export default function ContextRing({
   useEffect(() => {
     if (!open) return;
     const onKey = (event) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") closePanel();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, closePanel]);
 
   const slug = workspace?.slug;
 
@@ -114,11 +163,14 @@ export default function ContextRing({
     };
   }, [chatHistory, workspace?.openAiPrompt, limits]);
 
-  // Hold-to-open (like the reference UI) plus a plain click toggle.
+  // Hold-to-open (like the reference UI) plus a plain click toggle that
+  // pins the panel; hover handles the quick peek.
   const startHold = () => {
     didHold.current = false;
     holdTimer.current = setTimeout(() => {
       didHold.current = true;
+      clearHoverTimers();
+      setPinned(true);
       setOpen(true);
     }, 250);
   };
@@ -131,7 +183,15 @@ export default function ContextRing({
       didHold.current = false;
       return;
     }
-    setOpen((value) => !value);
+    clearHoverTimers();
+    if (open) {
+      // An open panel toggles closed; a hover peek gets pinned instead.
+      if (hoverPeek) setPinned(true);
+      else closePanel();
+      return;
+    }
+    setPinned(true);
+    setOpen(true);
   };
 
   const pctLabel = useMemo(() => {
@@ -151,6 +211,8 @@ export default function ContextRing({
         onPointerDown={startHold}
         onPointerUp={endHold}
         onPointerLeave={endHold}
+        onMouseEnter={onRingHoverEnter}
+        onMouseLeave={onHoverLeave}
         onClick={onClick}
         className="border-none cursor-pointer p-0.5 rounded-full hover:bg-white/10 transition-colors duration-150 flex items-center justify-center"
       >
@@ -186,14 +248,19 @@ export default function ContextRing({
 
       {open && panelStyle && (
         <>
+          {/* Click-outside catcher only for pinned opens - see `pinned`. */}
+          {pinned && (
+            <div
+              className="fixed inset-0 z-30"
+              onClick={(event) => {
+                event.stopPropagation();
+                closePanel();
+              }}
+            />
+          )}
           <div
-            className="fixed inset-0 z-30"
-            onClick={(event) => {
-              event.stopPropagation();
-              setOpen(false);
-            }}
-          />
-          <div
+            onMouseEnter={onRingHoverEnter}
+            onMouseLeave={onHoverLeave}
             className="cs-pop-in z-40 w-[280px] max-w-[calc(100vw-16px)] rounded-xl border border-theme-modal-border bg-theme-bg-popup-menu shadow-2xl p-3"
             style={{ ...panelStyle, transformOrigin: "bottom right" }}
           >

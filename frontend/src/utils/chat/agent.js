@@ -4,7 +4,11 @@ import { API_BASE } from "../constants";
 import { useEffect, useState } from "react";
 import { emitAssistantMessageCompleteEvent } from "@/components/contexts/TTSProvider";
 import { THREAD_RENAME_EVENT } from "@/components/Sidebar/ActiveWorkspaces/ThreadContainer";
-import { addAgentFileChange, setAgentTodo } from "@/utils/agentActivity";
+import {
+  addAgentFileChange,
+  setAgentTodo,
+  upsertAgentSession,
+} from "@/utils/agentActivity";
 
 export const AGENT_SESSION_START = "agentSessionStart";
 export const AGENT_SESSION_END = "agentSessionEnd";
@@ -74,6 +78,7 @@ const handledEvents = [
   "statusResponse",
   "fileChangeCard",
   "todoListCard",
+  "sessionCard",
   "fileDownloadCard",
   "imageGenerationCard",
   "imageGenerationPending",
@@ -360,6 +365,12 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
   // Plan updates render only in the agent side panel - no chat bubble.
   if (data.type === "todoListCard") {
     setAgentTodo(data.content?.items || []);
+    return;
+  }
+
+  // Terminal/subagent session rows render only in the side panel.
+  if (data.type === "sessionCard") {
+    upsertAgentSession(data.content || {});
     return;
   }
 

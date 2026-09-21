@@ -92,10 +92,6 @@ module.exports.CreateTextFile = {
 
               const finalExtension = filename.split(".").pop().toLowerCase();
 
-              this.super.introspect(
-                `${this.caller}: Creating text file "${filename}"`
-              );
-
               const buffer = Buffer.from(content, "utf-8");
               const bufferSizeKB = (buffer.length / 1024).toFixed(2);
 
@@ -126,22 +122,33 @@ module.exports.CreateTextFile = {
                 displayFilename,
               });
 
+              // Single-line file row in the chat (like filesystem edits):
+              // `+N` line count plus a capped text preview the row expands
+              // to. Binary formats keep the download-only row.
+              const added = content ? content.split("\n").length : 0;
+              const contentPreview = content.slice(0, 8_000);
+              const previewTruncated = content.length > contentPreview.length;
+
               this.super.socket.send("fileDownloadCard", {
                 filename: savedFile.displayFilename,
                 storageFilename: savedFile.filename,
                 fileSize: savedFile.fileSize,
+                added,
+                contentPreview,
+                previewTruncated,
               });
 
               createFilesLib.registerOutput(this.super, "TextFileDownload", {
                 filename: savedFile.displayFilename,
                 storageFilename: savedFile.filename,
                 fileSize: savedFile.fileSize,
+                added,
+                contentPreview,
+                previewTruncated,
               });
 
-              this.super.introspect(
-                `${this.caller}: Successfully created text file "${displayFilename}"`
-              );
-
+              // The fileDownloadCard above is the success signal in the chat -
+              // no separate "successfully created" status row needed.
               return `Successfully created text file "${displayFilename}" (${bufferSizeKB}KB).`;
             } catch (e) {
               this.super.handlerProps.log(

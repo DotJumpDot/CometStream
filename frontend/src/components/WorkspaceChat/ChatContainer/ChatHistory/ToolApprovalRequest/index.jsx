@@ -140,9 +140,52 @@ function ToolApprovalHeader({
   );
 }
 
+/**
+ * One-line preview of a shell command for the approval card: heredoc bodies
+ * collapse to a line count and the rest flattens with a cap. Mirrors the
+ * server-side summarizeCommand in terminal.js (kept local so the card
+ * renders without a round-trip).
+ * @param {string} command - raw shell command
+ * @returns {string} single-line preview
+ */
+function compactCommand(command = "") {
+  const lines = String(command).split("\n");
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    out.push(lines[i]);
+    const opener = lines[i].match(/<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_-]*)['"]?/);
+    if (!opener) continue;
+    const delim = opener[1];
+    let end = -1;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (lines[j].trim() === delim) {
+        end = j;
+        break;
+      }
+    }
+    if (end === -1) continue;
+    out.push(`…(${end - i - 1} heredoc lines)`);
+    out.push(lines[end]);
+    i = end;
+  }
+  const flat = out.join(" ").replace(/\s+/g, " ").trim();
+  const max = 140;
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
 function ToolApprovalPayload({ payload, isExpanded }) {
   const hasPayload = payload && Object.keys(payload).length > 0;
-  if (!hasPayload || !isExpanded) return null;
+  if (!hasPayload) return null;
+  // Always show a one-line preview of the command (desktop-harness style);
+  // the full payload sits behind the caret toggle.
+  if (!isExpanded && typeof payload?.command === "string") {
+    return (
+      <span className="text-white/60 light:text-slate-700 font-mono text-xs truncate block">
+        $ {compactCommand(payload.command)}
+      </span>
+    );
+  }
+  if (!isExpanded) return null;
 
   function formatPayload(data) {
     if (typeof data === "string") return data;

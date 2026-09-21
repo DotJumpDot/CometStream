@@ -26,8 +26,20 @@ export function ThoughtExpansionProvider({ children }) {
     }));
   }, []);
 
+  // Whether the user ever toggled this chain. Untouched chains mirror the
+  // run instead: open while working, collapsed once finished.
+  const hasToggled = useCallback(
+    (messageId) => {
+      if (!messageId) return false;
+      return Object.prototype.hasOwnProperty.call(expansionStates, messageId);
+    },
+    [expansionStates]
+  );
+
   return (
-    <ThoughtExpansionContext.Provider value={{ getExpanded, setExpanded }}>
+    <ThoughtExpansionContext.Provider
+      value={{ getExpanded, setExpanded, hasToggled }}
+    >
       {children}
     </ThoughtExpansionContext.Provider>
   );
@@ -42,10 +54,11 @@ export function useThoughtExpansion(messageId) {
     [contextSetExpanded, messageId]
   );
   // No provider - fall back to never-expanded local behavior.
-  if (!context) return { expanded: false, setExpanded };
+  if (!context) return { expanded: false, setExpanded, touched: false };
   return {
     expanded: context.getExpanded(messageId),
     setExpanded,
+    touched: context.hasToggled(messageId),
   };
 }
 
@@ -84,4 +97,19 @@ export function stripThoughtTags(content = "") {
   return content
     .replace(THOUGHT_REGEX_OPEN, "")
     .replace(THOUGHT_REGEX_CLOSE, "");
+}
+
+// Agent turns stream raw `<tool_call>...</tool_call>` protocol blocks inside
+// the assistant text. The activity chain already logs each call as a
+// one-line "Called X" step, so the blocks are stripped from visible chat -
+// they are calling convention, not prose.
+export const TOOL_CALL_REGEX = /<tool_call>[\s\S]*?<\/tool_call>/gi;
+
+/**
+ * Removes raw tool-call protocol blocks from assistant text.
+ * @param {string} content
+ * @returns {string}
+ */
+export function stripToolCalls(content = "") {
+  return content.replace(TOOL_CALL_REGEX, "");
 }

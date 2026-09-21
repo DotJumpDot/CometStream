@@ -49,7 +49,9 @@ function AgentRunSummaryCard({
   fileChanges = [],
 }) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(true);
+  // Collapsed by default: a successful run needs no attention, the totals
+  // stay visible on the header and details expand on click.
+  const [expanded, setExpanded] = useState(false);
   const [expandedPath, setExpandedPath] = useState(null);
 
   const todoDone = todo.filter((i) => i.status === "done").length;
@@ -64,15 +66,13 @@ function AgentRunSummaryCard({
 
   return (
     <div className="not-prose w-full mt-2 mb-2">
-      <div className="rounded-xl border border-white/10 light:border-black/10 bg-white/[0.02] light:bg-black/[0.02] overflow-hidden">
+      <div className="overflow-hidden">
         <button
           type="button"
           onClick={() => hasBody && setExpanded((v) => !v)}
           aria-expanded={hasBody ? expanded : undefined}
-          className={`flex items-center gap-x-3 w-full px-3.5 py-2.5 text-left ${
-            hasBody
-              ? "cursor-pointer hover:bg-white/[0.03] light:hover:bg-black/[0.03]"
-              : "cursor-default"
+          className={`flex items-center gap-x-3 w-full px-1 py-2 text-left ${
+            hasBody ? "cursor-pointer" : "cursor-default"
           } transition-colors duration-150`}
         >
           <span className="flex h-7 w-7 items-center justify-center rounded-lg shrink-0 bg-emerald-500/15 text-emerald-400">
@@ -122,7 +122,7 @@ function AgentRunSummaryCard({
             }`}
           >
             <div className="min-h-0 overflow-hidden">
-              <div className="px-3.5 pb-3 pt-1 space-y-3 border-t border-white/5 light:border-black/5">
+              <div className="px-1 pb-3 pt-1 space-y-3">
                 {todo.length > 0 && (
                   <p className="text-xs text-zinc-400 light:text-zinc-500">
                     {t("agent_panel.progress", {

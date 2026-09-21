@@ -218,3 +218,171 @@ describe("service_tier forwarding from the tooled serviceTier option", () => {
     expect(streamed.create.mock.calls[0][0]).not.toHaveProperty("service_tier");
   });
 });
+
+describe("batched tool calls (functionCalls)", () => {
+  function streamingClient(chunks) {
+    const create = jest.fn(async () =>
+      (async function* () {
+        yield* chunks;
+      })()
+    );
+    return { client: { chat: { completions: { create } } }, create };
+  }
+
+  it("tooledStream returns every streamed tool call in index order", async () => {
+    const { client } = streamingClient([
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call-1",
+                  function: { name: "alpha", arguments: '{"x":' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [{ index: 0, function: { arguments: "1}" } }],
+            },
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 1,
+                  id: "call-2",
+                  function: { name: "beta", arguments: "{}" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 10,
+                  id: "call-3",
+                  function: { name: "gamma", arguments: "{}" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    const result = await tooledStream(client, "m", [], [], null, {});
+    expect(result.functionCalls).toHaveLength(3);
+    // Numeric index order (index 10 sorts after 1, unlike string keys).
+    expect(result.functionCalls.map((c) => c.name)).toEqual([
+      "alpha",
+      "beta",
+      "gamma",
+    ]);
+    expect(result.functionCalls[0].arguments).toEqual({ x: 1 });
+    expect(result.functionCall).toBe(result.functionCalls[0]);
+  });
+
+  it("wraps reasoning into textResponse even on tool-call turns", async () => {
+    const { client } = streamingClient([
+      {
+        choices: [
+          { delta: { reasoning_content: "planning the whole batch" } },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: "c1", function: { name: "alpha", arguments: "{}" } },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    const result = await tooledStream(client, "m", [], [], null, {});
+    expect(result.functionCalls).toHaveLength(1);
+    // The run-trace recorder extracts the turn's reasoning from
+    // textResponse - without the wrap, batched turns would lose thoughts.
+    expect(result.textResponse).toBe("<think>planning the whole batch</think>");
+  });
+
+  it("drops nameless glitch slots from the batch", async () => {
+    const { client } = streamingClient([
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call-1",
+                  function: { name: "", arguments: "{}" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 1, id: "call-2", function: { name: "beta", arguments: "{}" } },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    const result = await tooledStream(client, "m", [], [], null, {});
+    expect(result.functionCalls).toHaveLength(1);
+    expect(result.functionCalls[0].name).toBe("beta");
+    expect(result.functionCall?.name).toBe("beta");
+  });
+
+  it("tooledComplete returns every requested tool call", async () => {
+    const create = jest.fn(async () => ({
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              { id: "a", function: { name: "alpha", arguments: '{"k":1}' } },
+              { id: "b", function: { name: "beta", arguments: "{}" } },
+            ],
+          },
+        },
+      ],
+      usage: null,
+    }));
+    const client = { chat: { completions: { create } } };
+
+    const result = await tooledComplete(client, "m", [], [], () => 0, {});
+    expect(result.functionCalls.map((c) => c.name)).toEqual(["alpha", "beta"]);
+    expect(result.functionCalls[0].arguments).toEqual({ k: 1 });
+    expect(result.functionCall?.id).toBe("a");
+  });
+});

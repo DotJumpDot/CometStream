@@ -5,6 +5,7 @@ const Providers = require("./providers/index.js");
 const { Telemetry } = require("../../../models/telemetry.js");
 const { v4 } = require("uuid");
 const { ToolReranker } = require("./utils/toolReranker.js");
+const { recordThoughtText } = require("./plugins/trace.js");
 
 /**
  * AIbitat is a class that manages the conversation between agents.
@@ -89,6 +90,37 @@ class AIbitat {
     return !isNaN(envMaxToolCalls) && envMaxToolCalls > 0
       ? envMaxToolCalls
       : 10;
+  }
+
+  // In-app setting key mirroring AGENT_MAX_TOOL_CALLS (no ENV edit needed).
+  static maxToolCallsSettingKey = "agent_max_tool_calls";
+  static MAX_TOOL_CALLS_HARD_CAP = 200;
+
+  /**
+   * Resolve the per-response tool-call budget: ENV wins, then the in-app
+   * `agent_max_tool_calls` system setting, then the 10-call default.
+   * Async because the setting lives in the DB - required lazily (not at
+   * module top) to avoid a require cycle with the settings model.
+   * Clamped to [1, 200] so a typo cannot wedge the chat loop forever.
+   * @returns {Promise<number>} Tool-call budget for one agent response.
+   */
+  static async resolveMaxToolCalls() {
+    const fromEnv = parseInt(process.env.AGENT_MAX_TOOL_CALLS, 10);
+    if (!isNaN(fromEnv) && fromEnv > 0)
+      return Math.min(fromEnv, AIbitat.MAX_TOOL_CALLS_HARD_CAP);
+    try {
+      const { SystemSettings } = require("../../../models/systemSettings");
+      const raw = await SystemSettings.getValueOrFallback(
+        { label: AIbitat.maxToolCallsSettingKey },
+        ""
+      );
+      const fromSettings = parseInt(String(raw ?? ""), 10);
+      if (!isNaN(fromSettings) && fromSettings > 0)
+        return Math.min(fromSettings, AIbitat.MAX_TOOL_CALLS_HARD_CAP);
+    } catch {
+      // Fail open to the default budget below.
+    }
+    return 10;
   }
 
   /**
@@ -1058,99 +1090,125 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
     // which can include a truncated tool call - never act on it.
     if (this._aborted) return null;
 
-    if (completionStream.functionCall) {
-      const { name, arguments: args } = completionStream.functionCall;
-      const fn = this.functions.get(name);
-      const reachedToolLimit = depth >= this.maxToolCalls;
+    // Persistable run history: this iteration's reasoning is recorded here -
+    // intermediate thoughts exist nowhere else (only the final text reaches
+    // chat history), and statuses/cards record via the socket wrapper in
+    // arrival order, so the persisted trace stays chronological.
+    try {
+      recordThoughtText(this, completionStream?.textResponse);
+    } catch {}
 
-      if (reachedToolLimit) {
+    // Providers that support parallel tool calls return every call of this
+    // turn in `functionCalls`; single-call providers keep `functionCall`. The
+    // batch executes sequentially in request order - side effects (file
+    // writes, terminal runs) must interleave the way the model planned them,
+    // and per-tool approvals still gate each call inside its handler.
+    const batch = Array.isArray(completionStream?.functionCalls)
+      ? completionStream.functionCalls.filter((call) => !!call?.name)
+      : completionStream?.functionCall
+        ? [completionStream.functionCall]
+        : [];
+
+    if (batch.length > 0) {
+      const newMessages = [...messages];
+      let executed = 0;
+      let hitToolLimit = false;
+
+      for (const functionCall of batch) {
+        // Abort between calls: a batch of file writes must stop mid-way when
+        // the user kills the run, not carry on with the remaining calls.
+        if (this._aborted) return null;
+        const { name, arguments: args } = functionCall;
+        const fn = this.functions.get(name);
+        const reachedToolLimit = depth + executed >= this.maxToolCalls;
+
+        if (reachedToolLimit) {
+          hitToolLimit = true;
+          this.handlerProps?.log?.(
+            `[warning]: Maximum tool call limit (${this.maxToolCalls}) reached. Executing final tool call then generating response.`
+          );
+          this?.introspect?.(
+            `Maximum tool call limit (${this.maxToolCalls}) reached. After this tool I will generate a final response.`
+          );
+        }
+
+        if (!fn) {
+          newMessages.push({
+            name,
+            role: "function",
+            content: `Function "${name}" not found. Try again.`,
+            originalFunctionCall: functionCall,
+          });
+          executed++;
+          continue;
+        }
+
+        fn.caller = byAgent || "agent";
+
+        if (this.providerInstance?.verbose) {
+          this?.introspect?.(
+            `${fn.caller} is executing \`${name}\` tool ${JSON.stringify(args, null, 2)}`
+          );
+        }
+
         this.handlerProps?.log?.(
-          `[warning]: Maximum tool call limit (${this.maxToolCalls}) reached. Executing final tool call then generating response.`
+          `[debug]: ${fn.caller} is attempting to call \`${name}\` tool ${JSON.stringify(args, null, 2)}`
         );
-        this?.introspect?.(
-          `Maximum tool call limit (${this.maxToolCalls}) reached. After this tool I will generate a final response.`
-        );
-      }
 
-      if (!fn) {
-        return await this.handleAsyncExecution(
-          [
-            ...messages,
-            {
-              name,
-              role: "function",
-              content: `Function "${name}" not found. Try again.`,
-              originalFunctionCall: completionStream.functionCall,
-            },
-          ],
-          reachedToolLimit ? [] : functions,
-          byAgent,
-          depth + 1
-        );
-      }
-
-      fn.caller = byAgent || "agent";
-
-      if (this.providerInstance?.verbose) {
-        this?.introspect?.(
-          `${fn.caller} is executing \`${name}\` tool ${JSON.stringify(args, null, 2)}`
-        );
-      }
-
-      this.handlerProps?.log?.(
-        `[debug]: ${fn.caller} is attempting to call \`${name}\` tool ${JSON.stringify(args, null, 2)}`
-      );
-
-      const result = await fn.handler(args);
-      Telemetry.sendTelemetry("agent_tool_call", { tool: name }, null, true);
-      this.emitter.emit("toolCallResult", {
-        toolName: name,
-        arguments: args,
-        result,
-      });
-
-      /**
-       * If the tool call has direct output enabled, return the result directly to the chat
-       * without any further processing and no further tool calls will be run.
-       * For streaming, we need to return the result directly to the chat via the event handler
-       * or else no response will be sent to the chat.
-       */
-      if (this.skipHandleExecution) {
-        this.skipHandleExecution = false;
-        this?.introspect?.(
-          `The tool call has direct output enabled! The result will be returned directly to the chat without any further processing and no further tool calls will be run.`
-        );
-        this?.introspect?.(`Tool use completed.`);
-        this.handlerProps?.log?.(
-          `${fn.caller} tool call resulted in direct output! Returning raw result as string. NO MORE TOOL CALLS WILL BE EXECUTED.`
-        );
-        const directOutputUUID = completionStream?.uuid || v4();
-        eventHandler?.("reportStreamEvent", {
-          type: "fullTextResponse",
-          uuid: directOutputUUID,
-          content: result,
+        const result = await fn.handler(args);
+        Telemetry.sendTelemetry("agent_tool_call", { tool: name }, null, true);
+        this.emitter.emit("toolCallResult", {
+          toolName: name,
+          arguments: args,
+          result,
         });
-        eventHandler?.("reportStreamEvent", {
-          type: "usageMetrics",
-          uuid: directOutputUUID,
-          metrics: this.providerInstance.getCumulativeUsage(),
-        });
-        this?.flushCitations?.(directOutputUUID);
-        this?.emitChatId?.(directOutputUUID);
-        return result;
-      }
+        executed++;
 
-      const toolAttachments = this.collectToolAttachments();
-      const newMessages = [
-        ...messages,
-        {
+        /**
+         * If the tool call has direct output enabled, return the result directly to the chat
+         * without any further processing and no further tool calls will be run.
+         * For streaming, we need to return the result directly to the chat via the event handler
+         * or else no response will be sent to the chat.
+         */
+        if (this.skipHandleExecution) {
+          this.skipHandleExecution = false;
+          this?.introspect?.(
+            `The tool call has direct output enabled! The result will be returned directly to the chat without any further processing and no further tool calls will be run.`
+          );
+          this?.introspect?.(`Tool use completed.`);
+          this.handlerProps?.log?.(
+            `${fn.caller} tool call resulted in direct output! Returning raw result as string. NO MORE TOOL CALLS WILL BE EXECUTED.`
+          );
+          const directOutputUUID = completionStream?.uuid || v4();
+          eventHandler?.("reportStreamEvent", {
+            type: "fullTextResponse",
+            uuid: directOutputUUID,
+            content: result,
+          });
+          eventHandler?.("reportStreamEvent", {
+            type: "usageMetrics",
+            uuid: directOutputUUID,
+            metrics: this.providerInstance.getCumulativeUsage(),
+          });
+          this?.flushCitations?.(directOutputUUID);
+          this?.emitChatId?.(directOutputUUID);
+          return result;
+        }
+
+        newMessages.push({
           name,
           role: "function",
           content: result,
-          originalFunctionCall: completionStream.functionCall,
-        },
-      ];
+          originalFunctionCall: functionCall,
+        });
 
+        // Budget exhausted: finish this call (matching the single-call
+        // behavior of "run the final tool, then answer") and drop the rest
+        // of the batch so the next completion is text-only.
+        if (reachedToolLimit) break;
+      }
+
+      const toolAttachments = this.collectToolAttachments();
       if (toolAttachments.length > 0) {
         this.handlerProps?.log?.(
           `[debug]: Injecting ${toolAttachments.length} image attachment(s) from tool result`
@@ -1162,11 +1220,14 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
         });
       }
 
+      // One LLM round consumed N tool calls: advancing depth by the executed
+      // count keeps the budget a per-response *call* budget, so batching
+      // cannot bypass maxToolCalls.
       return await this.handleAsyncExecution(
         newMessages,
-        reachedToolLimit ? [] : functions,
+        hitToolLimit ? [] : functions,
         byAgent,
-        depth + 1
+        depth + executed
       );
     }
 
@@ -1225,87 +1286,102 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
     // which can include a truncated tool call - never act on it.
     if (this._aborted) return null;
 
-    if (completion.functionCall) {
-      const { name, arguments: args } = completion.functionCall;
-      const fn = this.functions.get(name);
-      const reachedToolLimit = depth >= this.maxToolCalls;
+    // See handleAsyncExecution: record this iteration's reasoning for the
+    // persisted run trace (intermediate thoughts exist nowhere else).
+    try {
+      recordThoughtText(this, completion?.textResponse);
+    } catch {}
 
-      if (reachedToolLimit) {
+    // See handleAsyncExecution: run the whole batch the model requested in
+    // this turn, sequentially, with the same per-call semantics.
+    const batch = Array.isArray(completion?.functionCalls)
+      ? completion.functionCalls.filter((call) => !!call?.name)
+      : completion?.functionCall
+        ? [completion.functionCall]
+        : [];
+
+    if (batch.length > 0) {
+      const newMessages = [...messages];
+      let executed = 0;
+      let hitToolLimit = false;
+
+      for (const functionCall of batch) {
+        if (this._aborted) return null;
+        const { name, arguments: args } = functionCall;
+        const fn = this.functions.get(name);
+        const reachedToolLimit = depth + executed >= this.maxToolCalls;
+
+        if (reachedToolLimit) {
+          hitToolLimit = true;
+          this.handlerProps?.log?.(
+            `[warning]: Maximum tool call limit (${this.maxToolCalls}) reached. Executing final tool call then generating response.`
+          );
+          this?.introspect?.(
+            `Maximum tool call limit (${this.maxToolCalls}) reached. After this tool I will generate a final response.`
+          );
+        }
+
+        if (!fn) {
+          newMessages.push({
+            name,
+            role: "function",
+            content: `Function "${name}" not found. Try again.`,
+            originalFunctionCall: functionCall,
+          });
+          executed++;
+          continue;
+        }
+
+        fn.caller = byAgent || "agent";
+
+        if (this.providerInstance?.verbose) {
+          this?.introspect?.(
+            `[debug]: ${fn.caller} is attempting to call \`${name}\` tool`
+          );
+        }
+
         this.handlerProps?.log?.(
-          `[warning]: Maximum tool call limit (${this.maxToolCalls}) reached. Executing final tool call then generating response.`
-        );
-        this?.introspect?.(
-          `Maximum tool call limit (${this.maxToolCalls}) reached. After this tool I will generate a final response.`
-        );
-      }
-
-      if (!fn) {
-        return await this.handleExecution(
-          [
-            ...messages,
-            {
-              name,
-              role: "function",
-              content: `Function "${name}" not found. Try again.`,
-              originalFunctionCall: completion.functionCall,
-            },
-          ],
-          reachedToolLimit ? [] : functions,
-          byAgent,
-          depth + 1,
-          msgUUID
-        );
-      }
-
-      fn.caller = byAgent || "agent";
-
-      if (this.providerInstance?.verbose) {
-        this?.introspect?.(
           `[debug]: ${fn.caller} is attempting to call \`${name}\` tool`
         );
-      }
 
-      this.handlerProps?.log?.(
-        `[debug]: ${fn.caller} is attempting to call \`${name}\` tool`
-      );
-
-      const result = await fn.handler(args);
-      Telemetry.sendTelemetry("agent_tool_call", { tool: name }, null, true);
-      this.emitter.emit("toolCallResult", {
-        toolName: name,
-        arguments: args,
-        result,
-      });
-
-      if (this.skipHandleExecution) {
-        this.skipHandleExecution = false;
-        this?.introspect?.(
-          `The tool call has direct output enabled! The result will be returned directly to the chat without any further processing and no further tool calls will be run.`
-        );
-        this?.introspect?.(`Tool use completed.`);
-        this.handlerProps?.log?.(
-          `${fn.caller} tool call resulted in direct output! Returning raw result as string. NO MORE TOOL CALLS WILL BE EXECUTED.`
-        );
-        eventHandler?.("reportStreamEvent", {
-          type: "usageMetrics",
-          uuid: msgUUID,
-          metrics: this.providerInstance.getCumulativeUsage(),
+        const result = await fn.handler(args);
+        Telemetry.sendTelemetry("agent_tool_call", { tool: name }, null, true);
+        this.emitter.emit("toolCallResult", {
+          toolName: name,
+          arguments: args,
+          result,
         });
-        this?.flushCitations?.(msgUUID);
-        return result;
-      }
+        executed++;
 
-      const toolAttachments = this.collectToolAttachments();
-      const newMessages = [
-        ...messages,
-        {
+        if (this.skipHandleExecution) {
+          this.skipHandleExecution = false;
+          this?.introspect?.(
+            `The tool call has direct output enabled! The result will be returned directly to the chat without any further processing and no further tool calls will be run.`
+          );
+          this?.introspect?.(`Tool use completed.`);
+          this.handlerProps?.log?.(
+            `${fn.caller} tool call resulted in direct output! Returning raw result as string. NO MORE TOOL CALLS WILL BE EXECUTED.`
+          );
+          eventHandler?.("reportStreamEvent", {
+            type: "usageMetrics",
+            uuid: msgUUID,
+            metrics: this.providerInstance.getCumulativeUsage(),
+          });
+          this?.flushCitations?.(msgUUID);
+          return result;
+        }
+
+        newMessages.push({
           name,
           role: "function",
           content: result,
-          originalFunctionCall: completion.functionCall,
-        },
-      ];
+          originalFunctionCall: functionCall,
+        });
 
+        if (reachedToolLimit) break;
+      }
+
+      const toolAttachments = this.collectToolAttachments();
       if (toolAttachments.length > 0) {
         this.handlerProps?.log?.(
           `[debug]: Injecting ${toolAttachments.length} image attachment(s) from tool result`
@@ -1317,11 +1393,13 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
         });
       }
 
+      // Depth advances by executed calls, not rounds, so the tool budget
+      // stays a per-response call budget (see handleAsyncExecution).
       return await this.handleExecution(
         newMessages,
-        reachedToolLimit ? [] : functions,
+        hitToolLimit ? [] : functions,
         byAgent,
-        depth + 1,
+        depth + executed,
         msgUUID
       );
     }
