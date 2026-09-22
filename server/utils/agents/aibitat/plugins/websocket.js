@@ -309,6 +309,30 @@ const websocket = {
             };
           }
 
+          // Read-only terminal commands skip the prompt round-trip even in
+          // ask mode: they cannot mutate anything, so each `ls`/`git status`
+          // would otherwise cost a full user+model cycle for zero safety.
+          // This only skips the UI prompt - runCommand still enforces the
+          // denylist and the root jail on every call.
+          if (skillName === "terminal-agent" && payload?.command) {
+            try {
+              const { isReadOnlyCommand } = require("./terminal.js");
+              if (isReadOnlyCommand(payload.command)) {
+                console.log(
+                  chalk.green(
+                    `Skill ${skillName} auto-approved (read-only command).`
+                  )
+                );
+                return {
+                  approved: true,
+                  message: "Auto-approved: read-only command.",
+                };
+              }
+            } catch {
+              // Classifier unavailable - fall through to the normal prompt.
+            }
+          }
+
           const requestId = uuidv4();
           return new Promise((resolve) => {
             let timeoutId = null;

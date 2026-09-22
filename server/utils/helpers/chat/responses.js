@@ -276,19 +276,21 @@ function formatClarifyingSurveyForPrompt(survey) {
 
   let body;
   if (result.timedOut) {
-    body = "[no response within the time limit]";
+    body =
+      "[no response within the time limit — proceed using your best judgment; do not treat this as a rejection or invent a user preference]";
   } else if (result.skipped) {
-    body = "[user let the agent decide]";
+    body =
+      "[user skipped — proceed using your best judgment; do not treat this as a rejection or invent a user preference]";
   } else {
     const answers = Array.isArray(result.answers) ? result.answers : [];
     body = questions
       .map((q, i) => {
         const a = answers[i] || { skipped: true };
         let answerText;
-        if (a.skipped) answerText = "[user skipped]";
+        if (a.skipped) answerText = "[user skipped — use your best judgment]";
         else if (Array.isArray(a.answer)) answerText = a.answer.join(", ");
         else if (a.answer === null || a.answer === undefined || a.answer === "")
-          answerText = "[no answer]";
+          answerText = "[no answer — use your best judgment]";
         else answerText = String(a.answer);
         return `Q: ${q.question}\nA: ${answerText}`;
       })

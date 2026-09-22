@@ -2,6 +2,10 @@ const { v4 } = require("uuid");
 const { safeJsonParse } = require("../../../../http");
 const { attachmentToContentBlock } = require("../../../../helpers/attachments");
 const {
+  ARGS_PARSE_ERROR_KEY,
+  RAW_EXCERPT_CHARS,
+} = require("../../utils/toolArgRepair.js");
+const {
   extractReasoningContent,
 } = require("../../../../helpers/chat/responses");
 
@@ -360,10 +364,37 @@ async function tooledStream(
   const functionCalls = toolCallIndices
     .map((idx) => {
       const call = toolCallsByIndex[idx];
+      // Malformed streamed arguments used to coerce silently to `{}` and the
+      // tool would execute with empty args - the model then debugged a
+      // phantom failure. Flag it instead: the execution loop turns the flag
+      // into a repair turn (see utils/toolArgRepair.js) and never executes.
+      // Empty argument strings are normal for parameterless tools, not errors.
+      let parsedArgs = {};
+      let argsParseError;
+      const rawArgs = call.arguments || "";
+      if (rawArgs.trim()) {
+        try {
+          const parsed = JSON.parse(rawArgs);
+          if (
+            parsed !== null &&
+            typeof parsed === "object" &&
+            !Array.isArray(parsed)
+          ) {
+            parsedArgs = parsed;
+          } else {
+            argsParseError = rawArgs.slice(0, RAW_EXCERPT_CHARS);
+          }
+        } catch {
+          argsParseError = rawArgs.slice(0, RAW_EXCERPT_CHARS);
+        }
+      }
       return {
         id: call.id,
         name: call.name,
-        arguments: safeJsonParse(call.arguments, {}),
+        arguments: parsedArgs,
+        ...(argsParseError !== undefined
+          ? { [ARGS_PARSE_ERROR_KEY]: argsParseError }
+          : {}),
         ...(call.extra_content ? { extra_content: call.extra_content } : {}),
       };
     })

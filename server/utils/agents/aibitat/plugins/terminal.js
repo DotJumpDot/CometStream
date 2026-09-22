@@ -25,12 +25,15 @@
  *   (shutdown/format/diskpart/...); everything else is the user's call, made
  *   through the normal per-tool approval flow.
  */
-const { execFile } = require("child_process");
+const { execFile, spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { projectText, spillText } = require("./result-budget");
 
-const MAX_OUTPUT_CHARS = 12_000;
+const MAX_STDOUT_CHARS = 8_000;
+const MAX_STDERR_CHARS = 4_000;
 const HEAD_CHARS = 2_000;
+const STDERR_HEAD_CHARS = 1_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MIN_TIMEOUT_MS = 5_000;
 const MAX_TIMEOUT_MS = 600_000;
@@ -67,6 +70,246 @@ const DENIED_COMMAND_PATTERNS = [
   /:\(\)\s*\{\s*:\|\s*:?\s*&\s*\}\s*;?\s*:/,
 ];
 
+/**
+ * Binaries that only inspect (never mutate) when their arguments are clean.
+ * Interpreters and anything that executes code (node/python/npm run), anything
+ * that touches the network (curl/wget), and pagers that block on stdin
+ * (less/more) are deliberately absent - those keep the approval prompt.
+ */
+const READONLY_BINARIES = new Set([
+  "ls",
+  "dir",
+  "cat",
+  "type",
+  "head",
+  "tail",
+  "echo",
+  "printf",
+  "pwd",
+  "cd",
+  "whoami",
+  "hostname",
+  "uname",
+  "ver",
+  "wc",
+  "sort",
+  "uniq",
+  "tree",
+  "stat",
+  "file",
+  "diff",
+  "cmp",
+  "od",
+  "xxd",
+  "strings",
+  "grep",
+  "rg",
+  "find",
+  "findstr",
+  "locate",
+  "where",
+  "which",
+  "whereis",
+  "test",
+  "[",
+  "true",
+  "false",
+  "jq",
+  "yq",
+  "ps",
+  "tasklist",
+  "df",
+  "du",
+  "tr",
+  "cut",
+]);
+
+/**
+ * Per-binary argument vetoes: tokens that turn an inspection binary into a
+ * writer (or a hang). Matched case-sensitively against whitespace-split args.
+ */
+const READONLY_ARG_VETOES = {
+  find: ["-delete", "-exec", "-execdir", "-ok", "-fls", "-fprint", "-fprintf"],
+  yq: ["-i", "--inplace"],
+  tail: ["-f", "--follow", "-F"],
+  tee: null, // tee always writes - rejected wholesale below.
+};
+
+/** git subcommands with no destructive mode regardless of later args. */
+const READONLY_GIT_SUBCOMMANDS = new Set([
+  "status",
+  "log",
+  "diff",
+  "show",
+  "rev-parse",
+  "ls-files",
+  "grep",
+]);
+
+/** Args that are inspection-only for any binary (`node --version` etc). */
+const READONLY_VERSION_ARGS = new Set([
+  "--version",
+  "-v",
+  "-V",
+  "version",
+  "--help",
+  "-h",
+  "-?",
+]);
+
+/**
+ * Splits a command line on shell chaining/piping operators, quote-aware so
+ * `&&` inside quotes does not split. Every returned segment still needs its
+ * own head-binary check - this only finds the boundaries.
+ * @param {string} command - Raw shell command line.
+ * @returns {string[]|null} Segments, or null when quotes are unbalanced.
+ */
+function splitChainSegments(command) {
+  const segments = [];
+  let current = "";
+  let quote = null;
+  let escaped = false;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      current += ch;
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      current += ch;
+      quote = ch;
+      continue;
+    }
+    // `2>&1` / `&>` are redirections, not background chaining - keep them
+    // literal or `ls 2>&1 | head` would split into a bogus "1" stage.
+    if (ch === "&" && (command[i + 1] === ">" || command[i - 1] === ">")) {
+      current += ch;
+      if (command[i + 1] === ">") {
+        current += ">";
+        i++;
+      }
+      continue;
+    }
+    if (
+      ch === "&" ||
+      ch === "|" ||
+      ch === ";" ||
+      (ch === "&" && command[i + 1] === "&") ||
+      (ch === "|" && command[i + 1] === "|")
+    ) {
+      segments.push(current);
+      current = "";
+      if (
+        (ch === "&" && command[i + 1] === "&") ||
+        (ch === "|" && command[i + 1] === "|")
+      )
+        i++;
+      continue;
+    }
+    current += ch;
+  }
+  if (quote) return null; // Unbalanced quotes - refuse to classify.
+  segments.push(current);
+  return segments;
+}
+
+/**
+ * Whether a `>` in the command is a real file redirect (veto) as opposed to
+ * stderr plumbing (`2>`, `&>`) or the null sink (`>/dev/null`), which ride
+ * along with any inspection command.
+ * @param {string} command - Raw shell command line (quotes already vetted).
+ * @returns {boolean} True when a file-writing redirect is present.
+ */
+function hasFileRedirect(command) {
+  for (let i = 0; i < command.length; i++) {
+    if (command[i] !== ">") continue;
+    const prev = command[i - 1];
+    if (prev === ">" || prev === "&" || /\d/.test(prev ?? "")) continue;
+    const rest = command.slice(i + 1).trimStart();
+    if (rest.startsWith("/dev/null")) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Whether one chain segment is a provably read-only invocation: its head
+ * binary is in the inspection set (or runs with version/help-only args), git
+ * stays within read-only subcommands, and per-binary write flags are absent.
+ * @param {string} segment - One operator-split command segment.
+ * @returns {boolean}
+ */
+function isReadOnlySegment(segment) {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true; // Empty stage (e.g. trailing &).
+  if (/^\w+=/.test(tokens[0])) return false; // Env-prefix can alter behavior.
+  const binary = tokens[0]
+    .toLowerCase()
+    .split(/[\\/]/)
+    .pop()
+    .replace(/\.(exe|cmd|bat|com)$/, "");
+  const args = tokens.slice(1);
+
+  // `X --version` / `X --help` is inspection for any binary.
+  if (args.length > 0 && args.every((arg) => READONLY_VERSION_ARGS.has(arg)))
+    return true;
+
+  // tee always writes stdout to a file.
+  if (binary === "tee") return false;
+
+  // git needs subcommand-level gating (`git branch -d` deletes).
+  if (binary === "git") {
+    const sub = (args[0] || "").toLowerCase();
+    if (READONLY_GIT_SUBCOMMANDS.has(sub)) return true;
+    if (sub === "stash" && args[1]?.toLowerCase() === "list") return true;
+    if (sub === "remote" && (args.length === 1 || args[1] === "-v"))
+      return true;
+    return false;
+  }
+
+  if (!READONLY_BINARIES.has(binary)) return false;
+  const vetoes = READONLY_ARG_VETOES[binary];
+  if (vetoes && args.some((arg) => vetoes.includes(arg))) return false;
+  return true;
+}
+
+/**
+ * Whether a whole command line is provably read-only: every chained/piped
+ * stage inspects only, with no file redirects, heredocs, or command
+ * substitution. Conservative by design - anything unrecognized returns false
+ * and keeps the normal approval prompt.
+ *
+ * This only ever SKIPS the approval UI. runCommand still enforces the
+ * denylist and the root jail on every call, so a misclassification cannot
+ * execute anything the denylist forbids.
+ * @param {string} command - Raw shell command line.
+ * @returns {boolean} True only when read-only is proven.
+ */
+function isReadOnlyCommand(command) {
+  const trimmed = String(command ?? "").trim();
+  if (!trimmed) return false;
+  // Heredocs and command substitution can smuggle arbitrary writes.
+  if (/<<|\$\(|`/.test(trimmed)) return false;
+  if (/\bsudo\b|\bsu\b|\brunas\b|\bdoas\b/i.test(trimmed)) return false;
+  for (const pattern of DENIED_COMMAND_PATTERNS) {
+    if (pattern.test(trimmed)) return false;
+  }
+  if (hasFileRedirect(trimmed)) return false;
+  const segments = splitChainSegments(trimmed);
+  if (!segments) return false;
+  return segments.every(isReadOnlySegment);
+}
 /**
  * Whether the terminal skill is enabled for this server instance.
  * Sync ENV-only check kept for back-compat (loader fast-path, unit tests).
@@ -133,7 +376,10 @@ function terminalRoot() {
   }
   const storageRoot =
     process.env.STORAGE_DIR ||
-    path.resolve(__dirname, "../../../../../storage");
+    // Dev fallback: server/storage (four levels up from this file's
+    // plugins/ dir). Five levels lands on the repo root, which has never
+    // held storage - anythingllm-fs and the DB live under server/storage.
+    path.resolve(__dirname, "../../../../storage");
   return path.join(storageRoot, "anythingllm-fs");
 }
 
@@ -202,17 +448,15 @@ function commandTimeoutMs() {
 /**
  * Caps captured output so one chatty command cannot flood the model context.
  * Keeps the head and the tail (error summaries usually live at the end).
+ * Shape shared with result-budget projectText; inline budget only - callers
+ * that truncate spill the full text separately (see runCommand).
  * @param {string} text - Raw captured stdout/stderr.
+ * @param {number} [maxChars] - Total budget including the marker.
+ * @param {number} [headChars] - Head window; the rest is tail.
  * @returns {string} Possibly truncated text with a visible marker.
  */
-function capOutput(text) {
-  if (text.length <= MAX_OUTPUT_CHARS) return text;
-  const omitted = text.length - HEAD_CHARS - (MAX_OUTPUT_CHARS - HEAD_CHARS);
-  return (
-    text.slice(0, HEAD_CHARS) +
-    `\n...[${omitted} chars truncated]...\n` +
-    text.slice(text.length - (MAX_OUTPUT_CHARS - HEAD_CHARS))
-  );
+function capOutput(text, maxChars = MAX_STDOUT_CHARS, headChars = HEAD_CHARS) {
+  return projectText(text, maxChars, headChars).text;
 }
 
 /**
@@ -318,6 +562,7 @@ const WORKDIR_IGNORED_DIRS = new Set([
   "target",
   "bin",
   "obj",
+  ".terminal-outputs",
 ]);
 const WORKDIR_MAX_CARDS = 20;
 
@@ -504,6 +749,325 @@ function emitWorkdirFileCards(send, before, after) {
 }
 
 /**
+ * Directory for spilled full outputs, hidden inside the workdir root so the
+ * model can page them back in with the file tools. Skipped by workdir
+ * snapshots (see WORKDIR_IGNORED_DIRS) so spills never become file cards.
+ * @param {string} root - Absolute terminal working directory.
+ * @returns {string} Absolute spill directory.
+ */
+function spillDirForRoot(root) {
+  return path.join(root, ".terminal-outputs");
+}
+
+/**
+ * In-memory background task registry. Like sessions.js this is intentionally
+ * not persisted: tasks belong to the live run (a server restart orphans the
+ * OS child, and polling a stale id reports that honestly).
+ */
+const backgroundTasks = new Map();
+let backgroundTaskSeq = 0;
+
+// Output kept per stream per task - polling reads the tail, the full text
+// is what a finished task reports. Finished tasks stay pollable until
+// evicted by the registry cap.
+const BG_STREAM_MAX_CHARS = 32_000;
+const BG_MAX_TASKS = 20;
+const BG_DEFAULT_TAIL_CHARS = 6_000;
+
+/**
+ * Refuses catastrophic host commands, shared by foreground and background
+ * runs (the background path must never be a denylist bypass).
+ * @param {string} trimmed - Trimmed command line.
+ * @returns {string|null} Block reason, or null when allowed.
+ */
+function deniedReason(trimmed) {
+  for (const pattern of DENIED_COMMAND_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return `Command blocked by the terminal safety filter (matched ${pattern}).`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Server storage root (STORAGE_DIR-aware) for the persisted task registry.
+ * The registry is server-owned state, not model-readable files, so it lives
+ * next to the DB rather than in the agent sandbox.
+ * @returns {string} Absolute storage path.
+ */
+function serverStorageRoot() {
+  // Four levels up from this file's plugins/ dir (see terminalRoot) -
+  // five lands on the repo root, which has never held storage.
+  const devFallback = path.resolve(__dirname, "../../../../storage");
+  if (process.env.NODE_ENV === "development") return devFallback;
+  return path.resolve(process.env.STORAGE_DIR ?? devFallback, ".");
+}
+
+/**
+ * Path of the persisted background-task registry file.
+ * @returns {string} Absolute JSON path.
+ */
+function tasksStateFile() {
+  return path.join(serverStorageRoot(), "terminal-tasks.json");
+}
+
+// Output snapshot kept per persisted task - bounded so the state file
+// cannot grow without bound.
+const PERSISTED_TAIL_CHARS = 4_000;
+const PERSISTED_MAX_TASKS = 20;
+
+/**
+ * Loads persisted task snapshots from a previous process into the registry
+ * as STALE entries (no live child handle). A poll after a restart then
+ * reports the last-known snapshot honestly instead of "unknown task".
+ * Corrupt/missing files start empty - never throw at require time.
+ */
+function loadPersistedTasks() {
+  let raw;
+  try {
+    raw = fs.readFileSync(tasksStateFile(), "utf-8");
+  } catch {
+    return;
+  }
+  let entries;
+  try {
+    entries = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!Array.isArray(entries)) return;
+  for (const entry of entries.slice(-PERSISTED_MAX_TASKS)) {
+    if (!entry || typeof entry.id !== "number") continue;
+    if (backgroundTasks.has(entry.id)) continue;
+    backgroundTasks.set(entry.id, {
+      id: entry.id,
+      label: String(entry.label ?? "task"),
+      command: String(entry.command ?? ""),
+      cwd: String(entry.cwd ?? ""),
+      running: false,
+      stale: true,
+      exitCode: entry.exitCode ?? null,
+      signal: entry.signal ?? null,
+      timedOut: !!entry.timedOut,
+      stopped: !!entry.stopped,
+      stdout: String(entry.stdoutTail ?? ""),
+      stderr: String(entry.stderrTail ?? ""),
+      startedAt: Number(entry.startedAt) || Date.now(),
+      endedAt: Number(entry.endedAt) || Date.now(),
+      proc: null,
+      timeoutId: null,
+    });
+    if (entry.id > backgroundTaskSeq) backgroundTaskSeq = entry.id;
+  }
+}
+
+/**
+ * Persists the registry (bounded snapshots) so a restart degrades to
+ * last-known state instead of amnesia. Best-effort - never throws.
+ */
+function savePersistedTasks() {
+  try {
+    const entries = [...backgroundTasks.values()]
+      .slice(-PERSISTED_MAX_TASKS)
+      .map((task) => ({
+        id: task.id,
+        label: task.label,
+        command: task.command,
+        cwd: task.cwd,
+        running: task.running,
+        exitCode: task.exitCode,
+        signal: task.signal,
+        timedOut: task.timedOut,
+        stopped: !!task.stopped,
+        startedAt: task.startedAt,
+        endedAt: task.endedAt,
+        stdoutTail: task.stdout.slice(-PERSISTED_TAIL_CHARS),
+        stderrTail: task.stderr.slice(-PERSISTED_TAIL_CHARS),
+      }));
+    fs.mkdirSync(path.dirname(tasksStateFile()), { recursive: true });
+    fs.writeFileSync(tasksStateFile(), JSON.stringify(entries));
+  } catch {
+    // Registry persistence is best-effort - the live map stands either way.
+  }
+}
+
+// Hydrate stale snapshots from a previous process (if any) so a poll after
+// a server restart reports last-known state instead of "unknown task".
+loadPersistedTasks();
+/**
+ * Starts a shell command in the background: returns immediately with a task
+ * id the model polls via `task-output` and ends via `task-stop`. Long builds,
+ * dev servers, and test suites run while the model does other steps instead
+ * of blocking the turn - the main wall-clock win on slow local inference.
+ * @param {string} command - Shell command line to execute.
+ * @param {object} [opts]
+ * @param {string} opts.cwd - Working directory (resolved caller-side).
+ * @param {string} [opts.label] - Short label override.
+ * @returns {{ok: boolean, taskId?: number, error?: string}} Start result.
+ */
+function startBackgroundTask(command, { cwd, label } = {}) {
+  const trimmed = String(command ?? "").trim();
+  if (!trimmed) return { ok: false, error: "No command provided." };
+  const blocked = deniedReason(trimmed);
+  if (blocked) return { ok: false, error: blocked };
+  if (!cwd) return { ok: false, error: "No working directory provided." };
+
+  const { command: shell, preArgs } = resolveShell();
+  const timeout = commandTimeoutMs();
+  let proc;
+  try {
+    proc = spawn(shell, [...preArgs, trimmed], {
+      cwd,
+      windowsHide: true,
+    });
+  } catch (error) {
+    return { ok: false, error: `Failed to spawn: ${error?.message}` };
+  }
+
+  // Evict finished tasks past the cap so the registry cannot grow without
+  // bound across a long session. Evicts repeatedly (not just one) so a burst
+  // of quick starts settles back under the cap on the next start.
+  while (backgroundTasks.size >= BG_MAX_TASKS) {
+    const evictable = [...backgroundTasks.values()].find((t) => !t.running);
+    if (!evictable) break;
+    backgroundTasks.delete(evictable.id);
+  }
+
+  const id = ++backgroundTaskSeq;
+  const task = {
+    id,
+    label: label || summarizeCommand(trimmed),
+    command: trimmed,
+    cwd,
+    running: true,
+    exitCode: null,
+    signal: null,
+    timedOut: false,
+    stdout: "",
+    stderr: "",
+    startedAt: Date.now(),
+    endedAt: null,
+    proc,
+    timeoutId: null,
+  };
+  const append = (stream, chunk) => {
+    task[stream] += chunk.toString();
+    if (task[stream].length > BG_STREAM_MAX_CHARS)
+      task[stream] = task[stream].slice(-BG_STREAM_MAX_CHARS);
+  };
+  proc.stdout?.on("data", (chunk) => append("stdout", chunk));
+  proc.stderr?.on("data", (chunk) => append("stderr", chunk));
+  const finish = (code, signal, timedOut) => {
+    if (!task.running) return;
+    task.running = false;
+    task.exitCode = code;
+    task.signal = signal ?? null;
+    task.timedOut = !!timedOut;
+    task.endedAt = Date.now();
+    if (task.timeoutId) clearTimeout(task.timeoutId);
+    savePersistedTasks();
+  };
+  proc.on("error", () => finish(null, null, false));
+  proc.on("close", (code, signal) => finish(code, signal, false));
+  task.timeoutId = setTimeout(() => {
+    if (!task.running) return;
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // Already exited between the check and the kill.
+    }
+    finish(null, "SIGKILL", true);
+  }, timeout);
+  task.timeoutId.unref?.();
+
+  backgroundTasks.set(id, task);
+  savePersistedTasks();
+  return { ok: true, taskId: id };
+}
+
+/**
+ * Polls a background task: current status plus the output tail. Detecting a
+ * finished task here is also what closes its session row (see handler).
+ * @param {number|string} id - Task id from startBackgroundTask.
+ * @param {object} [opts]
+ * @param {number} [opts.tailChars] - Tail window per stream.
+ * @returns {object} Status envelope (ok:false when unknown).
+ */
+function pollBackgroundTask(id, { tailChars = BG_DEFAULT_TAIL_CHARS } = {}) {
+  const task = backgroundTasks.get(Number(id));
+  if (!task) {
+    const known = [...backgroundTasks.keys()];
+    return {
+      ok: false,
+      error: `Unknown background task ${id}. Known tasks: ${known.length > 0 ? known.join(", ") : "(none - the registry restarts from persisted snapshots, older tasks are forgotten)"}.`,
+    };
+  }
+  const tail = Math.max(
+    500,
+    Math.min(20_000, Number(tailChars) || BG_DEFAULT_TAIL_CHARS)
+  );
+  return {
+    ok: true,
+    taskId: task.id,
+    label: task.label,
+    running: task.running,
+    ...(task.stale
+      ? {
+          stale: true,
+          note: "The server restarted since this task ran, so the live process handle is gone. This is the last persisted snapshot, not live state - re-run the command if you need a live result.",
+        }
+      : {}),
+    exitCode: task.exitCode,
+    signal: task.signal,
+    timedOut: task.timedOut,
+    durationMs: (task.endedAt ?? Date.now()) - task.startedAt,
+    stdoutTail: task.stdout.slice(-tail),
+    stderrTail: task.stderr.slice(-tail),
+    stdoutChars: task.stdout.length,
+    stderrChars: task.stderr.length,
+  };
+}
+
+/**
+ * Stops a running background task (SIGKILL) and returns its final status.
+ * Stopping a finished task is a no-op that re-reports the final state.
+ *
+ * Finalizes synchronously instead of waiting for the child's `close` event:
+ * forked grandchildren (npm/sleep/servers) inherit the stdio pipes, so
+ * `close` may not fire until they exit on their own. The kill targets the
+ * task's shell; grandchildren may outlive it (OS-dependent) - documented,
+ * not waited on, or a stop could hang as long as the run it ends.
+ * @param {number|string} id - Task id.
+ * @returns {object} Final status envelope (ok:false when unknown).
+ */
+function stopBackgroundTask(id) {
+  const task = backgroundTasks.get(Number(id));
+  if (!task) return pollBackgroundTask(id);
+  if (task.running) {
+    try {
+      task.proc.kill("SIGKILL");
+    } catch {
+      // Exited between lookup and kill - finalized below regardless.
+    }
+    // Release our pipe ends so a lingering grandchild cannot hold the
+    // task's streams (and the test sandbox dir) open.
+    try {
+      task.proc.stdout?.destroy();
+    } catch {}
+    try {
+      task.proc.stderr?.destroy();
+    } catch {}
+    task.running = false;
+    task.exitCode = null;
+    task.signal = "SIGKILL";
+    task.stopped = true;
+    task.endedAt = Date.now();
+    if (task.timeoutId) clearTimeout(task.timeoutId);
+    savePersistedTasks();
+  }
+  return pollBackgroundTask(id);
+}
+/**
  * Runs a command inside the terminal root with timeout + output caps.
  * @param {string} command - Shell command line to execute.
  * @param {object} [opts] - Optional overrides.
@@ -515,14 +1079,8 @@ async function runCommand(command, { cwd = null } = {}) {
   const trimmed = String(command ?? "").trim();
   if (!trimmed) return { ok: false, error: "No command provided." };
 
-  for (const pattern of DENIED_COMMAND_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      return {
-        ok: false,
-        error: `Command blocked by the terminal safety filter (matched ${pattern}).`,
-      };
-    }
-  }
+  const blocked = deniedReason(trimmed);
+  if (blocked) return { ok: false, error: blocked };
 
   const root = cwd ?? terminalRoot();
   fs.mkdirSync(root, { recursive: true });
@@ -545,13 +1103,38 @@ async function runCommand(command, { cwd = null } = {}) {
         // execFile reports a non-zero exit as an Error object; that is a
         // normal command failure the model should see, not a tool failure.
         const exitCode = error?.code ?? 0;
+        const rawOut = String(stdout ?? "");
+        const rawErr = String(stderr ?? "");
+        const out = projectText(rawOut, MAX_STDOUT_CHARS, HEAD_CHARS);
+        const err = projectText(rawErr, MAX_STDERR_CHARS, STDERR_HEAD_CHARS);
+        // Truncated output is spilled to disk with a pointer instead of being
+        // lost: the model sees a bounded window inline and can read more with
+        // the file tools only when it needs to. Without the spill the choice
+        // would be "truncate blind" vs "dump 24k chars into context".
+        let outputFile = null;
+        let stdoutText = out.text;
+        let stderrText = err.text;
+        if (out.truncated || err.truncated) {
+          outputFile = spillText(
+            spillDirForRoot(root),
+            `exit-${typeof exitCode === "number" ? exitCode : "err"}`,
+            `--- stdout ---\n${rawOut}\n--- stderr ---\n${rawErr}`
+          );
+          if (outputFile) {
+            const pointer = `\n[Full output spilled to ${outputFile} - read it with the file tools if you need more than this window.]`;
+            if (out.truncated) stdoutText += pointer;
+            else stderrText += pointer;
+          }
+        }
         resolve({
           ok: typeof exitCode === "number",
           exitCode,
           signal: error?.signal ?? null,
           timedOut: error?.killed === true,
-          stdout: capOutput(String(stdout ?? "")),
-          stderr: capOutput(String(stderr ?? "")),
+          stdout: stdoutText,
+          stderr: stderrText,
+          truncated: out.truncated || err.truncated,
+          outputFile,
           durationMs: Date.now() - started,
           cwd: root,
         });
@@ -683,6 +1266,188 @@ const terminalAgent = {
             }
           },
         });
+
+        // Background tasks: start a command without blocking the turn, poll
+        // its output with task-output, end it with task-stop. Sessions reuse
+        // the same sessionCard rows/panel as foreground runs, so no frontend
+        // change is needed - a background row simply stays `running` across
+        // polls until it finishes or is stopped.
+        const bgGate = async (handler) => {
+          if (!(await isEnabled())) {
+            return "Error: the terminal skill is disabled on this server. Enable it via AGENT_ENABLE_TERMINAL=1 or the in-app terminal_agent_enabled setting.";
+          }
+          return handler();
+        };
+        const finishBgSession = (sessionId, socket, poll) => {
+          const sessions = require("./sessions.js");
+          const tail = [
+            poll.stdoutTail ? `--- stdout (tail) ---\n${poll.stdoutTail}` : "",
+            poll.stderrTail ? `--- stderr (tail) ---\n${poll.stderrTail}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+            .slice(-4000);
+          const status = poll.timedOut ? "error" : "done";
+          sessions.finishSession(
+            sessionId,
+            status,
+            `\n--- background task ${poll.taskId} ${poll.timedOut ? "timed out" : `exit ${poll.exitCode ?? "?"}`} in ${poll.durationMs ?? 0}ms ---\n${tail}`
+          );
+          const current = sessions
+            .listSessions()
+            .find((entry) => entry.id === sessionId);
+          if (current) socket?.send?.("sessionCard", { ...current });
+        };
+
+        aibitat.function({
+          super: aibitat,
+          name: "terminal-task-start",
+          description:
+            "Start a shell command in the BACKGROUND and return immediately with a task id - it does NOT block your turn. " +
+            "Use it for long builds, installs, dev servers, and test suites, then do other steps and poll with task-output. " +
+            "Start ONE task per call. Same working directory and safety filter as terminal-agent.",
+          examples: [
+            {
+              prompt:
+                "Install dependencies in the background while I review the code",
+              call: JSON.stringify({ command: "npm install" }),
+            },
+          ],
+          parameters: {
+            $schema: "http://json-schema.org/draft-07/schema#",
+            type: "object",
+            properties: {
+              command: {
+                type: "string",
+                description: "The shell command to run in the background.",
+              },
+            },
+            required: ["command"],
+            additionalProperties: false,
+          },
+          handler: async function ({ command = "" }) {
+            return bgGate(async () => {
+              if (this.super.requestToolApproval) {
+                const approval = await this.super.requestToolApproval({
+                  skillName: "terminal-agent",
+                  payload: { command, background: true },
+                  description: "Start a background shell task",
+                });
+                if (!approval.approved) {
+                  this.super.introspect(
+                    `${this.caller}: User rejected the background task request.`
+                  );
+                  return approval.message;
+                }
+              }
+              const workdirRoot = await terminalRootAsync();
+              const started = startBackgroundTask(command, {
+                cwd: workdirRoot,
+              });
+              if (!started.ok) return `Error: ${started.error}`;
+              const sessions = require("./sessions.js");
+              const session = sessions.startSession({
+                kind: "terminal",
+                label: `& ${summarizeCommand(command)}`,
+                detail: `$ ${String(command ?? "").trim()}\n(background task ${started.taskId})\n`,
+                category: categorizeCommand(command),
+              });
+              this.super.socket?.send?.("sessionCard", { ...session });
+              this.super.handlerProps.log(
+                `Started background task ${started.taskId}: ${summarizeCommand(command)}`
+              );
+              this.super.introspect(
+                `${this.caller}: Started background task ${started.taskId}.`
+              );
+              // Stash the session id on the task for completion updates.
+              const task = backgroundTasks.get(started.taskId);
+              if (task) task.sessionId = session.id;
+              return JSON.stringify({
+                ok: true,
+                taskId: started.taskId,
+                hint: `Poll progress with task-output (taskId ${started.taskId}); end it with task-stop. The task keeps running while you do other steps.`,
+              });
+            });
+          },
+        });
+
+        aibitat.function({
+          super: aibitat,
+          name: "task-output",
+          description:
+            "Poll a background task started by terminal-task-start: status plus the output tail. " +
+            "Call it after doing other work, or to check whether a build/server is ready. No approval needed.",
+          parameters: {
+            $schema: "http://json-schema.org/draft-07/schema#",
+            type: "object",
+            properties: {
+              taskId: {
+                type: "number",
+                description: "The task id returned by terminal-task-start.",
+              },
+              tailChars: {
+                type: "number",
+                description:
+                  "Output tail window per stream (default 6000, max 20000).",
+              },
+            },
+            required: ["taskId"],
+            additionalProperties: false,
+          },
+          handler: async function ({ taskId, tailChars } = {}) {
+            return bgGate(async () => {
+              const poll = pollBackgroundTask(taskId, { tailChars });
+              if (!poll.ok) return `Error: ${poll.error}`;
+              const task = backgroundTasks.get(Number(taskId));
+              // First poll that observes completion closes the session row.
+              if (!poll.running && task && !task.sessionClosed) {
+                task.sessionClosed = true;
+                if (task.sessionId != null)
+                  finishBgSession(task.sessionId, this.super.socket, poll);
+                this.super.introspect(
+                  `${this.caller}: Background task ${poll.taskId} finished (exit ${poll.exitCode ?? "?"}).`
+                );
+              }
+              return JSON.stringify(poll);
+            });
+          },
+        });
+
+        aibitat.function({
+          super: aibitat,
+          name: "task-stop",
+          description:
+            "Stop a running background task started by terminal-task-start and report its final status. " +
+            "Stopping an already-finished task just re-reports the final state. No approval needed.",
+          parameters: {
+            $schema: "http://json-schema.org/draft-07/schema#",
+            type: "object",
+            properties: {
+              taskId: {
+                type: "number",
+                description: "The task id returned by terminal-task-start.",
+              },
+            },
+            required: ["taskId"],
+            additionalProperties: false,
+          },
+          handler: async function ({ taskId } = {}) {
+            return bgGate(async () => {
+              const poll = stopBackgroundTask(taskId);
+              if (!poll.ok) return `Error: ${poll.error}`;
+              const task = backgroundTasks.get(Number(taskId));
+              if (task && !task.sessionClosed) {
+                task.sessionClosed = true;
+                if (task.sessionId != null)
+                  finishBgSession(task.sessionId, this.super.socket, poll);
+              }
+              this.super.introspect(
+                `${this.caller}: Background task ${poll.taskId} stopped (exit ${poll.exitCode ?? "?"}).`
+              );
+              return JSON.stringify(poll);
+            });
+          },
+        });
       },
     };
   },
@@ -730,12 +1495,23 @@ module.exports = {
   commandTimeoutMs,
   summarizeCommand,
   categorizeCommand,
+  isReadOnlyCommand,
   snapshotWorkdir,
   detectWorkdirChanges,
   emitWorkdirFileCards,
   finishTerminalSession,
   SUMMARY_MAX_CHARS,
   DENIED_COMMAND_PATTERNS,
+  MAX_STDOUT_CHARS,
+  MAX_STDERR_CHARS,
   SETTING_ENABLED_KEY,
   SETTING_ROOT_KEY,
+  startBackgroundTask,
+  pollBackgroundTask,
+  stopBackgroundTask,
+  backgroundTasks,
+  loadPersistedTasks,
+  savePersistedTasks,
+  tasksStateFile,
+  BG_MAX_TASKS,
 };

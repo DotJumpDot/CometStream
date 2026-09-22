@@ -6,6 +6,7 @@ import { emitAssistantMessageCompleteEvent } from "@/components/contexts/TTSProv
 import { THREAD_RENAME_EVENT } from "@/components/Sidebar/ActiveWorkspaces/ThreadContainer";
 import {
   addAgentFileChange,
+  addTrajectoryRecord,
   setAgentTodo,
   upsertAgentSession,
 } from "@/utils/agentActivity";
@@ -90,6 +91,7 @@ const handledEvents = [
   "clarificationRequest",
   "contextCompactStart",
   "contextCompactEnd",
+  "trajectoryEvent",
   // Streaming events
   "reportStreamEvent",
 ];
@@ -365,6 +367,13 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
   // Plan updates render only in the agent side panel - no chat bubble.
   if (data.type === "todoListCard") {
     setAgentTodo(data.content?.items || []);
+    return;
+  }
+
+  // Model trajectory records render only in the agent side panel's
+  // Trajectory tab (per-iteration debug view) - never as chat bubbles.
+  if (data.type === "trajectoryEvent") {
+    addTrajectoryRecord(data.content || {});
     return;
   }
 

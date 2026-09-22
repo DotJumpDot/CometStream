@@ -5,6 +5,7 @@ import {
   CheckCircle,
   Circle,
   FilePlus,
+  FlowArrow,
   GitDiff,
   ListChecks,
   PencilSimple,
@@ -249,6 +250,16 @@ export default function AgentSidePanel() {
                   />
                   <SessionsTab sessions={activity.sessions} />
                 </section>
+                {activity.trajectory.length > 0 && (
+                  <section>
+                    <SectionHeader
+                      icon={<FlowArrow className="w-3.5 h-3.5" />}
+                      label={t("agent_panel.tab_trajectory")}
+                      count={activity.trajectory.length}
+                    />
+                    <TrajectoryTab records={activity.trajectory} />
+                  </section>
+                )}
                 {combinedSources.length > 0 && (
                   <section>
                     <SectionHeader
@@ -508,6 +519,121 @@ function SessionsTab({ sessions }) {
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Trajectory tab: one row per LLM iteration (per-turn debug view for local
+ * models) - what the turn sent (message deltas), what it requested (tool
+ * calls with arg previews), and usage. Expands inline. Session-only.
+ * @param {Object} props
+ * @param {Array} props.records - trajectoryEvent payloads in order
+ */
+function TrajectoryTab({ records }) {
+  const { t } = useTranslation();
+  const [expandedSeq, setExpandedSeq] = useState(null);
+
+  if (records.length === 0)
+    return (
+      <p className="text-xs text-zinc-500 light:text-zinc-400 mt-4">
+        {t("agent_panel.trajectory_empty")}
+      </p>
+    );
+
+  return (
+    <div className="flex flex-col gap-y-1 mt-1">
+      {records.map((record) => {
+        const expanded = expandedSeq === record.seq;
+        const tools = record.requestedTools || [];
+        const deltas = record.newMessages || [];
+        const usage = record.usage || {};
+        const usageText = [
+          usage.prompt_tokens != null ? `${usage.prompt_tokens}p` : null,
+          usage.completion_tokens != null
+            ? `${usage.completion_tokens}c`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return (
+          <div
+            key={record.seq}
+            className="rounded-lg bg-white/[0.04] light:bg-black/[0.04] overflow-hidden"
+          >
+            <button
+              type="button"
+              onClick={() => setExpandedSeq(expanded ? null : record.seq)}
+              className="flex items-center gap-x-2 w-full rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors border-none cursor-pointer"
+            >
+              <span className="text-[10px] font-mono text-zinc-500 light:text-zinc-400 tabular-nums shrink-0">
+                #{record.seq}
+              </span>
+              <span className="flex-1 min-w-0 truncate text-[12px] text-zinc-200 light:text-zinc-800 font-mono">
+                {record.model || record.provider || "llm"}
+              </span>
+              {tools.length > 0 && (
+                <span className="text-[10px] text-amber-400 light:text-amber-600 tabular-nums shrink-0">
+                  {tools.length} tool{tools.length === 1 ? "" : "s"}
+                </span>
+              )}
+              {usageText && (
+                <span className="text-[10px] text-zinc-500 light:text-zinc-400 tabular-nums shrink-0">
+                  {usageText}
+                </span>
+              )}
+            </button>
+            {expanded && (
+              <div className="mx-2 mb-2 p-2 rounded-md bg-zinc-950/70 light:bg-slate-100 max-h-[260px] overflow-y-auto">
+                {record.error && (
+                  <p className="text-[11px] text-red-400 light:text-red-500 font-mono whitespace-pre-wrap break-words mb-2">
+                    {record.error}
+                  </p>
+                )}
+                {tools.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-[10px] uppercase tracking-wide text-zinc-500 light:text-zinc-400 mb-1">
+                      {t("agent_panel.trajectory_tools")}
+                    </p>
+                    {tools.map((tool, i) => (
+                      <div key={i} className="mb-1 last:mb-0">
+                        <p className="text-[11px] font-mono text-sky-300 light:text-sky-700 break-words">
+                          {tool.name}
+                        </p>
+                        {!!tool.args && (
+                          <pre className="text-[11px] font-mono text-zinc-300 light:text-zinc-700 whitespace-pre-wrap break-words">
+                            {tool.args}
+                          </pre>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {deltas.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide text-zinc-500 light:text-zinc-400 mb-1">
+                      {t("agent_panel.trajectory_messages", {
+                        count: deltas.length,
+                      })}
+                    </p>
+                    {deltas.map((msg, i) => (
+                      <p
+                        key={i}
+                        className="text-[11px] font-mono text-zinc-400 light:text-zinc-600 whitespace-pre-wrap break-words mb-1 last:mb-0"
+                      >
+                        <span className="text-zinc-500 light:text-zinc-500">
+                          [{msg.role}]
+                        </span>{" "}
+                        {msg.preview}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

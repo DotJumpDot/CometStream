@@ -74,3 +74,9 @@ You can hand-edit this file while the app is stopped; it is read at boot.
 ## How it reaches agents
 
 Running servers proxy their tools into the AIbitat agent as functions named `<server>-<tool>`. The hypervisor (`server/utils/MCP/`) is a **singleton** — `MCPCompatibilityLayer` returns a cached instance, so subclasses must not use `#private` methods (see AGENTS.md).
+
+Every tool call is hardened so one misbehaving server cannot stall or bloat an agent run:
+
+- **Per-call timeout** — each execution races a budget (ENV `AGENT_MCP_TOOL_TIMEOUT_MS` or the in-app `mcp_tool_timeout_ms` setting; default 120s, clamped 5s–600s). A timed-out call fails fast with a narrow-your-query message instead of being retried.
+- **One restart + retry** — transport-level failures (`ECONNRESET`, `socket hang up`, closed server…) trigger a single server restart and a single retry before surfacing the error.
+- **Result budget** — results are truncated to ~12k inline characters; the full text is spilled to `<storage>/anythingllm-fs/.tool-outputs/` with a pointer in the result, so the model can page the rest back in with the file tools instead of every verbose tool riding along on all subsequent turns.

@@ -54,6 +54,17 @@ const SKILL_FILTER_CONFIG = {
   },
 };
 
+// Tools registered as a side effect of the terminal-agent plugin setup
+// (background tasks share its opt-in gate and session). They are not separate
+// loadable plugins, so both the session function list and the mid-session
+// toggle resolver must expand them explicitly wherever "terminal-agent" is
+// referenced.
+const TERMINAL_COMPANION_TOOLS = [
+  "terminal-task-start",
+  "task-output",
+  "task-stop",
+];
+
 const USER_AGENT = {
   name: "USER",
   getDefinition: () => {
@@ -94,11 +105,12 @@ const WORKSPACE_AGENT = {
       role +=
         "\n\nWhen you need information from the user (URLs, file paths, preferences, choices, etc.), you MUST use the request-user-input tool. Do not ask questions in your text response - the user cannot reply to text. Only the tool can collect user input.";
 
-    // Narrate the work as it happens: your thought chain stays hidden, so
-    // the short visible sentences you write between tool calls are the only
-    // progress the user sees. Always pair tool batches with them.
+    // Narrate the work as it happens: the model's hidden reasoning is never
+    // shown, so without enforced visible notes a run is silent until the
+    // final summary. Measured behavior: a soft suggestion yields one lead-in
+    // sentence at best, so this is written as a per-turn protocol instead.
     role +=
-      "\n\nWhile you work, narrate briefly in your visible reply text (outside tool calls and hidden reasoning): before each batch of tool calls write one short sentence saying what you are about to do, and after the results write one short sentence on the outcome and what you will do next. Keep each note to a single plain sentence - no bullet lists, no headers, no detail the final summary will cover.";
+      "\n\nVisible progress notes (mandatory on every tool-calling turn): your hidden reasoning is never shown to the user. Every response that calls tools MUST start with 1-2 plain sentences saying what you are about to do and why - never emit a tool-calling turn with empty visible text. When tool results arrive, your next response MUST start with 1-2 plain sentences saying what happened, including any error, surprise, or problem you hit and what you will try next. No bullet lists, no headers, no code in these notes - just plain sentences. The final summary covers the details; these notes are the live trail the user watches.";
 
     return {
       role,
@@ -208,6 +220,13 @@ async function agentSkillsFromSystemSettings() {
     // This is normal single-stage plugin
     systemFunctions.push(AgentPlugins[skillName].name);
   }
+
+  // Background task tools ride the terminal-agent setup (same opt-in gate)
+  // but register under their own names - expand them so the model is
+  // offered the tools the loader actually registered.
+  if (systemFunctions.includes(AgentPlugins.terminalAgent.name))
+    systemFunctions.push(...TERMINAL_COMPANION_TOOLS);
+
   return systemFunctions;
 }
 
@@ -260,6 +279,15 @@ async function resolveAgentSkill(skill = "", { serverName = null } = {}) {
   // Top-level built-in skill.
   const plugin = AgentPlugins[skill];
   if (plugin) {
+    // terminal-agent setup also registers the background task tools under
+    // their own names - expand both lists so mid-session toggles enable the
+    // functions array entries (attach runs once via the parent) and disable
+    // removes every registered name.
+    if (plugin.name === AgentPlugins.terminalAgent.name)
+      return {
+        loadable: [plugin.name, ...TERMINAL_COMPANION_TOOLS],
+        registered: [plugin.name, ...TERMINAL_COMPANION_TOOLS],
+      };
     // Multi-stage plugin (e.g. sql-agent) registers one function per child.
     if (Array.isArray(plugin.plugin))
       return {
@@ -295,4 +323,5 @@ module.exports = {
   WORKSPACE_AGENT,
   agentSkillsFromSystemSettings,
   resolveAgentSkill,
+  TERMINAL_COMPANION_TOOLS,
 };

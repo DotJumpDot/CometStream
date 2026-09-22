@@ -3,6 +3,7 @@ import { emitAssistantMessageCompleteEvent } from "@/components/contexts/TTSProv
 import { getAgentSessionActive } from "@/utils/chat/agent";
 import {
   addAgentFileChange,
+  addTrajectoryRecord,
   setAgentTodo,
   upsertAgentSession,
 } from "@/utils/agentActivity";
@@ -222,6 +223,9 @@ export default function handleChat(
   } else if (type === "sessionCard") {
     // Terminal/subagent session rows render only in the side panel.
     upsertAgentSession(chatResult.content || {});
+  } else if (type === "trajectoryEvent") {
+    // Per-iteration debug records render only in the side panel.
+    addTrajectoryRecord(chatResult.content || {});
   } else if (type === "stopGeneration") {
     const chatIdx = _chatHistory.length - 1;
     const existingHistory = { ..._chatHistory[chatIdx] };

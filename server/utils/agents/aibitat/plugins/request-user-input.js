@@ -16,20 +16,23 @@ const DEFAULT_TIMEOUT_MS = 120_000;
  * Format a result as a numbered transcript so the LLM can map each answer
  * back to the question it asked. Single-question batches still get the same
  * format — the LLM treats it as "1. Q: ... A: ..." which is unambiguous.
+ * Unanswered questions carry explicit best-judgment guidance: the model must
+ * continue with what it has, never treat silence as rejection, and never
+ * invent a user preference.
  */
 function formatAnswersForAgent(questions, result) {
   if (result.timedOut)
-    return "[no response within the time limit — proceed using your best judgment]";
+    return "[no response within the time limit — proceed using your best judgment; do not treat this as a rejection or invent a user preference]";
   if (result.skipped)
-    return "[user skipped — proceed using your best judgment]";
+    return "[user skipped — proceed using your best judgment; do not treat this as a rejection or invent a user preference]";
 
   const lines = questions.map((q, i) => {
     const a = result.answers[i] || { skipped: true };
     let answerText;
-    if (a.skipped) answerText = "[user skipped]";
+    if (a.skipped) answerText = "[user skipped — use your best judgment]";
     else if (Array.isArray(a.answer)) answerText = a.answer.join(", ");
     else if (a.answer === null || a.answer === undefined || a.answer === "")
-      answerText = "[no answer]";
+      answerText = "[no answer — use your best judgment]";
     else answerText = String(a.answer);
     return `${i + 1}. Q: ${q.question}\n   A: ${answerText}`;
   });
@@ -125,7 +128,12 @@ const AskUser = {
             "Prompt the user for input via an interactive form. " +
             "This is the ONLY way to ask the user questions - text responses cannot receive replies. " +
             "Call this tool when you need a URL, file path, name, date, preference, or any other detail to proceed. " +
-            "The user will see a form and their answers are returned to you.",
+            "The user will see a form and their answers are returned to you. " +
+            "Use it only when blocked on a decision that is genuinely the user's to make: one you cannot resolve from the request, the code, or sensible defaults. " +
+            "For choices with a conventional default or facts you can verify yourself, pick the obvious option, mention it in your reply, and proceed. " +
+            "Reserve it for decisions where the answer changes what you do next. " +
+            "For choice questions the user can always add custom text; if you recommend an option, list it first. " +
+            "Never ask whether a plan is ready or should proceed - the user cannot see it until it is presented for approval.",
           examples: [
             {
               prompt: "Scrape a link for me",

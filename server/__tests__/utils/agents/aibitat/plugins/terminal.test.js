@@ -16,9 +16,16 @@ const {
   commandTimeoutMs,
   summarizeCommand,
   categorizeCommand,
+  isReadOnlyCommand,
+  startBackgroundTask,
+  pollBackgroundTask,
+  stopBackgroundTask,
+  backgroundTasks,
   snapshotWorkdir,
   detectWorkdirChanges,
   emitWorkdirFileCards,
+  MAX_STDOUT_CHARS,
+  MAX_STDERR_CHARS,
   DENIED_COMMAND_PATTERNS,
 } = require("../../../../../utils/agents/aibitat/plugins/terminal");
 
@@ -223,6 +230,29 @@ describe("terminal agent skill", () => {
       expect(result.timedOut).toBe(true);
       expect(result.durationMs).toBeLessThan(15_000);
     }, 30_000);
+
+    it("marks short output untruncated with no spill file", async () => {
+      const result = await runCommand("echo spill-check-ok");
+      expect(result.truncated).toBe(false);
+      expect(result.outputFile).toBeNull();
+      expect(result.stdout).toContain("spill-check-ok");
+    });
+
+    it("spills long output to disk with a pointer instead of losing it", async () => {
+      const result = await runCommand(
+        "for i in $(seq 1 3000); do echo line-$i-padding-to-grow-output; done"
+      );
+      expect(result.ok).toBe(true);
+      expect(result.truncated).toBe(true);
+      expect(result.stdout).toContain("chars truncated]");
+      expect(result.stdout).toContain("spilled to");
+      expect(typeof result.outputFile).toBe("string");
+      const spilled = fs.readFileSync(result.outputFile, "utf-8");
+      expect(spilled).toContain("line-1-");
+      expect(spilled).toContain("line-3000-");
+      // Spills live in a hidden dir the workdir snapshot ignores.
+      expect(result.outputFile).toContain(".terminal-outputs");
+    }, 30_000);
   });
 
   describe("summarizeCommand", () => {
@@ -321,6 +351,218 @@ describe("terminal agent skill", () => {
         expect(combined.test(command)).toBe(false);
       }
     });
+  });
+});
+
+describe("background tasks", () => {
+  let sandbox;
+  let stateDir;
+
+  beforeEach(() => {
+    sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "cs-term-bg-"));
+    process.env.AGENT_TERMINAL_ROOT = sandbox;
+    // Redirect the persisted task registry away from real storage.
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cs-term-state-"));
+    process.env.STORAGE_DIR = stateDir;
+  });
+
+  afterEach(() => {
+    for (const task of backgroundTasks.values()) {
+      try {
+        if (task.running) task.proc.kill("SIGKILL");
+      } catch {
+        // Already exited.
+      }
+    }
+    backgroundTasks.clear();
+    delete process.env.STORAGE_DIR;
+    fs.rmSync(stateDir, { recursive: true, force: true });
+    // Windows releases a killed process's cwd handle asynchronously - retry
+    // the sandbox removal instead of racing it.
+    let lastError = null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        fs.rmSync(sandbox, { recursive: true, force: true });
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400);
+      }
+    }
+    if (lastError) throw lastError;
+  });
+
+  async function waitForSettled(id, timeoutMs = 10_000) {
+    const start = Date.now();
+    for (;;) {
+      const poll = pollBackgroundTask(id);
+      if (!poll.ok || !poll.running) return poll;
+      if (Date.now() - start > timeoutMs)
+        throw new Error(`background task ${id} still running`);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
+  it("refuses denylisted commands and requires a cwd", () => {
+    expect(startBackgroundTask("shutdown /s", { cwd: sandbox }).ok).toBe(false);
+    expect(startBackgroundTask("echo hi", {}).ok).toBe(false);
+    expect(startBackgroundTask("   ", { cwd: sandbox }).ok).toBe(false);
+  });
+
+  it("runs to completion with a pollable output tail", async () => {
+    const started = startBackgroundTask("echo bg-ok && echo err-line >&2", {
+      cwd: sandbox,
+    });
+    expect(started.ok).toBe(true);
+    const final = await waitForSettled(started.taskId);
+    expect(final.running).toBe(false);
+    expect(final.exitCode).toBe(0);
+    expect(final.stdoutTail).toContain("bg-ok");
+    expect(final.stderrTail).toContain("err-line");
+    expect(final.durationMs).toBeGreaterThanOrEqual(0);
+  }, 30_000);
+
+  it("reports unknown task ids honestly", () => {
+    const poll = pollBackgroundTask(999_999_999);
+    expect(poll.ok).toBe(false);
+    expect(poll.error).toContain("Unknown background task");
+    expect(stopBackgroundTask(999_999_999).ok).toBe(false);
+  });
+
+  it("stops a running task on request", async () => {
+    // Pure shell spin (no forked children) so the kill is total: forked
+    // grandchildren inherit stdio and may outlive the shell (see
+    // stopBackgroundTask) - that case is covered by the timeout test.
+    const started = startBackgroundTask("while true; do :; done", {
+      cwd: sandbox,
+    });
+    expect(started.ok).toBe(true);
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(pollBackgroundTask(started.taskId).running).toBe(true);
+    const stopped = stopBackgroundTask(started.taskId);
+    expect(stopped.running).toBe(false);
+    expect(stopped.signal).toBe("SIGKILL");
+    // Stopping a finished task re-reports the final state.
+    expect(stopBackgroundTask(started.taskId).running).toBe(false);
+  }, 30_000);
+
+  it("kills tasks that exceed the timeout", async () => {
+    process.env.AGENT_TERMINAL_TIMEOUT_MS = "5000";
+    // Fork-free spin: a forked sleeper would outlive the killed shell as an
+    // orphan and hold the sandbox cwd (OS behavior, documented in
+    // stopBackgroundTask) - the timeout mechanism is what this covers.
+    const started = startBackgroundTask("while true; do :; done", {
+      cwd: sandbox,
+    });
+    const final = await waitForSettled(started.taskId, 20_000);
+    expect(final.running).toBe(false);
+    expect(final.timedOut).toBe(true);
+  }, 30_000);
+
+  it("caps the registry by evicting finished tasks", async () => {
+    for (let i = 0; i < 25; i++) {
+      const started = startBackgroundTask(`echo evict-${i}`, { cwd: sandbox });
+      expect(started.ok).toBe(true);
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+    const extra = startBackgroundTask("echo one-more", { cwd: sandbox });
+    expect(extra.ok).toBe(true);
+    expect(backgroundTasks.size).toBeLessThanOrEqual(20);
+    await waitForSettled(extra.taskId);
+  }, 30_000);
+
+  it("persists snapshots so a restart degrades instead of forgetting", async () => {
+    const {
+      loadPersistedTasks,
+      tasksStateFile,
+    } = require("../../../../../utils/agents/aibitat/plugins/terminal");
+    const started = startBackgroundTask("echo persist-me", { cwd: sandbox });
+    expect(started.ok).toBe(true);
+    await waitForSettled(started.taskId);
+    // The finished task snapshot reached the state file.
+    expect(fs.existsSync(tasksStateFile())).toBe(true);
+
+    // Simulate a server restart: drop the live map, reload from disk.
+    backgroundTasks.clear();
+    loadPersistedTasks();
+    const poll = pollBackgroundTask(started.taskId);
+    expect(poll.ok).toBe(true);
+    expect(poll.running).toBe(false);
+    expect(poll.stale).toBe(true);
+    expect(poll.stdoutTail).toContain("persist-me");
+    expect(poll.note).toContain("restarted");
+    // Stopping a stale snapshot re-reports instead of erroring.
+    expect(stopBackgroundTask(started.taskId).running).toBe(false);
+  }, 30_000);
+});
+
+describe("isReadOnlyCommand", () => {
+  it.each([
+    ["ls -la"],
+    ["git status"],
+    ["git log --oneline -5"],
+    ["git diff --stat"],
+    ["git show HEAD --stat"],
+    ["git rev-parse HEAD"],
+    ["git ls-files"],
+    ["git stash list"],
+    ["git remote -v"],
+    ["git remote"],
+    ["cd backend && ls"],
+    ["cat file.txt | grep foo | head -20"],
+    ["rg --files | head"],
+    ["node --version"],
+    ["npm --version"],
+    ["python --help"],
+    ["echo hello"],
+    ["ls 2>/dev/null"],
+    ["ls 2>&1 | head"],
+    ["echo hello > /dev/null"],
+    ["grep -r 'hello' . 2>/dev/null | head"],
+    ["pwd && whoami && uname -a"],
+    ["C:\\Windows\\System32\\whoami.exe"],
+  ])("treats %p as read-only", (command) => {
+    expect(isReadOnlyCommand(command)).toBe(true);
+  });
+
+  it.each([
+    ["npm install express"],
+    ["curl -s http://127.0.0.1:8000/api/health"],
+    ["echo hi > out.txt"],
+    ["cat > f << 'EOF'\nhi\nEOF"],
+    ["rm -rf ./build"],
+    ["rm -r src/old-module"],
+    ["git push"],
+    ["git reset --hard HEAD~1"],
+    ["git branch -d feat"],
+    ["git stash drop"],
+    ["git tag -d v1"],
+    ["node server.js"],
+    ["python script.py"],
+    ["npm run build"],
+    ["FOO=1 ls"],
+    ["echo $(whoami)"],
+    ["echo `whoami`"],
+    ["find . -delete"],
+    ["find . -name x -exec rm {} \\;"],
+    ["tail -f log.txt"],
+    ["yq -i '.a=1' f.yml"],
+    ["shutdown /s"],
+    ["sudo ls"],
+    ["env"],
+    ["printenv"],
+    ["del file.txt"],
+    ["tee out.txt"],
+    [""],
+    ["   "],
+    [null],
+  ])("keeps %p behind approval", (command) => {
+    expect(isReadOnlyCommand(command)).toBe(false);
+  });
+
+  it("stays under the stdout/stderr inline budgets", () => {
+    expect(MAX_STDOUT_CHARS + MAX_STDERR_CHARS).toBeLessThanOrEqual(12_000);
   });
 });
 

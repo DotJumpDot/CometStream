@@ -299,8 +299,7 @@ describe("batched tool calls (functionCalls)", () => {
     expect(result.functionCall).toBe(result.functionCalls[0]);
   });
 
-  it("wraps reasoning into textResponse even on tool-call turns", async () => {
-    const { client } = streamingClient([
+  it("wraps reasoning into textResponse even on tool-call turns", async () => {    const { client } = streamingClient([
       {
         choices: [
           { delta: { reasoning_content: "planning the whole batch" } },
@@ -384,5 +383,74 @@ describe("batched tool calls (functionCalls)", () => {
     expect(result.functionCalls.map((c) => c.name)).toEqual(["alpha", "beta"]);
     expect(result.functionCalls[0].arguments).toEqual({ k: 1 });
     expect(result.functionCall?.id).toBe("a");
+  });
+
+  it("flags unparseable streamed arguments instead of coercing to {}", async () => {
+    const { client } = streamingClient([
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call-1",
+                  // Stream cut mid-object: valid prefix, invalid JSON.
+                  function: { name: "alpha", arguments: '{"command": "ls' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 1,
+                  id: "call-2",
+                  function: { name: "beta", arguments: "{}" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    const result = await tooledStream(client, "m", [], [], null, {});
+    expect(result.functionCalls).toHaveLength(2);
+    // The broken call keeps its name (so the repair turn can reference it)
+    // with empty args plus the raw excerpt flag - the execution loop turns
+    // the flag into a repair turn and never executes it.
+    expect(result.functionCalls[0].name).toBe("alpha");
+    expect(result.functionCalls[0].arguments).toEqual({});
+    expect(result.functionCalls[0].argsParseError).toBe('{"command": "ls');
+    // The healthy call carries no flag.
+    expect(result.functionCalls[1].arguments).toEqual({});
+    expect(result.functionCalls[1]).not.toHaveProperty("argsParseError");
+  });
+
+  it("treats empty streamed arguments as parameterless, not broken", async () => {
+    const { client } = streamingClient([
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: "call-1", function: { name: "alpha" } },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
+
+    const result = await tooledStream(client, "m", [], [], null, {});
+    expect(result.functionCalls).toHaveLength(1);
+    expect(result.functionCalls[0].arguments).toEqual({});
+    expect(result.functionCalls[0]).not.toHaveProperty("argsParseError");
   });
 });

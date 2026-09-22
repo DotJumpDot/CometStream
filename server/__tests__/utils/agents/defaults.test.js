@@ -22,7 +22,11 @@ jest.mock("../../../utils/MCP", () => {
   }));
 });
 
-const { WORKSPACE_AGENT } = require("../../../utils/agents/defaults");
+const {
+  WORKSPACE_AGENT,
+  resolveAgentSkill,
+  TERMINAL_COMPANION_TOOLS,
+} = require("../../../utils/agents/defaults");
 
 describe("WORKSPACE_AGENT.getDefinition", () => {
   beforeEach(() => {
@@ -50,7 +54,7 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
       user
     );
     expect(definition.role.startsWith(expectedPrompt)).toBe(true);
-    expect(definition.role).toContain("narrate briefly");
+    expect(definition.role).toContain("Visible progress notes");
     expect(SystemPromptVariables.expandSystemPromptVariables).toHaveBeenCalledWith(
       SystemSettings.saneDefaultSystemPrompt,
       user.id,
@@ -82,7 +86,7 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
       workspace.id
     );
     expect(definition.role.startsWith(expandedPrompt)).toBe(true);
-    expect(definition.role).toContain("narrate briefly");
+    expect(definition.role).toContain("Visible progress notes");
   });
 
   it("should handle workspace system prompt without user context", async () => {
@@ -108,7 +112,7 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
       workspace.id
     );
     expect(definition.role.startsWith(expandedPrompt)).toBe(true);
-    expect(definition.role).toContain("narrate briefly");
+    expect(definition.role).toContain("Visible progress notes");
   });
 
   it("should return functions array in definition", async () => {
@@ -136,7 +140,7 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
     );
 
     expect(definition.role.startsWith(await Provider.systemPrompt({ workspace, user }))).toBe(true);
-    expect(definition.role).toContain("narrate briefly");
+    expect(definition.role).toContain("Visible progress notes");
     expect(SystemPromptVariables.expandSystemPromptVariables).toHaveBeenCalledWith(
       SystemSettings.saneDefaultSystemPrompt,
       null,
@@ -144,7 +148,7 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
     );
   });
 
-  it("appends single-sentence progress-narration guidance to the role", async () => {
+  it("appends mandatory per-turn progress-note protocol to the role", async () => {
     const workspace = { id: 1, openAiPrompt: null };
     const definition = await WORKSPACE_AGENT.getDefinition(
       "openai",
@@ -152,7 +156,47 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
       null
     );
 
-    expect(definition.role).toContain("one short sentence");
-    expect(definition.role).toContain("what you will do next");
+    expect(definition.role).toContain("Visible progress notes (mandatory");
+    expect(definition.role).toContain("MUST start with 1-2 plain sentences");
+    expect(definition.role).toContain("what you will try next");
+    expect(definition.role).toContain(
+      "never emit a tool-calling turn with empty visible text"
+    );
+  });
+});
+
+describe("terminal companion tools", () => {
+  it("expands terminal-agent toggles to the background task tools", async () => {
+    const resolved = await resolveAgentSkill("terminal-agent");
+    expect(resolved.loadable).toContain("terminal-agent");
+    expect(resolved.registered).toContain("terminal-agent");
+    for (const tool of TERMINAL_COMPANION_TOOLS) {
+      expect(resolved.loadable).toContain(tool);
+      expect(resolved.registered).toContain(tool);
+    }
+  });
+
+  it("leaves unrelated skills unexpanded", async () => {
+    const AgentPlugins = require("../../../utils/agents/aibitat/plugins");
+    const name = AgentPlugins.docSummarizer.name;
+    const resolved = await resolveAgentSkill(name);
+    expect(resolved).toEqual({ loadable: [name], registered: [name] });
+  });
+
+  it("offers background tools in the session function list", async () => {
+    SystemSettings.getValueOrFallback = jest.fn(async ({ label }) => {
+      if (label === "default_agent_skills")
+        return JSON.stringify(["terminal-agent"]);
+      return "[]";
+    });
+    const definition = await WORKSPACE_AGENT.getDefinition(
+      "openai",
+      { id: 1, openAiPrompt: null },
+      null
+    );
+    expect(definition.functions).toContain("terminal-agent");
+    for (const tool of TERMINAL_COMPANION_TOOLS) {
+      expect(definition.functions).toContain(tool);
+    }
   });
 });

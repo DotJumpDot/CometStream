@@ -6,6 +6,12 @@ const { Telemetry } = require("../../../models/telemetry.js");
 const { v4 } = require("uuid");
 const { ToolReranker } = require("./utils/toolReranker.js");
 const { recordThoughtText, recordAgentNote } = require("./plugins/trace.js");
+const {
+  validateToolCallArgs,
+  formatArgRepair,
+  MAX_ARG_REPAIRS_PER_TURN,
+} = require("./utils/toolArgRepair.js");
+const { recordTrajectoryIteration } = require("./plugins/trajectory.js");
 
 /**
  * AIbitat is a class that manages the conversation between agents.
@@ -1097,6 +1103,17 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
     try {
       recordThoughtText(this, completionStream?.textResponse);
     } catch {}
+    // Model trajectory (panel Trajectory tab): one bounded record per LLM
+    // iteration with message deltas + requested tools - the live debugging
+    // view for local-model runs.
+    try {
+      recordTrajectoryIteration(this, {
+        messages,
+        functions,
+        result: completionStream,
+        depth,
+      });
+    } catch {}
 
     // Providers that support parallel tool calls return every call of this
     // turn in `functionCalls`; single-call providers keep `functionCall`. The
@@ -1120,6 +1137,9 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
       const newMessages = [...messages];
       let executed = 0;
       let hitToolLimit = false;
+      // Argument repairs this turn (utils/toolArgRepair.js) - bounded so a
+      // model that cannot shape a call cannot burn the budget on repairs.
+      let argRepairs = 0;
 
       for (const functionCall of batch) {
         // Abort between calls: a batch of file writes must stop mid-way when
@@ -1146,6 +1166,37 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
             content: `Function "${name}" not found. Try again.`,
             originalFunctionCall: functionCall,
           });
+          executed++;
+          continue;
+        }
+
+        // Argument repair: never execute a call with malformed arguments or
+        // missing/invalid required fields - return a repair turn naming
+        // exactly what was wrong so the model re-calls with fixed JSON.
+        // Skips (does not execute) past the per-turn repair cap.
+        const argIssue = validateToolCallArgs(fn, functionCall);
+        if (argIssue) {
+          if (argRepairs < MAX_ARG_REPAIRS_PER_TURN) {
+            argRepairs++;
+            newMessages.push({
+              name,
+              role: "function",
+              content: formatArgRepair(name, argIssue, fn),
+              originalFunctionCall: functionCall,
+            });
+            try {
+              this?.introspect?.(
+                `${byAgent || "agent"}: "${name}" arguments invalid - requesting a fix instead of executing.`
+              );
+            } catch {}
+          } else {
+            newMessages.push({
+              name,
+              role: "function",
+              content: `Skipping "${name}": arguments still invalid after ${MAX_ARG_REPAIRS_PER_TURN} repair turns. Move on without this call.`,
+              originalFunctionCall: functionCall,
+            });
+          }
           executed++;
           continue;
         }
@@ -1298,6 +1349,15 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
     try {
       recordThoughtText(this, completion?.textResponse);
     } catch {}
+    // See handleAsyncExecution: one bounded trajectory record per iteration.
+    try {
+      recordTrajectoryIteration(this, {
+        messages,
+        functions,
+        result: completion,
+        depth,
+      });
+    } catch {}
 
     // See handleAsyncExecution: run the whole batch the model requested in
     // this turn, sequentially, with the same per-call semantics.
@@ -1324,6 +1384,8 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
       const newMessages = [...messages];
       let executed = 0;
       let hitToolLimit = false;
+      // See handleAsyncExecution: per-turn bound on argument repair turns.
+      let argRepairs = 0;
 
       for (const functionCall of batch) {
         if (this._aborted) return null;
@@ -1348,6 +1410,36 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
             content: `Function "${name}" not found. Try again.`,
             originalFunctionCall: functionCall,
           });
+          executed++;
+          continue;
+        }
+
+        // See handleAsyncExecution: validate before executing - malformed
+        // arguments or missing/invalid required fields become a repair turn,
+        // skipped (not executed) past the per-turn repair cap.
+        const argIssue = validateToolCallArgs(fn, functionCall);
+        if (argIssue) {
+          if (argRepairs < MAX_ARG_REPAIRS_PER_TURN) {
+            argRepairs++;
+            newMessages.push({
+              name,
+              role: "function",
+              content: formatArgRepair(name, argIssue, fn),
+              originalFunctionCall: functionCall,
+            });
+            try {
+              this?.introspect?.(
+                `${byAgent || "agent"}: "${name}" arguments invalid - requesting a fix instead of executing.`
+              );
+            } catch {}
+          } else {
+            newMessages.push({
+              name,
+              role: "function",
+              content: `Skipping "${name}": arguments still invalid after ${MAX_ARG_REPAIRS_PER_TURN} repair turns. Move on without this call.`,
+              originalFunctionCall: functionCall,
+            });
+          }
           executed++;
           continue;
         }

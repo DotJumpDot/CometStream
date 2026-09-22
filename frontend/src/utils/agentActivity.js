@@ -12,6 +12,7 @@ let state = {
   todo: [],
   fileChanges: [],
   sessions: [],
+  trajectory: [],
 };
 
 function emit() {
@@ -85,7 +86,22 @@ export function setAgentTodo(items) {
 
 /** Clears the store (chat switched or session reset). */
 export function resetAgentActivity() {
-  state = { todo: [], fileChanges: [], sessions: [] };
+  state = { todo: [], fileChanges: [], sessions: [], trajectory: [] };
+  emit();
+}
+
+/**
+ * Appends one model trajectory record (per-LLM-iteration debug view).
+ * Newest last (chronological), capped so a marathon run cannot grow the
+ * panel without bound. Session-scoped like everything else here.
+ * @param {Object} record - trajectoryEvent payload from the server
+ */
+export function addTrajectoryRecord(record = {}) {
+  if (!record || typeof record.seq !== "number") return;
+  state = {
+    ...state,
+    trajectory: [...state.trajectory, record].slice(-100),
+  };
   emit();
 }
 

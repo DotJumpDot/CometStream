@@ -1,4 +1,156 @@
 const MCPHypervisor = require("./hypervisor");
+const path = require("path");
+const {
+  projectText,
+  spillText,
+} = require("../agents/aibitat/plugins/result-budget");
+
+// Default per-call timeout for MCP tool executions. A hung MCP server used
+// to wedge the whole agent turn forever - every call now races this budget
+// (ENV `AGENT_MCP_TOOL_TIMEOUT_MS` wins, then the in-app
+// `mcp_tool_timeout_ms` setting). Bounds keep typos from wedging (min) or
+// defeating (max) the guard.
+const DEFAULT_MCP_TOOL_TIMEOUT_MS = 120_000;
+const MIN_MCP_TOOL_TIMEOUT_MS = 5_000;
+const MAX_MCP_TOOL_TIMEOUT_MS = 600_000;
+const MCP_TOOL_TIMEOUT_SETTING_KEY = "mcp_tool_timeout_ms";
+
+// Inline budget for MCP tool results. MCP servers return arbitrary JSON -
+// without a cap one verbose tool eats the model's context for the rest of
+// the run. Truncated results spill to the agent sandbox (see below) with a
+// pointer, mirroring the terminal output policy.
+const MCP_RESULT_INLINE_CHARS = 12_000;
+const MCP_RESULT_HEAD_CHARS = 2_000;
+
+// Transport-level failures worth one restart + retry. Timeouts are NOT
+// retried blindly: a timed-out call already consumed the full budget, so the
+// model gets a narrow-your-query message instead of another long wait.
+const MCP_TRANSPORT_ERROR_PATTERN =
+  /fetch failed|ECONNRESET|ECONNREFUSED|socket hang up|terminated|closed|EPIPE|ETIMEDOUT|ENOTFOUND/i;
+
+/**
+ * Resolves the agent filesystem sandbox root (STORAGE_DIR-aware) so spilled
+ * MCP outputs land where the file tools can read them back.
+ * @returns {string} Absolute sandbox path.
+ */
+function agentSandboxRoot() {
+  const base =
+    process.env.NODE_ENV === "development"
+      ? path.resolve(__dirname, "../storage")
+      : path.resolve(
+          process.env.STORAGE_DIR ?? path.resolve(__dirname, "../storage"),
+          "."
+        );
+  return path.join(base, "anythingllm-fs");
+}
+
+/**
+ * Directory for spilled MCP outputs, hidden inside the agent sandbox so the
+ * model can page them back in with the file tools. Skipped by nothing
+ * else - MCP spills are not workdir snapshots, so no ignore-list needed.
+ * @returns {string} Absolute spill directory.
+ */
+function mcpSpillDir() {
+  return path.join(agentSandboxRoot(), ".tool-outputs");
+}
+
+/**
+ * Clamps a timeout value to sane bounds.
+ * @param {unknown} raw - Candidate milliseconds.
+ * @param {number} fallback - Used when raw is not a positive number.
+ * @returns {number} Clamped timeout.
+ */
+function clampMcpTimeout(raw, fallback = DEFAULT_MCP_TOOL_TIMEOUT_MS) {
+  const parsed = Number.parseInt(String(raw ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(
+    MAX_MCP_TOOL_TIMEOUT_MS,
+    Math.max(MIN_MCP_TOOL_TIMEOUT_MS, parsed)
+  );
+}
+
+/**
+ * Resolves the per-call MCP tool timeout: ENV wins, then the in-app setting,
+ * then the default. Async because the setting lives in the DB.
+ * Lazy-requires the model (module top would risk a require cycle).
+ * @returns {Promise<number>} Clamped timeout in milliseconds.
+ */
+async function mcpToolTimeoutMs() {
+  if (process.env.AGENT_MCP_TOOL_TIMEOUT_MS?.trim())
+    return clampMcpTimeout(process.env.AGENT_MCP_TOOL_TIMEOUT_MS);
+  try {
+    const { SystemSettings } = require("../../models/systemSettings");
+    const raw = await SystemSettings.getValueOrFallback(
+      { label: MCP_TOOL_TIMEOUT_SETTING_KEY },
+      ""
+    );
+    if (String(raw ?? "").trim()) return clampMcpTimeout(raw);
+  } catch {
+    // Fail open to the default budget below.
+  }
+  return DEFAULT_MCP_TOOL_TIMEOUT_MS;
+}
+
+/**
+ * Races a promise against a timeout. The underlying operation is NOT
+ * cancelled (the MCP SDK client has no abort handle) - callers restart the
+ * server when a hung call must be abandoned for good.
+ * @param {Promise<any>} promise - The operation.
+ * @param {number} ms - Timeout in milliseconds.
+ * @param {string} message - Timeout error message.
+ * @returns {Promise<any>}
+ */
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(message);
+      error.code = "MCP_TOOL_TIMEOUT";
+      reject(error);
+    }, ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Whether an error is our own call timeout (vs a transport failure, which
+ * is restart-eligible, or a tool logic error, which fails fast).
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isTimeoutError(error) {
+  return error?.code === "MCP_TOOL_TIMEOUT";
+}
+
+/**
+ * Serializes an MCP tool result with the shared inline budget. Oversized
+ * results spill to the agent sandbox with a pointer so the model can page
+ * more in with the file tools; failures here must never mask the result.
+ * @param {string} serverName - MCP server name (spill label).
+ * @param {string} toolName - Tool name (spill label).
+ * @param {unknown} result - Raw callTool result.
+ * @returns {string} Model-facing result text.
+ */
+function projectMCPResult(serverName, toolName, result) {
+  const text = MCPCompatibilityLayer.returnMCPResult(result);
+  const projected = projectText(
+    text,
+    MCP_RESULT_INLINE_CHARS,
+    MCP_RESULT_HEAD_CHARS
+  );
+  if (!projected.truncated) return projected.text;
+  let pointer = "";
+  try {
+    const spilled = spillText(mcpSpillDir(), `${serverName}-${toolName}`, text);
+    if (spilled) {
+      pointer = `\n[Full result (${text.length} chars) spilled to ${spilled} - read it with the file tools if you need more than this window.]`;
+    }
+  } catch {
+    // Spill is best-effort - the projected window stands either way.
+  }
+  return projected.text + pointer;
+}
 
 class MCPCompatibilityLayer extends MCPHypervisor {
   static _instance;
@@ -78,12 +230,6 @@ class MCPCompatibilityLayer extends MCPHypervisor {
                 handler: async function (args = {}) {
                   try {
                     const mcpLayer = new MCPCompatibilityLayer();
-                    const currentMcp = mcpLayer.mcps[name];
-                    if (!currentMcp)
-                      throw new Error(
-                        `MCP server ${name} is not currently running`
-                      );
-
                     aibitat.handlerProps.log(
                       `Executing MCP server: ${name}:${tool.name} with args:`,
                       args
@@ -91,18 +237,25 @@ class MCPCompatibilityLayer extends MCPHypervisor {
                     aibitat.introspect(
                       `Executing MCP server: ${name} with ${JSON.stringify(args, null, 2)}`
                     );
-                    const result = await currentMcp.callTool({
-                      name: tool.name,
-                      arguments: args,
-                    });
+                    // Timeout, one restart + retry on transport failure, and
+                    // a bounded inline result all live in the resilience
+                    // wrapper - the handler only reports the outcome.
+                    const text = await mcpLayer.callMCPToolWithResilience(
+                      name,
+                      tool.name,
+                      args,
+                      {
+                        log: aibitat.handlerProps.log,
+                        introspect: (message) => aibitat.introspect(message),
+                      }
+                    );
                     aibitat.handlerProps.log(
-                      `MCP server: ${name}:${tool.name} completed successfully`,
-                      result
+                      `MCP server: ${name}:${tool.name} completed successfully`
                     );
                     aibitat.introspect(
                       `MCP server: ${name}:${tool.name} completed successfully`
                     );
-                    return MCPCompatibilityLayer.returnMCPResult(result);
+                    return text;
                   } catch (error) {
                     aibitat.handlerProps.log(
                       `MCP server: ${name}:${tool.name} failed with error:`,
@@ -126,6 +279,105 @@ class MCPCompatibilityLayer extends MCPHypervisor {
     return plugins;
   }
 
+  /**
+   * Call an MCP tool with timeout, one restart + retry on transport failure,
+   * and a bounded inline result (spilled to disk when truncated).
+   *
+   * Resilience policy:
+   * - Every call races the configured timeout - a hung server can no longer
+   *   wedge the agent turn. Timeouts are NOT retried (the budget is spent);
+   *   the model gets a narrow-your-query message instead.
+   * - Transport-level failures (dropped socket, refused connection, closed
+   *   transport) trigger one server restart + one retry. Anything else fails
+   *   fast with the error text.
+   * - Oversized results are projected inline with the full text spilled to
+   *   the agent sandbox, so the model can read more on demand.
+   *
+   * Kept as a plain method (not #private): this class implements the
+   * singleton pattern by returning a cached instance from super(), and
+   * private methods on the subclass would be re-installed and throw.
+   * @param {string} name - MCP server name
+   * @param {string} toolName - Tool name on that server
+   * @param {object} [args={}] - Tool arguments
+   * @param {object} [hooks={}] - Optional {log, introspect} for run updates
+   * @returns {Promise<string>} Model-facing result text.
+   */
+  async callMCPToolWithResilience(name, toolName, args = {}, hooks = {}) {
+    const timeoutMs = await mcpToolTimeoutMs();
+    const log = hooks.log || (() => {});
+    const introspect = hooks.introspect || (() => {});
+
+    const runCall = async () => {
+      const current = this.mcps[name];
+      if (!current)
+        throw new Error(`MCP server ${name} is not currently running`);
+      return await withTimeout(
+        current.callTool({ name: toolName, arguments: args }),
+        timeoutMs,
+        `MCP tool ${name}:${toolName} timed out after ${timeoutMs}ms`
+      );
+    };
+
+    let result;
+    try {
+      result = await runCall();
+    } catch (error) {
+      if (isTimeoutError(error)) {
+        log(`MCP tool ${name}:${toolName} timed out after ${timeoutMs}ms`);
+        introspect(
+          `MCP server: ${name}:${toolName} timed out after ${Math.round(timeoutMs / 1000)}s.`
+        );
+        return (
+          `The tool ${name}:${toolName} timed out after ${Math.round(timeoutMs / 1000)}s without responding. ` +
+          `It was NOT retried. Narrow the request (fewer items, tighter filters, smaller paths) and call it again, ` +
+          `or check the MCP server status in Admin → Agents → MCP Servers.`
+        );
+      }
+      if (!MCP_TRANSPORT_ERROR_PATTERN.test(error?.message || "")) throw error;
+      // Transport failure: restart the server once and retry once.
+      log(
+        `MCP tool ${name}:${toolName} transport failure, restarting ${name}:`,
+        error?.message
+      );
+      introspect(
+        `MCP server: ${name} connection dropped - restarting it once and retrying.`
+      );
+      const restarted = await this.restartMCPServerForRetry(name);
+      if (!restarted) throw error;
+      try {
+        result = await runCall();
+      } catch (retryError) {
+        if (isTimeoutError(retryError)) {
+          return (
+            `The tool ${name}:${toolName} timed out after restart too (${Math.round(timeoutMs / 1000)}s). ` +
+            `Do not retry immediately - check the MCP server status in Admin → Agents → MCP Servers.`
+          );
+        }
+        throw retryError;
+      }
+      introspect(`MCP server: ${name}:${toolName} recovered after restart.`);
+    }
+
+    return projectMCPResult(name, toolName, result);
+  }
+
+  /**
+   * Restart one MCP server for the retry path: prune + start, returning
+   * whether the server is back. Never throws - callers fall back to the
+   * original error when restart fails.
+   * @param {string} name - MCP server name
+   * @returns {Promise<boolean>} True when the server restarted.
+   */
+  async restartMCPServerForRetry(name) {
+    try {
+      this.pruneMCPServer(name);
+      const started = await this.startMCPServer(name);
+      return started?.success === true && !!this.mcps[name];
+    } catch (error) {
+      this.log(`MCP auto-restart for ${name} failed:`, error?.message);
+      return false;
+    }
+  }
   /**
    * Returns the MCP servers that were loaded or attempted to be loaded
    * so that we can display them in the frontend for review or error logging.
@@ -339,4 +591,12 @@ class MCPCompatibilityLayer extends MCPHypervisor {
     return this.updateSuppressedTools(serverName, toolName, enabled);
   }
 }
+
+// Test hooks (plain statics so the singleton shape is untouched).
+MCPCompatibilityLayer.mcpToolTimeoutMs = mcpToolTimeoutMs;
+MCPCompatibilityLayer.clampMcpTimeout = clampMcpTimeout;
+MCPCompatibilityLayer.MCP_TOOL_TIMEOUT_SETTING_KEY =
+  MCP_TOOL_TIMEOUT_SETTING_KEY;
+MCPCompatibilityLayer.DEFAULT_MCP_TOOL_TIMEOUT_MS = DEFAULT_MCP_TOOL_TIMEOUT_MS;
+MCPCompatibilityLayer.MCP_RESULT_INLINE_CHARS = MCP_RESULT_INLINE_CHARS;
 module.exports = MCPCompatibilityLayer;

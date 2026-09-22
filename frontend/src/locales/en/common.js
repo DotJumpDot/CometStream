@@ -1615,6 +1615,11 @@ const TRANSLATIONS = {
     tab_changes: "Changes",
     tab_sources: "Sources",
     tab_sessions: "Sessions",
+    tab_trajectory: "Trajectory",
+    trajectory_empty:
+      "Per-turn model requests will appear here while the agent works.",
+    trajectory_tools: "Requested tools",
+    trajectory_messages: "+{{count}} messages",
     plan_empty:
       "The agent's plan will appear here when it starts a multi-step task.",
     changes_empty:

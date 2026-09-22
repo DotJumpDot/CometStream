@@ -2,6 +2,11 @@ const { CollectorApi } = require("../../../collectorApi");
 const Provider = require("../providers/ai-provider");
 const { summarizeContent } = require("../utils/summarize");
 
+// Inline budget (tokens) for a scraped page returned verbatim. Larger pages
+// take the summarize path - without this a single big page dominates every
+// subsequent turn of a long agentic run.
+const INLINE_SCRAPE_TOKEN_BUDGET = 25_000;
+
 const webScraping = {
   name: "web-scraping",
   startupConfig: {
@@ -98,6 +103,10 @@ const webScraping = {
             this.super.introspect(
               `${this.caller}: Scraping the content of ${url}`
             );
+            // Model-supplied URL: block loopback/private targets before the
+            // collector round-trip (see plugins/egress.js). The collector's
+            // own check is intentionally lenient for user-pasted links.
+            require("./egress.js").assertPublicEgress(url);
             const { success, content } =
               await new CollectorApi().getLinkContent(url);
 
@@ -119,9 +128,15 @@ const webScraping = {
             const tokenEstimate = new TokenManager(
               this.super.model
             ).countFromString(content);
+            // Inline budget for scraped pages: the full page fits only when
+            // it is small relative to BOTH a fixed cap and the model window.
+            // A 100k-token page used to ride along on every subsequent turn
+            // of a long run - now it takes the summarize path instead.
+            const contextLimit =
+              Provider.contextLimit(this.super.provider, this.super.model) ||
+              INLINE_SCRAPE_TOKEN_BUDGET;
             if (
-              tokenEstimate <
-              Provider.contextLimit(this.super.provider, this.super.model)
+              tokenEstimate < Math.min(INLINE_SCRAPE_TOKEN_BUDGET, contextLimit)
             ) {
               this.super.introspect(
                 `${this.caller}: Looking over the content of the page. ~${tokenEstimate} tokens.`
@@ -149,4 +164,5 @@ const webScraping = {
 
 module.exports = {
   webScraping,
+  INLINE_SCRAPE_TOKEN_BUDGET,
 };
