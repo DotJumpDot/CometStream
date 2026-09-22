@@ -86,7 +86,15 @@ module.exports.FilesystemEditFile = {
                 return "Error: At least one edit operation must be provided.";
               }
 
-              const validPath = await filesystem.validatePath(filePath);
+              // Project-bound chats edit inside their folder too.
+              const extraDirs = await filesystem.projectExtraDir(
+                this.super.handlerProps
+              );
+              const allowedExtras = extraDirs ? [extraDirs] : [];
+              const validPath = await filesystem.validatePath(
+                filePath,
+                allowedExtras
+              );
 
               this.super.introspect(
                 `${this.caller}: ${dryRun ? "Previewing" : "Applying"} ${edits.length} edit(s) to ${filePath}`
@@ -110,7 +118,8 @@ module.exports.FilesystemEditFile = {
               const { result, change } = await filesystem.applyFileEdits(
                 validPath,
                 edits,
-                dryRun
+                dryRun,
+                allowedExtras
               );
 
               if (dryRun)

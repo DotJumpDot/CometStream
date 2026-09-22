@@ -78,6 +78,15 @@ Terminal commands also refuse a denylist of host-wrecking commands (shutdown, fo
 
 Long tool results (terminal output, MCP results) are truncated to a bounded inline window; the full text is spilled to a file (24h retention) with a pointer in the result, so the model can read more on demand without bloating every subsequent turn.
 
+## Folder-bound projects
+
+A workspace (project) can pin itself to one folder inside the terminal root — ZCode-style:
+
+- **Creating** — the "New Project" modal asks for a project folder first (a name like `my-app` or a path like `apps/my-app`; the project name is taken from the folder). "Browse folders" walks the terminal root click-to-select; the folder is created if missing.
+- **What it changes** — the agent's terminal commands (foreground and background) run inside that folder, and the file tools (read/write/edit/list) treat it as an allowed home directory in addition to the global sandbox. Unbound legacy workspaces keep using the global root everywhere.
+- **Editable** — Workspace Settings → General → Project Folder (same browse picker).
+- **Jail** — the binding must resolve inside `terminal_agent_root` / `AGENT_TERMINAL_ROOT` and is re-validated on every agent call; if the root changed since binding, the call safely falls back to the global root. Folder names cannot contain `/`, `\`, `..`, or NUL segments.
+
 ## Using a local model (no ENV edits)
 
 Any OpenAI-compatible server works as a chat model, configured entirely in the UI. With `llama-server` serving a model on `http://127.0.0.1:8080`:

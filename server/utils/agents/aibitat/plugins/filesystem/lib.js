@@ -187,28 +187,27 @@ class FilesystemManager {
   /**
    * Resolves a relative path against allowed directories.
    * @param {string} relativePath - The relative path to resolve
+   * @param {string[]} [dirs] - Directories to resolve against (defaults to global allowed dirs)
    * @returns {string} The resolved absolute path
    */
-  #resolveRelativePathAgainstAllowedDirectories(relativePath) {
-    if (this.#allowedDirectories.length === 0) {
+  #resolveRelativePathAgainstAllowedDirectories(
+    relativePath,
+    dirs = this.#allowedDirectories
+  ) {
+    if (dirs.length === 0) {
       return path.resolve(process.cwd(), relativePath);
     }
 
-    for (const allowedDir of this.#allowedDirectories) {
+    for (const allowedDir of dirs) {
       const candidate = path.resolve(allowedDir, relativePath);
       const normalizedCandidate = this.#normalizePath(candidate);
 
-      if (
-        this.#isPathWithinAllowedDirectories(
-          normalizedCandidate,
-          this.#allowedDirectories
-        )
-      ) {
+      if (this.#isPathWithinAllowedDirectories(normalizedCandidate, dirs)) {
         return candidate;
       }
     }
 
-    return path.resolve(this.#allowedDirectories[0], relativePath);
+    return path.resolve(dirs[0], relativePath);
   }
 
   /**
@@ -435,6 +434,46 @@ class FilesystemManager {
   }
 
   /**
+   * Resolves the chat workspace's bound project folder (ZCode-style
+   * folder-bound projects) as an extra per-call allowed directory.
+   * The stored path is re-validated inside the terminal jail on every call,
+   * so a root change after binding degrades to no extra dir - never an
+   * escape. Fail closed (null) on any error.
+   * @param {object} handlerProps - aibitat handler props (invocation.workspace).
+   * @returns {Promise<string|null>} Jailed absolute project dir or null.
+   */
+  async projectExtraDir(handlerProps = {}) {
+    try {
+      const stored = handlerProps?.invocation?.workspace?.projectPath;
+      if (!stored || typeof stored !== "string" || !stored.trim()) return null;
+      const terminal = require("../terminal.js");
+      const { resolveProjectPath } = require("../../../../projectPath");
+      const resolved = resolveProjectPath(
+        stored.trim(),
+        await terminal.terminalRootAsync()
+      );
+      return resolved.ok ? resolved.dir : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Allowed directories for one tool call: the global sandbox plus the
+   * chat workspace's bound project folder when there is one, so file
+   * read/write/edit all work where the terminal already works.
+   * @param {object} handlerProps - aibitat handler props (invocation.workspace).
+   * @returns {Promise<string[]>} Effective allowed directories for the call.
+   */
+  async allowedDirsFor(handlerProps = {}) {
+    await this.ensureInitialized();
+    const dirs = [...this.#allowedDirectories];
+    const extra = await this.projectExtraDir(handlerProps);
+    if (extra && !dirs.includes(extra)) dirs.push(extra);
+    return dirs;
+  }
+
+  /**
    * Ensures the filesystem is initialized before use.
    * @returns {Promise<void>}
    */
@@ -444,26 +483,38 @@ class FilesystemManager {
 
   /**
    * Validates a path for security, ensuring it's within allowed directories.
+   * Project-bound chats pass their jail-checked project folder as
+   * `extraDirs`: relative paths then resolve project-first (matching the
+   * terminal cwd), and absolute paths are accepted when inside either the
+   * sandbox or the project folder. All three checks (direct, symlink,
+   * parent) run against the same effective set.
    * @param {string} requestedPath - The path to validate
+   * @param {string[]} [extraDirs] - Extra per-call allowed directories
    * @returns {Promise<string>} The validated absolute path
    * @throws {Error} If path is outside allowed directories
    */
-  async validatePath(requestedPath) {
+  async validatePath(requestedPath, extraDirs = []) {
     await this.ensureInitialized();
+    const effectiveDirs = [
+      ...new Set([...(extraDirs || []), ...this.#allowedDirectories]),
+    ];
     const expandedPath = this.#expandHome(requestedPath);
     const absolute = path.isAbsolute(expandedPath)
       ? path.resolve(expandedPath)
-      : this.#resolveRelativePathAgainstAllowedDirectories(expandedPath);
+      : this.#resolveRelativePathAgainstAllowedDirectories(
+          expandedPath,
+          effectiveDirs
+        );
 
     const normalizedRequested = this.#normalizePath(absolute);
 
     const isAllowed = this.#isPathWithinAllowedDirectories(
       normalizedRequested,
-      this.#allowedDirectories
+      effectiveDirs
     );
     if (!isAllowed) {
       console.log(
-        `[validatePath] Access denied - path outside allowed directories: ${absolute} not in ${this.#allowedDirectories.join(", ")}`
+        `[validatePath] Access denied - path outside allowed directories: ${absolute} not in ${effectiveDirs.join(", ")}`
       );
       throw new Error(`Access denied - path outside allowed directories.`);
     }
@@ -472,13 +523,10 @@ class FilesystemManager {
       const realPath = await fs.realpath(absolute);
       const normalizedReal = this.#normalizePath(realPath);
       if (
-        !this.#isPathWithinAllowedDirectories(
-          normalizedReal,
-          this.#allowedDirectories
-        )
+        !this.#isPathWithinAllowedDirectories(normalizedReal, effectiveDirs)
       ) {
         console.log(
-          `[validatePath] Access denied - symlink target outside allowed directories: ${realPath} not in ${this.#allowedDirectories.join(", ")}`
+          `[validatePath] Access denied - symlink target outside allowed directories: ${realPath} not in ${effectiveDirs.join(", ")}`
         );
         throw new Error(
           `Access denied - symlink target outside allowed directories.`
@@ -494,11 +542,11 @@ class FilesystemManager {
           if (
             !this.#isPathWithinAllowedDirectories(
               normalizedParent,
-              this.#allowedDirectories
+              effectiveDirs
             )
           ) {
             console.log(
-              `[validatePath] Access denied - parent directory outside allowed directories: ${realParentPath} not in ${this.#allowedDirectories.join(", ")}`
+              `[validatePath] Access denied - parent directory outside allowed directories: ${realParentPath} not in ${effectiveDirs.join(", ")}`
             );
             throw new Error(
               `Access denied - parent directory outside allowed directories.`
@@ -578,10 +626,11 @@ class FilesystemManager {
    * display: relative to the allowed directory that contains it, falling
    * back to the absolute path when it is not under any allowed root.
    * @param {string} filePath - Validated absolute path
-   * @returns {string}
+   * @param {string[]} [extraDirs] - Extra per-call allowed directories
+   * @returns {string} Display path
    */
-  relativeDisplayPath(filePath) {
-    for (const dir of this.#allowedDirectories) {
+  relativeDisplayPath(filePath, extraDirs = []) {
+    for (const dir of [...(extraDirs || []), ...this.#allowedDirectories]) {
       if (filePath.startsWith(dir + path.sep))
         return path.relative(dir, filePath);
     }
@@ -595,18 +644,19 @@ class FilesystemManager {
    * @param {string} filePath - Validated absolute path of the changed file
    * @param {string} originalContent - Content before the change ("" for new files)
    * @param {string} newContent - Content after the change
+   * @param {string[]} [extraDirs] - Extra per-call allowed directories
    * @returns {{path: string, added: number, removed: number, diff: string, truncated: boolean}}
    */
-  changeEventPayload(filePath, originalContent, newContent) {
+  changeEventPayload(filePath, originalContent, newContent, extraDirs = []) {
     const rawDiff = this.#createUnifiedDiff(
       originalContent,
       newContent,
-      this.relativeDisplayPath(filePath)
+      this.relativeDisplayPath(filePath, extraDirs)
     );
     const { added, removed } = countUnifiedDiffLines(rawDiff);
     const { diff, truncated } = capUnifiedDiffLines(rawDiff);
     return {
-      path: this.relativeDisplayPath(filePath),
+      path: this.relativeDisplayPath(filePath, extraDirs),
       added,
       removed,
       diff,
@@ -619,11 +669,12 @@ class FilesystemManager {
    * @param {string} filePath - Path to the file
    * @param {Array<{oldText: string, newText: string}>} edits - Array of edits
    * @param {boolean} dryRun - If true, only preview changes
+   * @param {string[]} [extraDirs] - Extra per-call allowed directories (display paths)
    * @returns {Promise<{result: string, change: {path: string, added: number, removed: number, diff: string, truncated: boolean}}>}
    *   `result` is the fenced diff block returned to the model; `change` is the
    *   fileChangeCard payload for the chat UI (present once changes were applied).
    */
-  async applyFileEdits(filePath, edits, dryRun = false) {
+  async applyFileEdits(filePath, edits, dryRun = false, extraDirs = []) {
     const content = this.#normalizeLineEndings(
       await fs.readFile(filePath, "utf-8")
     );
@@ -684,7 +735,7 @@ class FilesystemManager {
     const diffResult = this.#createUnifiedDiff(
       content,
       modifiedContent,
-      this.relativeDisplayPath(filePath)
+      this.relativeDisplayPath(filePath, extraDirs)
     );
 
     let numBackticks = 3;
@@ -703,7 +754,7 @@ class FilesystemManager {
       const { added, removed } = countUnifiedDiffLines(diffResult);
       const { diff, truncated } = capUnifiedDiffLines(diffResult);
       change = {
-        path: this.relativeDisplayPath(filePath),
+        path: this.relativeDisplayPath(filePath, extraDirs),
         added,
         removed,
         diff,

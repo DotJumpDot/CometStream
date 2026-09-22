@@ -44,7 +44,15 @@ module.exports.FilesystemCreateDirectory = {
                 `Using the filesystem-create-directory tool.`
               );
 
-              const validPath = await filesystem.validatePath(dirPath);
+              // Project-bound chats create directories inside their folder.
+              const extraDirs = await filesystem.projectExtraDir(
+                this.super.handlerProps
+              );
+              const allowedExtras = extraDirs ? [extraDirs] : [];
+              const validPath = await filesystem.validatePath(
+                dirPath,
+                allowedExtras
+              );
               this.super.introspect(
                 `${this.caller}: Creating directory ${dirPath}`
               );

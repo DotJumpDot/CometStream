@@ -146,7 +146,7 @@ export default function ActiveWorkspaces() {
                           to={paths.workspace.chat(workspace.slug)}
                           aria-current={isActive ? "page" : ""}
                           className={`
-                          flex items-center gap-x-2 w-full h-[34px] px-2.5 rounded-[8px]
+                          flex items-center gap-x-2 w-full h-8 px-2.5 rounded-lg
                           text-[13px] leading-none transition-all duration-[200ms]
                           ${
                             isActive
@@ -181,7 +181,11 @@ export default function ActiveWorkspaces() {
                           )}
                           <p
                             data-tooltip-id="workspace-name"
-                            data-tooltip-content={workspace.name}
+                            data-tooltip-content={
+                              workspace.projectPath
+                                ? `${workspace.name} — ${workspace.projectPath}`
+                                : workspace.name
+                            }
                             className="flex-grow truncate whitespace-nowrap overflow-hidden"
                           >
                             {workspace.name}

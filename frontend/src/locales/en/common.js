@@ -124,6 +124,8 @@ const TRANSLATIONS = {
     projects: "Projects",
     "new-workspace": "New workspace",
     "agents-mcp": "Agents & MCP",
+    settings: "Settings",
+    "back-to-workspaces": "Back to workspaces",
     pinned: "Pinned",
     pin: "Pin to sidebar",
     unpin: "Unpin from sidebar",
@@ -180,8 +182,24 @@ const TRANSLATIONS = {
     },
   },
   "new-workspace": {
-    title: "New Workspace",
-    placeholder: "My Workspace",
+    title: "New Project",
+    placeholder: "My Project",
+    "folder-label": "Project Folder",
+    "folder-placeholder": "my-app",
+    "folder-hint":
+      "A folder name or path inside the terminal root. It will be created if missing, and the project name is taken from it.",
+    "folder-required": "Give the project a folder first.",
+    browse: "Browse folders",
+    "browse-title": "Choose a project folder",
+    "browse-root": "Root",
+    "browse-error": "Could not list folders.",
+    "browse-empty": "No folders here yet - create one below.",
+    "browse-open": "Open folder",
+    "browse-select": "Select",
+    "browse-new": "New folder",
+    "browse-use": "Use",
+    "browse-use-current": "Use {{folder}}",
+    "browse-pick-hint": "Pick a folder below first",
   },
   "workspaces—settings": {
     general: "General Settings",
@@ -197,6 +215,12 @@ const TRANSLATIONS = {
     },
     names: {
       description: "This will only change the display name of your workspace.",
+    },
+    "project-folder": {
+      title: "Project Folder",
+      description:
+        "The folder on the agent machine this project works in. Bound at creation from the folder name; the agent runs its terminal commands here so each project's chats stay separated by folder. Leave empty to use the global terminal root.",
+      placeholder: "Empty = global terminal root",
     },
     message: {
       title: "Suggested Chat Messages",

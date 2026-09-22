@@ -328,6 +328,27 @@ describeValidation("lastUpdatedAt", () => {
   });
 });
 
+describeValidation("projectPath", () => {
+  it("passes an absolute path through trimmed", () => {
+    expect(Workspace.validations.projectPath("/tmp/proj")).toBe("/tmp/proj");
+    expect(Workspace.validations.projectPath("  /tmp/proj  ")).toBe(
+      "/tmp/proj"
+    );
+  });
+
+  it("returns null for null, undefined, empty, or non-string", () => {
+    expect(Workspace.validations.projectPath(null)).toBeNull();
+    expect(Workspace.validations.projectPath(undefined)).toBeNull();
+    expect(Workspace.validations.projectPath("")).toBeNull();
+    expect(Workspace.validations.projectPath(123)).toBeNull();
+  });
+
+  it("truncates overlong paths to 1024 chars", () => {
+    const long = `/tmp/${"a".repeat(1100)}`;
+    expect(Workspace.validations.projectPath(long)).toHaveLength(1024);
+  });
+});
+
 describe("Workspace.validateFields", () => {
   // Regression test for #2541: an invalid `lastUpdatedAt` used to be passed
   // through verbatim because the writable field had no validation, which then

@@ -264,6 +264,26 @@ const Workspace = {
 
     return workspaces;
   },
+  /**
+   * Lists immediate subfolders of the terminal jail for the click-to-select
+   * folder picker. Never exposes absolute server paths - only jail-relative
+   * names the create endpoint re-validates.
+   * @param {string} rel - Jail-relative path ("" = root).
+   * @returns {Promise<{ok: boolean, rel?: string, folders?: Array, error?: string}>}
+   */
+  browseFolders: async function (rel = "") {
+    const result = await fetch(
+      `${API_BASE}/workspace/folders/browse?rel=${encodeURIComponent(rel)}`,
+      {
+        method: "GET",
+        headers: baseHeaders(),
+      }
+    )
+      .then((res) => res.json())
+      .catch(() => ({ ok: false, error: "Could not list folders." }));
+
+    return result;
+  },
   bySlug: async function (slug = "") {
     const workspace = await fetch(`${API_BASE}/workspace/${slug}`, {
       headers: baseHeaders(),

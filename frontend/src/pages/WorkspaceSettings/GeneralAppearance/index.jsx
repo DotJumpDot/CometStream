@@ -3,6 +3,7 @@ import { castToType } from "@/utils/types";
 import showToast from "@/utils/toast";
 import { useEffect, useRef, useState } from "react";
 import WorkspaceName from "./WorkspaceName";
+import ProjectFolder from "./ProjectFolder";
 import SuggestedChatMessages from "./SuggestedChatMessages";
 import DeleteWorkspace from "./DeleteWorkspace";
 import CTAButton from "@/components/lib/CTAButton";
@@ -62,6 +63,13 @@ export default function GeneralInfo({ slug, deletionProtected = false }) {
           workspace={workspace}
           setHasChanges={setHasChanges}
         />
+        <div className="mt-[24px]">
+          <ProjectFolder
+            key={`${workspace.slug}-projectPath`}
+            workspace={workspace}
+            setHasChanges={setHasChanges}
+          />
+        </div>
       </form>
       <SuggestedChatMessages slug={workspace.slug} />
       <DeleteWorkspace workspace={workspace} visible={!deletionProtected} />

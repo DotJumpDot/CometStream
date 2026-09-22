@@ -70,7 +70,16 @@ module.exports.FilesystemReadTextFile = {
                 return "Error: Cannot specify both head and tail parameters simultaneously.";
               }
 
-              const validPath = await filesystem.validatePath(filePath);
+              // Project-bound chats read inside their folder too (md, json,
+              // docx/xlsx via the collector fallback - not just the sandbox).
+              const extraDirs = await filesystem.projectExtraDir(
+                this.super.handlerProps
+              );
+              const allowedExtras = extraDirs ? [extraDirs] : [];
+              const validPath = await filesystem.validatePath(
+                filePath,
+                allowedExtras
+              );
 
               if (filesystem.isImageFile(validPath)) {
                 this.super.introspect(
@@ -121,7 +130,7 @@ module.exports.FilesystemReadTextFile = {
               // Read chip for the chat UI - a lighter row, no diff attached.
               this.super.socket?.send?.("fileChangeCard", {
                 action: "read",
-                path: filesystem.relativeDisplayPath(validPath),
+                path: filesystem.relativeDisplayPath(validPath, allowedExtras),
                 lines: content.split("\n").length,
               });
               this.super.addCitation?.({

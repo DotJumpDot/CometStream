@@ -12,6 +12,7 @@ const {
   resolveShell,
   terminalRoot,
   terminalRootAsync,
+  workdirForInvocation,
   capOutput,
   commandTimeoutMs,
   summarizeCommand,
@@ -123,6 +124,46 @@ describe("terminal agent skill", () => {
     it("falls back to the sandbox when nothing is configured", async () => {
       const root = await terminalRootAsync();
       expect(path.basename(root)).toBe("anythingllm-fs");
+    });
+  });
+
+  describe("workdirForInvocation (folder-bound projects)", () => {
+    it("uses the global root for unbound (legacy) workspaces", async () => {
+      const root = await terminalRootAsync();
+      expect(await workdirForInvocation({})).toBe(root);
+      expect(
+        await workdirForInvocation({ invocation: { workspace: {} } })
+      ).toBe(root);
+      expect(
+        await workdirForInvocation({
+          invocation: { workspace: { projectPath: null } },
+        })
+      ).toBe(root);
+    });
+
+    it("runs inside the bound project folder and creates it", async () => {
+      process.env.AGENT_TERMINAL_ROOT = fs.mkdtempSync(
+        path.join(os.tmpdir(), "cs-term-proj-")
+      );
+      const root = await terminalRootAsync();
+      const dir = await workdirForInvocation({
+        invocation: { workspace: { projectPath: path.join(root, "site") } },
+      });
+      expect(dir).toBe(path.join(root, "site"));
+      expect(fs.statSync(dir).isDirectory()).toBe(true);
+    });
+
+    it("degrades to the global root when the binding escapes the jail", async () => {
+      process.env.AGENT_TERMINAL_ROOT = fs.mkdtempSync(
+        path.join(os.tmpdir(), "cs-term-jail-")
+      );
+      const root = await terminalRootAsync();
+      const outside = path.join(os.tmpdir(), "cs-term-evil");
+      const dir = await workdirForInvocation({
+        invocation: { workspace: { projectPath: outside } },
+      });
+      expect(dir).toBe(root);
+      expect(fs.existsSync(outside)).toBe(false);
     });
   });
   describe("commandTimeoutMs", () => {

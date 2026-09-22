@@ -45,8 +45,8 @@ export default function Footer() {
 
   if (!Array.isArray(footerData) || footerData.length === 0) {
     return (
-      <div className="flex justify-center mb-2">
-        <div className="flex space-x-4">{!isMobile && <SettingsButton />}</div>
+      <div className="flex flex-col w-full px-2 mb-2">
+        {!isMobile && <SettingsButton />}
         <Tooltip
           id="footer-item"
           place="top"
@@ -58,28 +58,30 @@ export default function Footer() {
   }
 
   return (
-    <div className="flex justify-center mb-2">
-      <div className="flex space-x-4">
-        {footerData.map((item, index) => (
-          <a
-            key={index}
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            className="transition-all duration-300 flex w-fit h-fit p-2 p-2 rounded-full bg-theme-sidebar-footer-icon hover:bg-theme-sidebar-footer-icon-hover hover:border-slate-100"
-          >
-            {React.createElement(
-              ICON_COMPONENTS?.[item.icon] ?? ICON_COMPONENTS.Info,
-              {
-                weight: "fill",
-                className: "h-5 w-5",
-                color: "var(--theme-sidebar-footer-icon-fill)",
-              }
-            )}
-          </a>
-        ))}
-        {!isMobile && <SettingsButton />}
+    <div className="flex flex-col gap-y-2 w-full px-2 mb-2">
+      <div className="flex justify-center">
+        <div className="flex space-x-4">
+          {footerData.map((item, index) => (
+            <a
+              key={index}
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className="transition-all duration-300 flex w-fit h-fit p-2 p-2 rounded-full bg-theme-sidebar-footer-icon hover:bg-theme-sidebar-footer-icon-hover hover:border-slate-100"
+            >
+              {React.createElement(
+                ICON_COMPONENTS?.[item.icon] ?? ICON_COMPONENTS.Info,
+                {
+                  weight: "fill",
+                  className: "h-5 w-5",
+                  color: "var(--theme-sidebar-footer-icon-fill)",
+                }
+              )}
+            </a>
+          ))}
+        </div>
       </div>
+      {!isMobile && <SettingsButton />}
       <Tooltip
         id="footer-item"
         place="top"

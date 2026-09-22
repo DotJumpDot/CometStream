@@ -53,7 +53,16 @@ module.exports.FilesystemWriteTextFile = {
                 `Using the filesystem-write-text-file tool.`
               );
 
-              const validPath = await filesystem.validatePath(filePath);
+              // Project-bound chats also write inside their folder, where
+              // the terminal already works - not just the global sandbox.
+              const extraDirs = await filesystem.projectExtraDir(
+                this.super.handlerProps
+              );
+              const allowedExtras = extraDirs ? [extraDirs] : [];
+              const validPath = await filesystem.validatePath(
+                filePath,
+                allowedExtras
+              );
               this.super.introspect(
                 `${this.caller}: Writing to file ${filePath}`
               );
@@ -82,7 +91,12 @@ module.exports.FilesystemWriteTextFile = {
               // File-change chip for the chat UI - clicks expand to the diff.
               this.super.socket?.send?.("fileChangeCard", {
                 action: existed ? "edit" : "create",
-                ...filesystem.changeEventPayload(validPath, original, content),
+                ...filesystem.changeEventPayload(
+                  validPath,
+                  original,
+                  content,
+                  allowedExtras
+                ),
               });
               return `Successfully wrote to ${filePath}`;
             } catch (e) {

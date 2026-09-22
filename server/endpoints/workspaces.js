@@ -48,8 +48,30 @@ function workspaceEndpoints(app) {
     async (request, response) => {
       try {
         const user = await userFromSession(request, response);
-        const { name = null } = reqBody(request);
-        const { workspace, message } = await Workspace.new(name, user?.id);
+        const { name = null, projectPath = null } = reqBody(request);
+        // ZCode-style folder binding: resolve the folder inside the terminal
+        // jail and create it now, so the project's first chat already has a
+        // working directory. A bad path fails creation with a message rather
+        // than persisting an unresolvable binding.
+        let resolvedProjectPath = null;
+        if (projectPath) {
+          const terminal = require("../utils/agents/aibitat/plugins/terminal");
+          const { ensureProjectDir } = require("../utils/projectPath");
+          const ensured = ensureProjectDir(
+            projectPath,
+            await terminal.terminalRootAsync()
+          );
+          if (!ensured.ok) {
+            response
+              .status(200)
+              .json({ workspace: null, message: ensured.error });
+            return;
+          }
+          resolvedProjectPath = ensured.dir;
+        }
+        const { workspace, message } = await Workspace.new(name, user?.id, {
+          ...(resolvedProjectPath ? { projectPath: resolvedProjectPath } : {}),
+        });
         await Telemetry.sendTelemetry(
           "workspace_created",
           {
@@ -71,6 +93,38 @@ function workspaceEndpoints(app) {
           user?.id
         );
         response.status(200).json({ workspace, message });
+      } catch (e) {
+        console.error(e.message, e);
+        response.sendStatus(500).end();
+      }
+    }
+  );
+
+  app.get(
+    "/workspace/folders/browse",
+    [validatedRequest, flexUserRoleValid([ROLES.admin, ROLES.manager])],
+    async (request, response) => {
+      // Folder picker backend (click-to-select, like an upload dialog):
+      // lists immediate subfolders of the terminal jail root so the user
+      // never has to type a path. `rel` is re-validated inside the jail on
+      // every call - traversal can only ever list inside the jail.
+      try {
+        const rel = String(request.query?.rel ?? "");
+        const terminal = require("../utils/agents/aibitat/plugins/terminal");
+        const { listProjectFolders } = require("../utils/projectPath");
+        const result = listProjectFolders(
+          await terminal.terminalRootAsync(),
+          rel
+        );
+        if (!result.ok) {
+          response.status(200).json({ ok: false, error: result.error });
+          return;
+        }
+        response.status(200).json({
+          ok: true,
+          rel: result.rel,
+          folders: result.folders,
+        });
       } catch (e) {
         console.error(e.message, e);
         response.sendStatus(500).end();

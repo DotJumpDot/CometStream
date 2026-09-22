@@ -15,7 +15,9 @@
  * restart... (restart clears nothing: the check runs on every call).
  *
  * Additional seatbelts (not a sandbox - the opt-in is the real gate):
- * - Commands run with cwd pinned to the terminal root: AGENT_TERMINAL_ROOT
+ * - Commands run with cwd pinned to the project folder when the chat's
+ *   workspace is folder-bound (`projectPath`, always re-validated inside
+ *   the jail below), otherwise the terminal root: AGENT_TERMINAL_ROOT
  *   ENV wins, then the in-app `terminal_agent_root` setting, then the agent
  *   filesystem sandbox. The working directory is reported back to the model.
  * - Hard wall-clock timeout (AGENT_TERMINAL_TIMEOUT_MS, default 120s, max
@@ -406,6 +408,33 @@ async function terminalRootAsync() {
     }
   }
   return terminalRoot();
+}
+
+/**
+ * Per-project working directory (ZCode-style folder-bound projects). When
+ * the current chat's workspace carries a `projectPath`, commands run inside
+ * that folder so each project's first chat is already separated by folder.
+ * Falls back to the global root for unbound (legacy) workspaces.
+ *
+ * The stored path is re-validated against the jail on every call: a root
+ * change after the binding was saved must degrade to the global root, never
+ * execute outside the jail.
+ * @param {object} handlerProps - aibitat handler props (invocation.workspace).
+ * @returns {Promise<string>} Absolute working directory for this call.
+ */
+async function workdirForInvocation(handlerProps = {}) {
+  const root = await terminalRootAsync();
+  const stored = handlerProps?.invocation?.workspace?.projectPath;
+  if (!stored || typeof stored !== "string" || !stored.trim()) return root;
+  const { resolveProjectPath } = require("../../../projectPath");
+  const resolved = resolveProjectPath(stored.trim(), root);
+  if (!resolved.ok) return root;
+  try {
+    fs.mkdirSync(resolved.dir, { recursive: true });
+  } catch {
+    return root;
+  }
+  return resolved.dir;
 }
 
 /**
@@ -1224,7 +1253,11 @@ const terminalAgent = {
 
               // Session log for the side panel: one row per execution with
               // the full command + output tail on expand.
-              const workdirRoot = await terminalRootAsync();
+              // ZCode-style projects: a folder-bound workspace runs inside
+              // its own folder; unbound workspaces use the global root.
+              const workdirRoot = await workdirForInvocation(
+                this.super.handlerProps
+              );
               // Snapshot before the run so files the shell creates or edits
               // can be reported as file cards afterwards.
               const workdirBefore = snapshotWorkdir(workdirRoot);
@@ -1340,7 +1373,9 @@ const terminalAgent = {
                   return approval.message;
                 }
               }
-              const workdirRoot = await terminalRootAsync();
+              const workdirRoot = await workdirForInvocation(
+                this.super.handlerProps
+              );
               const started = startBackgroundTask(command, {
                 cwd: workdirRoot,
               });
@@ -1491,6 +1526,7 @@ module.exports = {
   resolveShell,
   terminalRoot,
   terminalRootAsync,
+  workdirForInvocation,
   capOutput,
   commandTimeoutMs,
   summarizeCommand,

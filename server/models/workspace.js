@@ -31,6 +31,7 @@ function isNullOrNaN(value) {
  * @property {string} queryRefusalResponse - The query refusal response of the workspace
  * @property {string} vectorSearchMode - The vector search mode of the workspace
  * @property {string} chatReasoningEffort - Chat reasoning preference (null|"off"|"on"|level name)
+ * @property {string|null} projectPath - Absolute jailed project folder (null = unbound legacy workspace)
  */
 
 const Workspace = {
@@ -60,6 +61,7 @@ const Workspace = {
     "router_id",
     "autoCompact",
     "compactThreshold",
+    "projectPath",
   ],
 
   validations: {
@@ -167,6 +169,14 @@ const Workspace = {
       if (isNaN(date.getTime())) return new Date();
       return date;
     },
+    // ZCode-style folder binding: absolute jailed dir, or null = unbound.
+    // The endpoint resolves + creates the dir; here we only normalize so a
+    // stray relative value can never be persisted.
+    projectPath: (value) => {
+      if (value === null || value === undefined || value === "") return null;
+      if (typeof value !== "string") return null;
+      return value.trim().slice(0, 1024) || null;
+    },
   },
 
   /**
@@ -215,12 +225,19 @@ const Workspace = {
 
   /**
    * Create a new workspace.
+   * ZCode-style shortcut: when no name is given but `additionalFields`
+   * carries a `projectPath`, the name is derived from the folder's basename
+   * so creating a project never requires inventing a name first.
    * @param {string} name - The name of the workspace.
    * @param {number} creatorId - The ID of the user creating the workspace.
    * @param {Object} additionalFields - Additional fields to apply to the workspace - will be validated.
    * @returns {Promise<{workspace: Object | null, message: string | null}>} A promise that resolves to an object containing the created workspace and an error message if applicable.
    */
   new: async function (name = null, creatorId = null, additionalFields = {}) {
+    if (!name && additionalFields?.projectPath) {
+      const { projectNameFromPath } = require("../utils/projectPath");
+      name = projectNameFromPath(additionalFields.projectPath);
+    }
     if (!name) return { workspace: null, message: "name cannot be null" };
     var slug = this.slugify(name, { lower: true });
     slug = slug || uuidv4();

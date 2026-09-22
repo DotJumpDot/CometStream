@@ -64,10 +64,18 @@ module.exports.FilesystemReadMultipleFiles = {
               // row in the chat (like single-file reads), which is the
               // signal. A bare tool call with no statuses hides entirely.
 
+              // Project-bound chats read inside their folder too.
+              const extraDirs = await filesystem.projectExtraDir(
+                this.super.handlerProps
+              );
+              const allowedExtras = extraDirs ? [extraDirs] : [];
               const results = await Promise.all(
                 paths.map(async (filePath) => {
                   try {
-                    const validPath = await filesystem.validatePath(filePath);
+                    const validPath = await filesystem.validatePath(
+                      filePath,
+                      allowedExtras
+                    );
                     const filename = path.basename(validPath);
 
                     if (filesystem.isImageFile(validPath)) {
@@ -95,7 +103,10 @@ module.exports.FilesystemReadMultipleFiles = {
                     // single-file reads. Images attach visually instead.
                     this.super.socket?.send?.("fileChangeCard", {
                       action: "read",
-                      path: filesystem.relativeDisplayPath(validPath),
+                      path: filesystem.relativeDisplayPath(
+                        validPath,
+                        allowedExtras
+                      ),
                       lines: content.split("\n").length,
                     });
                     this.super.addCitation?.({

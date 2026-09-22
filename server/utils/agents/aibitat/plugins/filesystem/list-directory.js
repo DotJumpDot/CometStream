@@ -69,7 +69,15 @@ module.exports.FilesystemListDirectory = {
                 `Using the filesystem-list-directory tool.`
               );
 
-              const validPath = await filesystem.validatePath(dirPath);
+              // Project-bound chats list inside their folder too.
+              const extraDirs = await filesystem.projectExtraDir(
+                this.super.handlerProps
+              );
+              const allowedExtras = extraDirs ? [extraDirs] : [];
+              const validPath = await filesystem.validatePath(
+                dirPath,
+                allowedExtras
+              );
 
               this.super.introspect(
                 `${this.caller}: Listing directory ${dirPath}`

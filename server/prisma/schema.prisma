@@ -135,6 +135,10 @@ model workspaces {
   topN                         Int?                           @default(4)
   chatMode                     String?                        @default("chat")
   pfpFilename                  String?
+  // ZCode-style folder binding: absolute directory of the project on the
+  // agent machine, always inside the terminal jail root. Null = unbound
+  // (legacy workspaces); the agent then uses the global terminal root.
+  projectPath                  String?
   agentProvider                String?
   agentModel                   String?
   queryRefusalResponse         String?

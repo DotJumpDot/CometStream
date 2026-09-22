@@ -127,7 +127,10 @@ module.exports.FilesystemSearchFiles = {
               );
 
               await filesystem.ensureInitialized();
-              const allowedDirs = filesystem.getAllowedDirectories();
+              // Project-bound chats search their folder too.
+              const allowedDirs = await filesystem.allowedDirsFor(
+                this.super.handlerProps
+              );
 
               if (allowedDirs.length === 0) {
                 return "Error: No allowed directories configured";

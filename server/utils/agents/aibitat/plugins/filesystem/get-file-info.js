@@ -43,7 +43,15 @@ module.exports.FilesystemGetFileInfo = {
                 `Using the filesystem-get-file-info tool.`
               );
 
-              const validPath = await filesystem.validatePath(filePath);
+              // Project-bound chats inspect inside their folder too.
+              const extraDirs = await filesystem.projectExtraDir(
+                this.super.handlerProps
+              );
+              const allowedExtras = extraDirs ? [extraDirs] : [];
+              const validPath = await filesystem.validatePath(
+                filePath,
+                allowedExtras
+              );
 
               this.super.introspect(
                 `${this.caller}: Getting info for ${filePath}`

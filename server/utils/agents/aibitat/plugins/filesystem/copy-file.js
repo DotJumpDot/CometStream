@@ -77,8 +77,20 @@ module.exports.FilesystemCopyFile = {
                 `Using the filesystem-copy-file tool.`
               );
 
-              const validSourcePath = await filesystem.validatePath(source);
-              const validDestPath = await filesystem.validatePath(destination);
+              // Project-bound chats copy inside their folder too ("recreate
+              // somewhere" rides this tool).
+              const extraDirs = await filesystem.projectExtraDir(
+                this.super.handlerProps
+              );
+              const allowedExtras = extraDirs ? [extraDirs] : [];
+              const validSourcePath = await filesystem.validatePath(
+                source,
+                allowedExtras
+              );
+              const validDestPath = await filesystem.validatePath(
+                destination,
+                allowedExtras
+              );
 
               this.super.introspect(
                 `${this.caller}: Copying ${source} to ${destination}`
