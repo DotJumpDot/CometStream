@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Full-viewport utilities are redefined to percentage sizing on purpose.
+ * The raw viewport units break two ways:
+ *  - `height: 100vh` ignores the desktop title bar's 38px body reserve
+ *    (body.has-desktop-titlebar), so every full-page shell overflowed the
+ *    body by exactly 38px in the desktop app -> body scrollbar.
+ *  - `width: 100vw` includes the vertical scrollbar gutter, so the moment
+ *    any scrollbar existed, every w-screen element overflowed horizontally
+ *    -> the second body scrollbar.
+ * Percentages resolve against the parent chain (html/body/#root/
+ * .page-transition-root all set to 100% height below, and the desktop
+ * body's border-box padding absorbs the title bar), and position:fixed
+ * consumers (modal backdrops, the preloader) still resolve percentages
+ * against the viewport - identical coverage to before.
+ */
+@layer utilities {
+  .h-screen {
+    height: 100%;
+  }
+  .w-screen {
+    width: 100%;
+  }
+  /* Same rationale (404/error fallbacks size themselves to the viewport). */
+  .min-h-screen {
+    min-height: 100%;
+  }
+}
+
 * {
   -webkit-font-smoothing: antialiased;
   /* Firefox: thin themed scrollbar; Chromium rules below. */
@@ -639,6 +667,10 @@ html,
 body {
   padding: 0;
   margin: 0;
+  /* Height chain for the percentage-based .h-screen/.w-screen utilities:
+     every full-page shell fills the viewport exactly (minus the desktop
+     title bar's reserved padding) instead of overflowing it. */
+  height: 100%;
   font-family:
     "plus-jakarta-sans",
     -apple-system,
@@ -653,6 +685,13 @@ body {
     Helvetica Neue,
     sans-serif;
   background-color: white;
+}
+
+/* Rest of the .h-screen percentage chain (see the utilities override above):
+   the React mount point and App.jsx's per-route wrapper. */
+#root,
+.page-transition-root {
+  height: 100%;
 }
 
 @media (prefers-color-scheme: dark) {

@@ -92,7 +92,7 @@ export function OnboardingLayout({ children }) {
   return (
     <div
       data-layout="onboarding"
-      className="w-screen overflow-y-auto bg-theme-bg-primary flex justify-center overflow-hidden"
+      className="w-screen h-full overflow-y-auto bg-theme-bg-primary flex justify-center overflow-hidden"
     >
       <div className="flex w-1/5 h-screen justify-center items-center">
         {backBtn.showing && (
