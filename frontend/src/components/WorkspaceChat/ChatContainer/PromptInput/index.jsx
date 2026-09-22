@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import Appearance from "@/models/appearance";
 import usePromptInputStorage from "@/hooks/usePromptInputStorage";
 import ToolsMenu, { TOOLS_MENU_KEYBOARD_EVENT } from "./ToolsMenu";
+import ProjectSwitcher from "./ProjectSwitcher";
 import ModelSelector from "./ModelSelector";
 import ModeSelector from "./ModeSelector";
 import PermissionSelector from "./PermissionSelector";
@@ -417,6 +418,14 @@ export default function PromptInput({
               }
             />
             <div className="bg-zinc-800 light:bg-white light:border light:border-slate-300 rounded-[20px] pwa:rounded-3xl flex flex-col px-5 overflow-hidden">
+              {/* ZCode-style context header: current project with a switcher
+                  menu (search, open folder, chat outside a project). */}
+              <div className="flex items-center gap-x-1 pt-2.5 -mb-1">
+                <ProjectSwitcher
+                  currentSlug={workspaceSlug ?? workspace?.slug ?? null}
+                  currentName={workspace?.name ?? null}
+                />
+              </div>
               <AttachmentManager attachments={attachments} />
               <div className="flex items-center">
                 <textarea

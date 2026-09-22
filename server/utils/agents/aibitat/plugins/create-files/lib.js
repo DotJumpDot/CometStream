@@ -231,6 +231,54 @@ class CreateFilesManager {
   }
 
   /**
+   * Mirrors a generated file into the chat workspace's bound project folder
+   * (ZCode-style folder-bound projects) under its display name, so the file
+   * the user downloads is also where the terminal and file tools already
+   * work. The download card (generated-files dir) stays the primary
+   * artifact - this copy is best-effort and never fails creation.
+   * @param {object} handlerProps - aibitat handler props (invocation.workspace).
+   * @param {string} storagePath - Absolute path of the saved generated file.
+   * @param {string} displayFilename - User-facing filename for the copy.
+   * @returns {Promise<string|null>} Absolute project path of the copy, or null.
+   */
+  async mirrorToProjectDir(handlerProps, storagePath, displayFilename) {
+    try {
+      const filesystem = require("../filesystem/lib.js");
+      const extra = await filesystem.projectExtraDir(handlerProps);
+      if (!extra) return null;
+      const safe = path.basename(String(displayFilename || ""));
+      // Display names come from the model - keep them to a single safe
+      // segment; anything exotic skips the mirror, the download still works.
+      if (!/^[A-Za-z0-9][A-Za-z0-9._\- ]{0,200}\.[A-Za-z0-9]{1,10}$/.test(safe))
+        return null;
+      await fs.mkdir(extra, { recursive: true });
+      const dest = await filesystem.validatePath(path.join(extra, safe), [
+        extra,
+      ]);
+      const buffer = await this.readBinaryFile(storagePath);
+      await this.writeBinaryFile(dest, buffer);
+      return dest;
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * One-line result suffix for create handlers: mirrors the saved file into
+   * the bound project folder and reports where it landed ("" when unbound).
+   * @param {object} handlerProps - aibitat handler props (invocation.workspace).
+   * @param {{storagePath: string, displayFilename: string}} savedFile - Save result.
+   * @returns {Promise<string>} Suffix sentence or "".
+   */
+  async projectCopyNote(handlerProps, savedFile) {
+    const dest = await this.mirrorToProjectDir(
+      handlerProps,
+      savedFile?.storagePath,
+      savedFile?.displayFilename
+    );
+    return dest ? ` Also saved a copy to the project folder at ${dest}.` : "";
+  }
+
+  /**
    * Retrieves a generated file by its storage filename.
    * @param {string} filename - The storage filename (must match {fileType}-{uuid}.{ext} format)
    * @returns {Promise<{buffer: Buffer, storagePath: string} | null>}

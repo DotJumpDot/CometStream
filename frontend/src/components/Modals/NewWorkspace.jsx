@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { FolderOpen } from "@phosphor-icons/react";
 import { REFETCH_WORKSPACES_EVENT } from "@/components/Sidebar/ActiveWorkspaces";
+import { isDesktopApp, selectNativeFolder } from "@/utils/desktopBridge";
 import Modal, {
   ModalHeader,
   ModalBody,
@@ -32,12 +33,17 @@ function basenameOf(input = "") {
 }
 
 const noop = () => false;
-export default function NewWorkspaceModal({ hideModal = noop }) {
+export default function NewWorkspaceModal({
+  hideModal = noop,
+  initialFolder = "",
+}) {
   const navigate = useNavigate();
   const formEl = useRef(null);
   const [error, setError] = useState(null);
-  const [folder, setFolder] = useState("");
-  const [name, setName] = useState("");
+  const [folder, setFolder] = useState(initialFolder);
+  // A native-dialog pick arrives pre-validated as intent, not typing - the
+  // name always derives from it until the user overrides by hand.
+  const [name, setName] = useState(basenameOf(initialFolder));
   const [nameTouched, setNameTouched] = useState(false);
   const [picking, setPicking] = useState(false);
   const { t } = useTranslation();
@@ -109,6 +115,21 @@ export default function NewWorkspaceModal({ hideModal = noop }) {
               <FolderOpen size={15} />
               {t("new-workspace.browse")}
             </button>
+            {isDesktopApp() && (
+              <button
+                type="button"
+                onClick={async () => {
+                  // Desktop shell: the real OS folder dialog. The picked
+                  // absolute path fills the input; the server jail-checks it.
+                  const picked = await selectNativeFolder();
+                  if (picked) applyFolder(picked);
+                }}
+                className="border border-zinc-700 light:border-slate-300 cursor-pointer rounded-lg px-3 h-[34px] text-[13px] font-medium flex items-center justify-center gap-x-2 text-white light:text-slate-900 hover:bg-zinc-800 light:hover:bg-slate-100 self-start"
+              >
+                <FolderOpen size={15} />
+                {t("new-workspace.system-dialog")}
+              </button>
+            )}
           </div>
           <ModalInput
             label={t("common.workspaces-name")}

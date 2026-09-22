@@ -11,6 +11,9 @@ export const LAST_VISITED_WORKSPACE = "anythingllm_last_visited_workspace";
 export const PINNED_THREADS_CHANGED_EVENT =
   "cometstream_pinned_threads_changed";
 export const OPEN_COMMAND_PALETTE_EVENT = "cometstream_open_command_palette";
+// Fired by the composer's project menu ("Open folder…") so the sidebar's
+// New Project modal opens wherever the user is.
+export const OPEN_NEW_PROJECT_EVENT = "cometstream_open_new_project";
 export const USER_PROMPT_INPUT_MAP = "anythingllm_user_prompt_input_map";
 export const PENDING_HOME_MESSAGE = "anythingllm_pending_home_message";
 

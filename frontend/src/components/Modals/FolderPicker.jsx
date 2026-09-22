@@ -8,6 +8,7 @@ import {
   Plus,
 } from "@phosphor-icons/react";
 import Workspace from "@/models/workspace";
+import { isDesktopApp, selectNativeFolder } from "@/utils/desktopBridge";
 
 /**
  * Click-to-select folder picker (like an upload dialog): navigate the
@@ -202,6 +203,21 @@ export default function FolderPicker({ initialRel = "", onSelect, onClose }) {
               {t("new-workspace.browse-use-current", { folder: rel || "…" })}
             </button>
           </div>
+        )}
+        {isDesktopApp() && (
+          <button
+            type="button"
+            onClick={async () => {
+              // Desktop shell: escape the jail listing into the real OS
+              // folder dialog. The server still jail-checks the pick.
+              const picked = await selectNativeFolder();
+              if (picked) choose(picked);
+            }}
+            className="border border-zinc-700 light:border-slate-300 cursor-pointer rounded-lg px-3 h-[34px] text-[13px] font-medium flex items-center justify-center gap-x-2 text-white light:text-slate-900 hover:bg-zinc-800 light:hover:bg-slate-100"
+          >
+            <FolderOpen size={15} />
+            {t("new-workspace.system-dialog")}
+          </button>
         )}
       </div>
     </div>

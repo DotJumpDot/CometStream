@@ -19,6 +19,7 @@ import { createPortal } from "react-dom";
 import Workspace from "@/models/workspace";
 import { relativeTime } from "@/utils/dates";
 import { PINNED_THREADS_CHANGED_EVENT } from "@/utils/constants";
+import { OPEN_NEW_PROJECT_EVENT } from "@/utils/constants";
 
 export const SIDEBAR_SEARCH_INPUT_ID = "sidebar-search-input";
 
@@ -31,6 +32,24 @@ export default function Sidebar() {
     showModal: showNewWsModal,
     hideModal: hideNewWsModal,
   } = useNewWorkspaceModal();
+
+  // The composer's project menu ("Open folder…") can request the New
+  // Project modal from anywhere - it lives here. A native-dialog pick
+  // arrives as event detail and prefills the modal's folder input.
+  const [pendingFolder, setPendingFolder] = useState("");
+  useEffect(() => {
+    const onOpenProject = (e) => {
+      setPendingFolder(e?.detail?.folder ?? "");
+      showNewWsModal();
+    };
+    window.addEventListener(OPEN_NEW_PROJECT_EVENT, onOpenProject);
+    return () =>
+      window.removeEventListener(OPEN_NEW_PROJECT_EVENT, onOpenProject);
+  }, [showNewWsModal]);
+  const closeNewWsModal = () => {
+    setPendingFolder("");
+    hideNewWsModal();
+  };
 
   // Ctrl+N opens a new workspace. (Ctrl+K is the command palette, which
   // listens for its own shortcut at the app root.)
@@ -91,7 +110,13 @@ export default function Sidebar() {
             </div>
           </div>
         </div>
-        {showingNewWsModal && <NewWorkspaceModal hideModal={hideNewWsModal} />}
+        {showingNewWsModal && (
+          <NewWorkspaceModal
+            key={pendingFolder}
+            hideModal={closeNewWsModal}
+            initialFolder={pendingFolder}
+          />
+        )}
       </div>
       <WorkspaceAndThreadTooltips />
     </>

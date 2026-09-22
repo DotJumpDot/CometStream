@@ -145,7 +145,7 @@ function createWindow() {
     // Frameless: the app draws its own title bar (see
     // frontend/src/components/DesktopTitleBar) themed like the rest of the UI,
     // instead of the plain OS caption. The preload script is the only bridge -
-    // it exposes window controls, nothing else.
+    // it exposes window controls plus a native folder picker, nothing else.
     frame: false,
     webPreferences: {
       contextIsolation: true,
@@ -207,6 +207,20 @@ ipcMain.on("cometstream:window-close", (event) => {
 
 ipcMain.handle("cometstream:window-is-maximized", (event) => {
   return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
+});
+
+// Native folder dialog for project creation. Fixed properties - the page
+// passes no arguments, so there is nothing to inject; the returned path is
+// still validated inside the terminal jail server-side before use.
+ipcMain.handle("cometstream:select-folder", async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: "Choose a project folder",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (canceled || filePaths.length === 0) return null;
+  return filePaths[0] ?? null;
 });
 
 // ---- App lifecycle ---------------------------------------------------------

@@ -121,7 +121,13 @@ module.exports.CreatePdfFile = {
               // The fileDownloadCard above is the success signal in the chat -
               // no separate "successfully created" status row needed.
 
-              return `Successfully created PDF document "${displayFilename}" (${bufferSizeKB}KB).`;
+              return (
+                `Successfully created PDF document "${displayFilename}" (${bufferSizeKB}KB).` +
+                (await createFilesLib.projectCopyNote(
+                  this.super.handlerProps,
+                  savedFile
+                ))
+              );
             } catch (e) {
               this.super.handlerProps.log(
                 `create-pdf-file error: ${e.message}`

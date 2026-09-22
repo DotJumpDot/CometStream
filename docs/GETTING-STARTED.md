@@ -82,8 +82,9 @@ Long tool results (terminal output, MCP results) are truncated to a bounded inli
 
 A workspace (project) can pin itself to one folder inside the terminal root — ZCode-style:
 
-- **Creating** — the "New Project" modal asks for a project folder first (a name like `my-app` or a path like `apps/my-app`; the project name is taken from the folder). "Browse folders" walks the terminal root click-to-select; the folder is created if missing.
-- **What it changes** — the agent's terminal commands (foreground and background) run inside that folder, and the file tools (read/write/edit/list) treat it as an allowed home directory in addition to the global sandbox. Unbound legacy workspaces keep using the global root everywhere.
+- **Creating** — the "New Project" modal asks for a project folder first (a name like `my-app` or a path like `apps/my-app`; the project name is taken from the folder). "Browse folders" walks the terminal root click-to-select; the folder is created if missing. In the desktop app, "System dialog" (and the composer's project switcher → "Open folder…") opens the real OS folder picker instead — the pick is still jail-validated server-side.
+- **What it changes** — the agent's terminal commands (foreground and background) run inside that folder, the file tools (read/write/edit/list) treat it as an allowed home directory in addition to the global sandbox, and generated files (docx/pdf/pptx/xlsx/text) are copied into it alongside the download card. Unbound legacy workspaces keep using the global root everywhere.
+- **Switching** — the composer header's project switcher lists every project (searchable), opens the New Project modal from anywhere, and "Chat outside a project" returns to the home composer.
 - **Editable** — Workspace Settings → General → Project Folder (same browse picker).
 - **Jail** — the binding must resolve inside `terminal_agent_root` / `AGENT_TERMINAL_ROOT` and is re-validated on every agent call; if the root changed since binding, the call safely falls back to the global root. Folder names cannot contain `/`, `\`, `..`, or NUL segments.
 

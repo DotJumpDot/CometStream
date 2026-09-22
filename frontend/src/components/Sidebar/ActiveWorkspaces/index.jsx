@@ -15,6 +15,8 @@ import {
   Folder,
   FolderOpen,
   CaretDown,
+  PlusCircle,
+  CircleNotch,
 } from "@phosphor-icons/react";
 import useUser from "@/hooks/useUser";
 import ThreadContainer from "./ThreadContainer";
@@ -36,6 +38,40 @@ export default function ActiveWorkspaces() {
   const { user } = useUser();
   const isInWorkspaceSettings = !!useMatch("/workspace/:slug/settings/:tab");
   const isHomePage = !!useMatch("/");
+
+  // When on the home page, resolve which workspace should be virtually active
+  const virtualActiveSlug = (() => {
+    if (!isHomePage || workspaces.length === 0) return null;
+    const lastVisited = safeJsonParse(
+      localStorage.getItem(LAST_VISITED_WORKSPACE)
+    );
+    if (
+      lastVisited?.slug &&
+      workspaces.some((ws) => ws.slug === lastVisited.slug)
+    )
+      return lastVisited.slug;
+    return workspaces[0]?.slug ?? null;
+  })();
+
+  // ZCode-style expand/collapse: clicking a project row toggles its thread
+  // list instead of navigating away to a new Draft. The active project
+  // starts expanded; every other row expands on first click and fetches its
+  // threads lazily via ThreadContainer. These hooks sit above the loading
+  // early-return on purpose (rules-of-hooks).
+  const activeSlug = slug || virtualActiveSlug;
+  const [expandedSlugs, setExpandedSlugs] = useState([]);
+  useEffect(() => {
+    if (!activeSlug) return;
+    setExpandedSlugs((prev) =>
+      prev.includes(activeSlug) ? prev : [...prev, activeSlug]
+    );
+  }, [activeSlug]);
+  const toggleExpand = (wsSlug) =>
+    setExpandedSlugs((prev) =>
+      prev.includes(wsSlug)
+        ? prev.filter((s) => s !== wsSlug)
+        : [...prev, wsSlug]
+    );
 
   useEffect(() => {
     async function getWorkspaces() {
@@ -91,22 +127,27 @@ export default function ActiveWorkspaces() {
     reorderWorkspaces(result.source.index, result.destination.index);
   };
 
-  // When on the home page, resolve which workspace should be virtually active
-  const virtualActiveSlug = (() => {
-    if (!isHomePage || workspaces.length === 0) return null;
-    const lastVisited = safeJsonParse(
-      localStorage.getItem(LAST_VISITED_WORKSPACE)
-    );
-    if (
-      lastVisited?.slug &&
-      workspaces.some((ws) => ws.slug === lastVisited.slug)
-    )
-      return lastVisited.slug;
-    return workspaces[0]?.slug ?? null;
-  })();
-
   return (
     <div className="flex flex-col gap-y-[6px]">
+      {/* ZCode-style New Task: a fresh empty thread (draft page) in the
+          current project - route slug first, then last-visited, then first.
+          Creating a project stays behind the New workspace quick link. */}
+      {workspaces.length > 0 && (
+        <NewTaskButton
+          targetSlug={(() => {
+            if (slug) return slug;
+            const lastVisited = safeJsonParse(
+              localStorage.getItem(LAST_VISITED_WORKSPACE)
+            );
+            if (
+              lastVisited?.slug &&
+              workspaces.some((ws) => ws.slug === lastVisited.slug)
+            )
+              return lastVisited.slug;
+            return workspaces[0]?.slug ?? null;
+          })()}
+        />
+      )}
       {/* Header only renders when there is something to label - an empty
           workspace list should not show an orphaned "Projects" heading. */}
       {workspaces.length > 0 && (
@@ -127,6 +168,7 @@ export default function ActiveWorkspaces() {
               {workspaces.map((workspace, index) => {
                 const isVirtuallyActive = workspace.slug === virtualActiveSlug;
                 const isActive = workspace.slug === slug || isVirtuallyActive;
+                const isExpanded = expandedSlugs.includes(workspace.slug);
                 return (
                   <Draggable
                     key={workspace.id}
@@ -142,12 +184,24 @@ export default function ActiveWorkspaces() {
                         }`}
                         role="listitem"
                       >
-                        <Link
-                          to={paths.workspace.chat(workspace.slug)}
-                          aria-current={isActive ? "page" : ""}
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={isExpanded}
+                          aria-label={`${workspace.name} - ${
+                            isExpanded ? "collapse" : "expand"
+                          } threads`}
+                          onClick={() => toggleExpand(workspace.slug)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              toggleExpand(workspace.slug);
+                            }
+                          }}
                           className={`
                           flex items-center gap-x-2 w-full h-8 px-2.5 rounded-lg
                           text-[13px] leading-none transition-all duration-[200ms]
+                          cursor-pointer select-none
                           ${
                             isActive
                               ? "bg-theme-sidebar-item-selected light:bg-blue-200 font-semibold text-white light:text-blue-900"
@@ -159,6 +213,7 @@ export default function ActiveWorkspaces() {
                             {...provided.dragHandleProps}
                             className="cursor-grab opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity duration-150"
                             aria-label="Drag to reorder workspace"
+                            onClick={(e) => e.stopPropagation()}
                           >
                             <DotsSixVertical
                               size={14}
@@ -166,19 +221,32 @@ export default function ActiveWorkspaces() {
                               className="text-theme-text-secondary"
                             />
                           </div>
-                          {isActive ? (
-                            <FolderOpen
-                              size={16}
-                              weight="fill"
-                              className="shrink-0 text-cta-button"
-                            />
-                          ) : (
-                            <Folder
-                              size={16}
-                              weight="regular"
-                              className="shrink-0 opacity-60"
-                            />
-                          )}
+                          {/* Folder icon is the explicit "open project chat"
+                              affordance - the row body itself only toggles. */}
+                          <Link
+                            to={paths.workspace.chat(workspace.slug)}
+                            onClick={(e) => e.stopPropagation()}
+                            data-tooltip-id="workspace-name"
+                            data-tooltip-content={t(
+                              "sidebar.open-project-chat"
+                            )}
+                            aria-label={t("sidebar.open-project-chat")}
+                            className="shrink-0 flex items-center border-none"
+                          >
+                            {isExpanded ? (
+                              <FolderOpen
+                                size={16}
+                                weight="fill"
+                                className="shrink-0 text-cta-button"
+                              />
+                            ) : (
+                              <Folder
+                                size={16}
+                                weight="regular"
+                                className="shrink-0 opacity-60"
+                              />
+                            )}
+                          </Link>
                           <p
                             data-tooltip-id="workspace-name"
                             data-tooltip-content={
@@ -262,14 +330,14 @@ export default function ActiveWorkspaces() {
                             size={12}
                             weight="bold"
                             className={`shrink-0 text-theme-text-secondary transition-transform duration-[200ms] ${
-                              isActive
+                              isExpanded
                                 ? "rotate-0 opacity-80"
                                 : "-rotate-90 opacity-0 group-hover:opacity-40"
                             }`}
                             aria-hidden="true"
                           />
-                        </Link>
-                        {isActive && (
+                        </div>
+                        {isExpanded && (
                           <ThreadContainer
                             workspace={workspace}
                             isActive={isActive}
@@ -293,5 +361,58 @@ export default function ActiveWorkspaces() {
         </Droppable>
       </DragDropContext>
     </div>
+  );
+}
+
+/**
+ * ZCode-style New Task button: creates a fresh empty thread and lands on
+ * its (empty) draft page in the target project. Router navigation lets
+ * ActiveGenerationGuard intercept mid-generation runs.
+ */
+function NewTaskButton({ targetSlug }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  if (!targetSlug) return null;
+
+  const onClick = async () => {
+    setLoading(true);
+    const { thread, error } = await Workspace.threads.new(targetSlug);
+    if (!!error || !thread) {
+      showToast(
+        `Could not create task - ${error || "unknown error"}`,
+        "error",
+        {
+          clear: true,
+        }
+      );
+      setLoading(false);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent(REFETCH_WORKSPACES_EVENT));
+    navigate(paths.workspace.thread(targetSlug, thread.slug));
+    setLoading(false);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      className="flex items-center gap-x-2 w-full h-8 pl-2.5 pr-2.5 rounded-lg text-[13px] leading-none text-white light:text-black hover:bg-theme-sidebar-subitem-hover transition-all duration-[200ms] border-none cursor-pointer disabled:opacity-60"
+    >
+      {loading ? (
+        <CircleNotch
+          size={16}
+          weight="bold"
+          className="shrink-0 animate-spin opacity-70"
+        />
+      ) : (
+        <PlusCircle size={16} className="shrink-0 opacity-70" />
+      )}
+      <p className="whitespace-nowrap overflow-hidden">
+        {loading ? t("sidebar.starting_thread") : t("sidebar.new-task")}
+      </p>
+    </button>
   );
 }

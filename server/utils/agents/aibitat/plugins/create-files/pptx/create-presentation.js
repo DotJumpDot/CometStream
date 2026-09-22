@@ -336,7 +336,13 @@ module.exports.CreatePptxPresentation = {
               // The fileDownloadCard above is the success signal in the chat -
               // no separate "successfully created" status row needed.
 
-              return `Successfully created presentation "${title}" with ${totalSlideCount} slides across ${totalSections} sections using the ${theme.name} theme.`;
+              return (
+                `Successfully created presentation "${title}" with ${totalSlideCount} slides across ${totalSections} sections using the ${theme.name} theme.` +
+                (await createFilesLib.projectCopyNote(
+                  this.super.handlerProps,
+                  savedFile
+                ))
+              );
             } catch (e) {
               this.super.handlerProps.log(
                 `create-pptx-presentation error: ${e.message}`

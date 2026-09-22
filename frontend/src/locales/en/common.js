@@ -126,6 +126,8 @@ const TRANSLATIONS = {
     "agents-mcp": "Agents & MCP",
     settings: "Settings",
     "back-to-workspaces": "Back to workspaces",
+    "open-project-chat": "Open project chat",
+    "new-task": "New task",
     pinned: "Pinned",
     pin: "Pin to sidebar",
     unpin: "Unpin from sidebar",
@@ -152,6 +154,12 @@ const TRANSLATIONS = {
     group_threads: "Threads",
     nav_home: "Home",
     active: "active",
+  },
+  "project-switcher": {
+    "search-placeholder": "Search projects",
+    "open-folder": "Open folder",
+    "no-project": "Chat outside a project",
+    "no-workspaces": "No projects yet",
   },
   login: {
     "multi-user": {
@@ -190,6 +198,7 @@ const TRANSLATIONS = {
       "A folder name or path inside the terminal root. It will be created if missing, and the project name is taken from it.",
     "folder-required": "Give the project a folder first.",
     browse: "Browse folders",
+    "system-dialog": "System dialog",
     "browse-title": "Choose a project folder",
     "browse-root": "Root",
     "browse-error": "Could not list folders.",

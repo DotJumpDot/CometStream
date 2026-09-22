@@ -346,6 +346,11 @@ module.exports.CreateExcelFile = {
 
               let result = `Successfully created Excel spreadsheet "${displayFilename}" (${bufferSizeKB}KB) with ${sheetDefinitions.length} sheet(s).`;
 
+              result += await createFilesLib.projectCopyNote(
+                this.super.handlerProps,
+                savedFile
+              );
+
               if (allWarnings.length > 0) {
                 result += `\n\nWarnings:\n${allWarnings.map((w) => `- ${w}`).join("\n")}`;
               }

@@ -13,8 +13,9 @@ CometStream.exe (Electron)
 │   ├── prepares env (production, STORAGE_DIR inside the bundle)
 │   ├── loads collector + server IN-PROCESS (dynamic import of their index.js)
 │   ├── waits for http://localhost:3001 to answer
-│   └── opens a BrowserWindow on it
-└── renderer = the normal web UI, fully sandboxed (no node, no IPC bridge)
+│   └── opens a frameless BrowserWindow on it (in-page title bar)
+└── renderer = the normal web UI, fully sandboxed (no node)
+    + preload.js: the only bridge — window controls + native folder picker
 ```
 
 Design notes:
@@ -26,10 +27,21 @@ Design notes:
   prisma) is N-API based and ABI-stable across Node and Electron; run
   `node_modules/.bin/electron scripts/probe-natives.cjs` from `desktop/` to
   re-verify after dependency changes.
-- **Sandboxed renderer.** `contextIsolation` + `sandbox` on, `nodeIntegration`
-  off, no preload/IPC. The UI is just the web page the local server serves.
-  External links (docs, OAuth) open in the OS browser via
-  `setWindowOpenHandler`.
+- **Sandboxed renderer with a fixed bridge.** `contextIsolation` +
+  `sandbox` on, `nodeIntegration` off. `preload.js` exposes exactly one
+  object, `window.cometstreamDesktop`: window controls (minimize /
+  toggle-maximize / close / is-maximized) for the in-page title bar, plus a
+  no-argument `selectFolder()` that opens the real OS directory dialog for
+  project-folder picking. IPC actions are fixed strings — the page supplies
+  no paths, options, or commands — and every picked path is still
+  jail-validated server-side before use. Browsers have no such object, so
+  the web UI falls back to the jailed click-to-select folder picker (see
+  `frontend/src/utils/desktopBridge.js`).
+- **Frameless window.** The OS caption is replaced by the themed in-page
+  title bar (`frontend/src/components/DesktopTitleBar`), so the desktop app
+  looks like the rest of the UI. A packaged exe needs a `desktop/` rebuild
+  (`yarn dist`) to carry the bridge. External links (docs, OAuth) open in
+  the OS browser via `setWindowOpenHandler`.
 - **Env hardening.** `NODE_OPTIONS`/`NODE_PATH`/`ELECTRON_*` are stripped from
   the inherited environment before the backend loads so nothing can preload
   code into the app's Node context.
