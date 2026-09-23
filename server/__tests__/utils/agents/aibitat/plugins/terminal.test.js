@@ -53,6 +53,16 @@ describe("terminal agent skill", () => {
 
   afterAll(() => {
     process.env = originalEnv;
+    // Belt-and-braces orphan sweep: stop every task still in the registry so
+    // a failing test cannot leave spawned shells alive. Tests that spawn
+    // long-running commands use finite sleeps (see those tests) so even a
+    // SIGKILLed jest leaves only idle, self-expiring children behind - never
+    // a `while true` spin burning a core.
+    for (const id of [...backgroundTasks.keys()]) {
+      try {
+        stopBackgroundTask(id);
+      } catch {}
+    }
   });
 
   describe("isToolAvailable", () => {
@@ -472,10 +482,11 @@ describe("background tasks", () => {
   });
 
   it("stops a running task on request", async () => {
-    // Pure shell spin (no forked children) so the kill is total: forked
-    // grandchildren inherit stdio and may outlive the shell (see
-    // stopBackgroundTask) - that case is covered by the timeout test.
-    const started = startBackgroundTask("while true; do :; done", {
+    // A finite sleep, not a `while true` spin: the stop path kills only the
+    // shell, so the `sleep` child can be orphaned if jest dies before the
+    // assertion - an orphaned sleep is idle and expires on its own, while an
+    // orphaned spin would burn a core until reboot (seen in the wild).
+    const started = startBackgroundTask("sleep 600", {
       cwd: sandbox,
     });
     expect(started.ok).toBe(true);
@@ -490,10 +501,9 @@ describe("background tasks", () => {
 
   it("kills tasks that exceed the timeout", async () => {
     process.env.AGENT_TERMINAL_TIMEOUT_MS = "5000";
-    // Fork-free spin: a forked sleeper would outlive the killed shell as an
-    // orphan and hold the sandbox cwd (OS behavior, documented in
-    // stopBackgroundTask) - the timeout mechanism is what this covers.
-    const started = startBackgroundTask("while true; do :; done", {
+    // Finite sleep for the same orphan-safety reason as the stop test: a
+    // SIGKILLed jest must never leave an infinite spin behind.
+    const started = startBackgroundTask("sleep 600", {
       cwd: sandbox,
     });
     const final = await waitForSettled(started.taskId, 20_000);
