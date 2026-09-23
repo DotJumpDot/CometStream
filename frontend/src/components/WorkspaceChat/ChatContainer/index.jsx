@@ -41,6 +41,7 @@ import paths from "@/utils/paths";
 import QuickActions from "@/components/lib/QuickActions";
 import SuggestedMessages from "@/components/lib/SuggestedMessages";
 import ChatSettingsMenu from "./ChatSettingsMenu";
+import { AgentPanelButton } from "../AgentSidePanel";
 import { ChatSidebarProvider } from "./ChatSidebar";
 import SourcesSidebar from "./SourcesSidebar";
 import MemoriesSidebar from "./MemoriesSidebar";
@@ -738,6 +739,7 @@ export default function ChatContainer({
                     workspace={workspace}
                     threadSlug={activeThreadSlug}
                   />
+                  <AgentPanelButton />
                 </ChatHeader>
                 <div className="flex-1 min-h-0 flex flex-col w-full items-center justify-center overflow-y-auto no-scroll">
                   <div className="flex flex-col items-center w-full md:w-[85%]">
@@ -805,6 +807,7 @@ export default function ChatContainer({
                   workspace={workspace}
                   threadSlug={activeThreadSlug}
                 />
+                <AgentPanelButton />
               </ChatHeader>
               <div className="contents">
                 <MetricsProvider>

@@ -11,7 +11,6 @@ import { Link, useParams, useNavigate, useMatch } from "react-router-dom";
 import {
   GearSix,
   UploadSimple,
-  DotsSixVertical,
   Folder,
   FolderOpen,
   CaretDown,
@@ -129,25 +128,6 @@ export default function ActiveWorkspaces() {
 
   return (
     <div className="flex flex-col gap-y-[6px]">
-      {/* ZCode-style New Task: a fresh empty thread (draft page) in the
-          current project - route slug first, then last-visited, then first.
-          Creating a project stays behind the New workspace quick link. */}
-      {workspaces.length > 0 && (
-        <NewTaskButton
-          targetSlug={(() => {
-            if (slug) return slug;
-            const lastVisited = safeJsonParse(
-              localStorage.getItem(LAST_VISITED_WORKSPACE)
-            );
-            if (
-              lastVisited?.slug &&
-              workspaces.some((ws) => ws.slug === lastVisited.slug)
-            )
-              return lastVisited.slug;
-            return workspaces[0]?.slug ?? null;
-          })()}
-        />
-      )}
       {/* Header only renders when there is something to label - an empty
           workspace list should not show an orphaned "Projects" heading. */}
       {workspaces.length > 0 && (
@@ -185,6 +165,7 @@ export default function ActiveWorkspaces() {
                         role="listitem"
                       >
                         <div
+                          {...provided.dragHandleProps}
                           role="button"
                           tabIndex={0}
                           aria-expanded={isExpanded}
@@ -193,7 +174,14 @@ export default function ActiveWorkspaces() {
                           } threads`}
                           onClick={() => toggleExpand(workspace.slug)}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
+                            // The row itself is the drag handle (click-hold
+                            // anywhere reorders): let keyboard-drag claim
+                            // keys first, plain Enter/Space still toggles.
+                            provided.dragHandleProps.onKeyDown?.(e);
+                            if (
+                              !e.defaultPrevented &&
+                              (e.key === "Enter" || e.key === " ")
+                            ) {
                               e.preventDefault();
                               toggleExpand(workspace.slug);
                             }
@@ -209,20 +197,9 @@ export default function ActiveWorkspaces() {
                           }
                         `}
                         >
-                          <div
-                            {...provided.dragHandleProps}
-                            className="cursor-grab opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity duration-150"
-                            aria-label="Drag to reorder workspace"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <DotsSixVertical
-                              size={14}
-                              weight="bold"
-                              className="text-theme-text-secondary"
-                            />
-                          </div>
                           {/* Folder icon is the explicit "open project chat"
-                              affordance - the row body itself only toggles. */}
+                              affordance - the row body itself only toggles
+                              (and drag-reorders on click-hold). */}
                           <Link
                             to={paths.workspace.chat(workspace.slug)}
                             onClick={(e) => e.stopPropagation()}
@@ -367,12 +344,46 @@ export default function ActiveWorkspaces() {
 /**
  * ZCode-style New Task button: creates a fresh empty thread and lands on
  * its (empty) draft page in the target project. Router navigation lets
- * ActiveGenerationGuard intercept mid-generation runs.
+ * ActiveGenerationGuard intercept mid-generation runs. Lives with the
+ * sidebar quick links (not inside the project list) so the action rhythm
+ * stays uniform; targetSlug is optional and self-resolves via route slug,
+ * last-visited, then first project.
  */
-function NewTaskButton({ targetSlug }) {
+export function NewTaskButton({ targetSlug: propSlug }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { slug } = useParams();
   const [loading, setLoading] = useState(false);
+  const [resolvedSlug, setResolvedSlug] = useState(propSlug ?? null);
+
+  useEffect(() => {
+    if (propSlug) {
+      setResolvedSlug(propSlug);
+      return;
+    }
+    Workspace.all()
+      .then((workspaces) => {
+        const list = Workspace.orderWorkspaces(workspaces);
+        if (slug && list.some((w) => w.slug === slug)) {
+          setResolvedSlug(slug);
+          return;
+        }
+        const lastVisited = safeJsonParse(
+          localStorage.getItem(LAST_VISITED_WORKSPACE)
+        );
+        if (
+          lastVisited?.slug &&
+          list.some((w) => w.slug === lastVisited.slug)
+        ) {
+          setResolvedSlug(lastVisited.slug);
+          return;
+        }
+        setResolvedSlug(list[0]?.slug ?? null);
+      })
+      .catch(() => {});
+  }, [propSlug, slug]);
+
+  const targetSlug = propSlug ?? resolvedSlug;
   if (!targetSlug) return null;
 
   const onClick = async () => {
@@ -399,7 +410,7 @@ function NewTaskButton({ targetSlug }) {
       type="button"
       onClick={onClick}
       disabled={loading}
-      className="flex items-center gap-x-2 w-full h-8 pl-2.5 pr-2.5 rounded-lg text-[13px] leading-none text-white light:text-black hover:bg-theme-sidebar-subitem-hover transition-all duration-[200ms] border-none cursor-pointer disabled:opacity-60"
+      className="flex items-center gap-x-2.5 w-full h-[34px] px-2.5 rounded-[8px] text-[13px] leading-none text-white light:text-black hover:bg-theme-sidebar-subitem-hover transition-all duration-[200ms] border-none cursor-pointer disabled:opacity-60"
     >
       {loading ? (
         <CircleNotch

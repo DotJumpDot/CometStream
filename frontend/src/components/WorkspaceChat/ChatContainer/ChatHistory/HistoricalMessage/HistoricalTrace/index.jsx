@@ -67,7 +67,7 @@ function HistoricalTrace({ trace = [] }) {
   }, [events]);
   if (rows.length === 0) return null;
   return (
-    <div className="not-prose w-full max-w-[640px] flex flex-col gap-y-2 mb-2">
+    <div className="not-prose w-full flex flex-col gap-y-2 mb-2">
       {rows.map((row, index) =>
         row.run ? (
           <StatusResponse
@@ -131,7 +131,7 @@ const TraceNote = memo(function TraceNote({ text }) {
   const html = useMemo(() => DOMPurify.sanitize(renderMarkdown(text)), [text]);
   return (
     <span
-      className="flex flex-col gap-y-1 text-white light:text-slate-900 max-w-[640px] break-words"
+      className="flex flex-col gap-y-1 text-white light:text-slate-900 w-full break-words"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

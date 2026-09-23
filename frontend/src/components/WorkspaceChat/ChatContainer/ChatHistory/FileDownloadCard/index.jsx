@@ -158,7 +158,7 @@ function FileDownloadCard({ props }) {
   return (
     <div className="not-prose w-full mt-2 mb-2">
       <div
-        className={`flex items-center gap-x-1 w-full max-w-[640px] rounded-lg px-2 py-1 text-left text-sm transition-colors duration-150 ${
+        className={`flex items-center gap-x-1 w-full rounded-lg px-2 py-1 text-left text-sm transition-colors duration-150 ${
           hasPreview ? "hover:bg-white/[0.05] light:hover:bg-black/[0.05]" : ""
         }`}
       >
@@ -178,7 +178,7 @@ function FileDownloadCard({ props }) {
           <span className="flex h-6 w-6 items-center justify-center rounded-md shrink-0 bg-emerald-500/15 text-emerald-400 light:text-emerald-500">
             <FilePlus className="w-3.5 h-3.5" />
           </span>
-          <span className="min-w-0 flex-1 flex items-baseline gap-x-1.5">
+          <span className="min-w-0 flex items-baseline gap-x-1.5">
             <span className="text-[12px] text-zinc-400 light:text-zinc-500 shrink-0">
               {t("chat_window.file_change.verb_create")}
             </span>
@@ -191,9 +191,9 @@ function FileDownloadCard({ props }) {
               </span>
             )}
           </span>
-          <span className="ml-auto flex items-center gap-x-2 flex-shrink-0 pl-2">
+          <span className="flex items-center gap-x-2 flex-shrink-0">
             {lineCount > 0 && (
-              <span className="font-mono text-xs text-emerald-500 light:text-emerald-600">
+              <span className="font-mono text-[15px] text-emerald-500 light:text-emerald-600">
                 +{lineCount}
               </span>
             )}
@@ -223,7 +223,7 @@ function FileDownloadCard({ props }) {
       </div>
       {hasPreview && (
         <div
-          className={`grid max-w-[640px] transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+          className={`grid w-full transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] ${
             expanded
               ? "grid-rows-[1fr] opacity-100"
               : "grid-rows-[0fr] opacity-0"

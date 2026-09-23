@@ -100,6 +100,22 @@ markdown.renderer.rules.code_inline = (tokens, idx) => {
     const attr = body.replace(/"/g, "&quot;");
     return `<button type="button" class="inline-code cs-file-ref hljs ${activeCodeTheme()}" data-file-ref="${attr}">${body}</button>`;
   }
+  // `METHOD /path` chips split into a flat method accent (per-verb color,
+  // no pill - the chip is already the container) plus an accented remainder,
+  // so GET and POST never share a color. Other chips accent by kind:
+  // runnable commands green, paths orange, leftover values soft yellow.
+  if (!/<[a-zA-Z]/.test(body)) {
+    const method = content.match(
+      /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)(\s+)(\/.*)$/
+    );
+    if (method) {
+      body =
+        `<span class="md-method ${METHOD_CLASS[method[1]]} md-method-flat">${method[1]}</span>` +
+        accentCodeRemainder(method[2] + method[3]);
+    } else {
+      body = accentCodeRemainder(content);
+    }
+  }
   return `<code class="inline-code hljs ${activeCodeTheme()}">${body}</code>`;
 };
 markdown.renderer.rules.link_open = (tokens, idx) => {
@@ -320,8 +336,121 @@ function wrapInlineHtml(text = "") {
     .join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// Prose accents for readability
+//
+// Long model summaries read as a wall of white text, so bare HTTP methods
+// (`POST /api/...`), bare URLs, and “quoted” strings get wrapped in spans
+// here - post-render, on text nodes only (code/pre/link/button contents are
+// skipped) - and styled via .md-method*/.md-url/.md-quote in index.css. Methods
+// require a trailing ` /path` so prose verbs ("you get ...") never match.
+// This runs inside both renderers, so live replies, thoughts and reloaded
+// traces all read the same. Emitted spans carry plain classes, which the
+// DOMPurify step at call sites already preserves (see .inline-code).
+// ---------------------------------------------------------------------------
+
+const METHOD_CLASS = {
+  GET: "md-method-get",
+  POST: "md-method-post",
+  PUT: "md-method-put",
+  PATCH: "md-method-patch",
+  DELETE: "md-method-delete",
+  HEAD: "md-method-head",
+  OPTIONS: "md-method-options",
+};
+const METHOD_REGEX = /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)(?=\s+\/)/g;
+const QUOTE_REGEX = /“([^”<>]+)”/g;
+// Bare URLs in prose (models often leave them unlinked): wrapped in a
+// link-colored span, not an <a> - no navigation, just the affordance.
+const URL_REGEX = /https?:\/\/[^\s<>"']+/g;
+
+/**
+ * Splits trailing punctuation off a URL match so `...(url).` doesn't swallow
+ * the sentence's closing bracket or period into the accent span.
+ * @param {string} url - raw regex match
+ * @returns {[string, string]} [url without tail, tail]
+ */
+function splitUrlTail(url) {
+  const tail = url.match(/[.,;:!?)]+$/);
+  if (!tail) return [url, ""];
+  return [url.slice(0, -tail[0].length), tail[0]];
+}
+
+/**
+ * Wraps a raw URL match in the link-colored accent span, keeping trailing
+ * punctuation outside the span.
+ * @param {string} url - raw regex match
+ * @returns {string} Accent markup.
+ */
+function accentUrl(url) {
+  const [head, tail] = splitUrlTail(url);
+  return `<span class="md-url">${head}</span>${tail}`;
+}
+
+// Code-chip content classes: runnable commands glow green, paths orange,
+// leftover values (attrs, literals, tokens) soft yellow - so a summary full
+// of chips scans by kind instead of washing one color.
+const CODE_CMD_START =
+  /^\s*(python3?|node|npm|yarn|pnpm|bun|pip3?|bash|sh|zsh|uvicorn|gunicorn|docker|podman|pytest|jest|vitest|cat|head|tail|less|more|ls|dir|tree|grep|rg|find|sleep|kill|pkill|mkdir|rm|cp|mv|chmod|chown|touch|git|gh|curl|wget|go|cargo|dotnet|java|ruby|php|perl|pwd)\b/i;
+const CODE_PATH_LIKE = /[/\\]|\.[A-Za-z0-9]{1,5}$/;
+
+/**
+ * Accents a non-URL code-chip remainder by kind. Input is raw text; output
+ * is escaped HTML.
+ * @param {string} text - raw chip remainder
+ * @returns {string} Accent markup.
+ */
+function accentCodeRemainder(text) {
+  if (/^\s*https?:\/\//i.test(text)) {
+    const [head, tail] = splitUrlTail(text);
+    return `<span class="md-url">${HTMLEncode(head)}</span>${HTMLEncode(tail)}`;
+  }
+  if (CODE_CMD_START.test(text))
+    return `<span class="md-code-cmd">${HTMLEncode(text)}</span>`;
+  if (CODE_PATH_LIKE.test(text))
+    return `<span class="md-code-path">${HTMLEncode(text)}</span>`;
+  return `<span class="md-code-val">${HTMLEncode(text)}</span>`;
+}
+// Tags whose inner text must pass through untouched.
+const SKIP_TAGS = new Set(["code", "pre", "a", "button"]);
+
+/**
+ * Wraps bare HTTP methods and curly-quoted strings in already-rendered
+ * markdown HTML with accent spans. Tag-aware: only text segments outside
+ * skip-context tags are touched, so attributes and code contents survive.
+ * @param {string} html - rendered markdown HTML
+ * @returns {string} HTML with accent spans.
+ */
+function enhanceProse(html = "") {
+  const stack = [];
+  return String(html)
+    .split(/(<[^>]*>)/g)
+    .map((part) => {
+      if (part.startsWith("<")) {
+        const open = part.match(/^<([a-zA-Z][a-zA-Z0-9-]*)/);
+        const close = part.match(/^<\/([a-zA-Z][a-zA-Z0-9-]*)/);
+        if (close) {
+          const i = stack.lastIndexOf(close[1].toLowerCase());
+          if (i >= 0) stack.length = i;
+        } else if (open && !part.endsWith("/>")) {
+          stack.push(open[1].toLowerCase());
+        }
+        return part;
+      }
+      if (stack.some((tag) => SKIP_TAGS.has(tag))) return part;
+      return part
+        .replace(
+          METHOD_REGEX,
+          (m) => `<span class="md-method ${METHOD_CLASS[m]}">${m}</span>`
+        )
+        .replace(URL_REGEX, accentUrl)
+        .replace(QUOTE_REGEX, '<span class="md-quote">“$1”</span>');
+    })
+    .join("");
+}
+
 export default function renderMarkdown(text = "") {
-  return markdown.render(wrapInlineHtml(text));
+  return enhanceProse(markdown.render(wrapInlineHtml(text)));
 }
 
 /**
@@ -364,7 +493,7 @@ function normalizeThoughtIndentation(text = "") {
 export function renderThoughtMarkdown(text = "") {
   markdown.disable("code");
   try {
-    return markdown.render(normalizeThoughtIndentation(text));
+    return enhanceProse(markdown.render(normalizeThoughtIndentation(text)));
   } finally {
     markdown.enable("code");
   }

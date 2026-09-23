@@ -100,14 +100,14 @@ class AIbitat {
 
   // In-app setting key mirroring AGENT_MAX_TOOL_CALLS (no ENV edit needed).
   static maxToolCallsSettingKey = "agent_max_tool_calls";
-  static MAX_TOOL_CALLS_HARD_CAP = 200;
+  static MAX_TOOL_CALLS_HARD_CAP = 1000;
 
   /**
    * Resolve the per-response tool-call budget: ENV wins, then the in-app
    * `agent_max_tool_calls` system setting, then the 10-call default.
    * Async because the setting lives in the DB - required lazily (not at
    * module top) to avoid a require cycle with the settings model.
-   * Clamped to [1, 200] so a typo cannot wedge the chat loop forever.
+   * Clamped to [1, MAX_TOOL_CALLS_HARD_CAP] so a typo cannot wedge the chat loop forever.
    * @returns {Promise<number>} Tool-call budget for one agent response.
    */
   static async resolveMaxToolCalls() {

@@ -56,7 +56,7 @@ describe("AIbitat.resolveMaxToolCalls", () => {
   });
 
   it("caps the setting value at the hard cap", async () => {
-    SystemSettings.getValueOrFallback.mockResolvedValue("500");
+    SystemSettings.getValueOrFallback.mockResolvedValue("5000");
     expect(await AIbitat.resolveMaxToolCalls()).toBe(
       AIbitat.MAX_TOOL_CALLS_HARD_CAP
     );

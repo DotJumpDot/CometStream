@@ -192,13 +192,16 @@ body.has-desktop-titlebar {
  * token colors from the theme while making the chip sit inline in prose. */
 code.inline-code.hljs {
   background: rgba(255, 255, 255, 0.07);
-  color: inherit;
+  /* Stone fallback: every chip is classified (cmd/path/val) above, so the
+   * base rarely shows - it only covers what the classifiers skip. */
+  color: #d6d3d1;
   padding: 0.1em 0.35em;
   border-radius: 6px;
   font-size: 0.9em;
 }
 body.light code.inline-code.hljs {
   background: rgba(0, 0, 0, 0.06);
+  color: #57534e;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1223,9 +1226,159 @@ dialog::backdrop {
   margin: 1rem 0;
 }
 
-.markdown > * a {
-  color: var(--theme-button-cta);
+/* Prose breathing room: model summaries are bullet-heavy, and the default
+ * stacked paragraphs/lists read as a wall. Tight gap inside a list, clear
+ * margins around blocks. */
+.markdown p {
+  margin: 0.55rem 0;
+  line-height: 1.7;
+}
+.markdown p:first-child {
+  margin-top: 0;
+}
+.markdown p:last-child {
+  margin-bottom: 0;
+}
+.markdown ul,
+.markdown ol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.65rem 0;
+  padding-left: 1.3rem;
+}
+.markdown li {
+  line-height: 1.65;
+}
+.markdown li > ul,
+.markdown li > ol {
+  margin: 0.4rem 0 0.1rem;
+}
+.markdown li::marker {
+  color: rgba(255, 255, 255, 0.35);
+}
+body.light .markdown li::marker {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+/* HTTP method badges (emitted by enhanceProse in utils/chat/markdown.js):
+ * Swagger-style pills so `POST /api/...` scans at a glance. */
+.md-method {
+  font-weight: 600;
+  font-size: 0.82em;
+  padding: 0.12em 0.45em;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.md-method-get {
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.12);
+}
+.md-method-post {
+  color: #6ee7b7;
+  background: rgba(52, 211, 153, 0.12);
+}
+.md-method-put {
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.12);
+}
+.md-method-patch {
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.12);
+}
+.md-method-delete {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.12);
+}
+.md-method-head,
+.md-method-options {
+  color: #d4d4d8;
+  background: rgba(255, 255, 255, 0.07);
+}
+body.light .md-method-get {
+  color: #0284c7;
+  background: rgba(2, 132, 199, 0.1);
+}
+body.light .md-method-post {
+  color: #059669;
+  background: rgba(5, 150, 105, 0.12);
+}
+body.light .md-method-put {
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.12);
+}
+body.light .md-method-patch {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.12);
+}
+body.light .md-method-delete {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+}
+body.light .md-method-head,
+body.light .md-method-options {
+  color: #52525b;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Code-chip content accents (split in code_inline): runnable commands
+ * green, paths orange, leftover values soft yellow. */
+.md-code-cmd {
+  color: #6ee7b7;
+}
+.md-code-path {
+  color: #fb923c;
+}
+.md-code-val {
+  color: #fef08a;
+}
+body.light .md-code-cmd {
+  color: #047857;
+}
+body.light .md-code-path {
+  color: #ea580c;
+}
+body.light .md-code-val {
+  color: #854d0e;
+}
+
+/* Flat method accent for `METHOD /path` code chips: per-verb color without
+ * the pill (the chip is already the container), so GET and POST never share
+ * a color. */
+.md-method-flat {
+  background: transparent;
+  padding: 0;
+  font-size: 1em;
+}
+
+/* Bare (unlinked) URLs: Write-violet to match real anchors. No navigation,
+ * just the affordance. */
+.md-url {
+  color: #a78bfa;
   text-decoration: underline;
+  text-underline-offset: 2px;
+}
+body.light .md-url {
+  color: #7c3aed;
+}
+
+/* “Quoted” strings in prose (error text, labels): terminal-pink, no italics
+ * — they read as cited values instead of blending into the sentence. */
+.md-quote {
+  color: #f472b6;
+}
+body.light .md-quote {
+  color: #db2777;
+}
+
+.markdown > * a {
+  color: #a78bfa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+body.light .markdown > * a {
+  color: #7c3aed;
 }
 
 @media (max-width: 600px) {

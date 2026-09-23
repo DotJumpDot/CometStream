@@ -163,6 +163,19 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
       "never emit a tool-calling turn with empty visible text"
     );
   });
+
+  it("appends mandatory plan-first protocol for 3+ step tasks to the role", async () => {
+    const workspace = { id: 1, openAiPrompt: null };
+    const definition = await WORKSPACE_AGENT.getDefinition(
+      "openai",
+      workspace,
+      null
+    );
+
+    expect(definition.role).toContain("Plan first for multi-step work");
+    expect(definition.role).toContain("FIRST tool call MUST be todo-write");
+    expect(definition.role).toContain("3 or more steps");
+  });
 });
 
 describe("terminal companion tools", () => {

@@ -5,7 +5,6 @@ import showToast from "@/utils/toast";
 import { relativeTime } from "@/utils/dates";
 import {
   ArrowCounterClockwise,
-  ChatCircleText,
   DotsThreeVertical,
   PencilSimple,
   PushPin,
@@ -17,10 +16,11 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 /**
- * Flat thread row: chat icon + name with the relative time kept visible at a
- * whisper; hovering swaps the timestamp for the kebab so the row never
- * reflows. The kebab and the Ctrl-click mark-for-deletion X share the same
- * overlay slot.
+ * Flat thread row: name text aligned exactly under the workspace folder
+ * name (pl-34 = folder padding + folder icon + gaps, ZCode style), with the
+ * relative time kept visible at a whisper; hovering swaps the timestamp for
+ * the kebab so the row never reflows. The kebab and the Ctrl-click
+ * mark-for-deletion X share the same overlay slot.
  */
 export default function ThreadItem({
   isActive,
@@ -51,7 +51,7 @@ export default function ThreadItem({
   if (thread.deleted) {
     return (
       <div
-        className="w-full flex items-center justify-between h-[30px] pl-[32px] pr-2 rounded-[8px] group/thread"
+        className="w-full flex items-center justify-between h-8 pl-[34px] pr-2 rounded-[8px] group/thread"
         role="listitem"
       >
         <p className="text-[13px] italic text-theme-text-secondary opacity-60">
@@ -82,21 +82,15 @@ export default function ThreadItem({
         data-tooltip-id="workspace-thread-name"
         data-tooltip-content={thread.name}
         aria-current={isActive ? "page" : ""}
-        className={`flex items-center gap-x-2 w-full h-[30px] pl-[32px] pr-2 rounded-[8px] transition-colors duration-150 ${
+        className={`flex items-center gap-x-2 w-full h-8 pl-[34px] pr-2 rounded-[8px] transition-colors duration-150 ${
           isActive
             ? "bg-white/[0.07] light:bg-blue-200/70"
             : "hover:bg-white/[0.04] light:hover:bg-black/[0.04]"
         }`}
       >
-        <ChatCircleText
-          size={14}
-          weight={isActive ? "fill" : "regular"}
-          className={`shrink-0 ${
-            isActive
-              ? "text-cta-button"
-              : "text-theme-text-secondary opacity-70"
-          }`}
-        />
+        {/* No leading icon: the 34px indent (folder padding + folder icon
+            + gaps) lands the name exactly under the folder name, ZCode
+            style. Active state still reads via the highlight. */}
         {thread.pinned && (
           <PushPin
             size={10}

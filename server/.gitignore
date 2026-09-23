@@ -12,6 +12,7 @@ storage/vector-cache/*.json
 storage/exports
 storage/imports
 storage/anythingllm-fs/*
+storage/terminal-tasks.json
 storage/generated-files/*
 storage/generated-images/*
 storage/plugins/agent-skills/*

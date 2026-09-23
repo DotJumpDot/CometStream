@@ -1,15 +1,26 @@
 import { memo, useState } from "react";
 import { CaretDown, Robot, Terminal } from "@phosphor-icons/react";
 import { formatDuration } from "@/utils/numbers";
+import { shortCommand, categorizeLabel } from "@/utils/agentActivity";
 
 // Command-class accents for the category chip: the row reads
-// `Search - $ grep …` so terminal use scans by kind at a glance.
+// `Search - $ grep …` so terminal use scans by kind at a glance. Each
+// class gets its own hue (Search/Fetch share the blue family by design).
 const CATEGORY_STYLES = {
   Search: "text-sky-400 light:text-sky-600",
   Run: "text-emerald-500 light:text-emerald-600",
   Install: "text-amber-400 light:text-amber-600",
   Write: "text-violet-400 light:text-violet-600",
   Fetch: "text-cyan-400 light:text-cyan-600",
+  Kill: "text-red-400 light:text-red-500",
+  Sleep: "text-yellow-300 light:text-yellow-600",
+  Git: "text-blue-400 light:text-blue-500",
+  Test: "text-fuchsia-400 light:text-fuchsia-600",
+  Files: "text-teal-300 light:text-teal-600",
+  Cat: "text-orange-400 light:text-orange-600",
+  List: "text-lime-400 light:text-lime-600",
+  Pwd: "text-stone-400 light:text-stone-500",
+  Bash: "text-indigo-400 light:text-indigo-500",
 };
 
 /**
@@ -30,6 +41,9 @@ function SessionCard({ session = {} }) {
     : session.status === "error"
       ? "bg-red-400"
       : "bg-emerald-400";
+  // Server value wins; historical rows stored chipless fall back to the
+  // client-side classifier so old threads read like new ones.
+  const category = session.category || categorizeLabel(session.label);
   const ms =
     session.endedAt != null && session.startedAt != null
       ? session.endedAt - session.startedAt
@@ -38,7 +52,7 @@ function SessionCard({ session = {} }) {
   // inline to the full command + tail; rows without detail stay static.
   const hasDetail = !!session.detail;
   return (
-    <div className="not-prose w-full max-w-[640px] mt-2 mb-2 overflow-hidden">
+    <div className="not-prose w-full mt-2 mb-2 overflow-hidden">
       <button
         type="button"
         onClick={() => hasDetail && setExpanded((v) => !v)}
@@ -54,25 +68,27 @@ function SessionCard({ session = {} }) {
       >
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
         <KindIcon className="w-3.5 h-3.5 text-zinc-400 light:text-zinc-500 shrink-0" />
-        {session.category && CATEGORY_STYLES[session.category] && (
+        {category && CATEGORY_STYLES[category] && (
           <span className="flex items-baseline gap-x-1 shrink-0">
             <span
-              className={`text-[11px] font-semibold ${CATEGORY_STYLES[session.category]}`}
+              className={`text-[11px] font-semibold ${CATEGORY_STYLES[category]}`}
             >
-              {session.category}
+              {category}
             </span>
             <span className="text-[11px] text-zinc-600 light:text-zinc-400">
               -
             </span>
           </span>
         )}
+        {/* Label sizes to content (capped at 60%) so the duration sits snug
+      against the cut-off text instead of at the far right edge. */}
         <span
-          className={`flex-1 min-w-0 truncate font-mono text-[12px] text-zinc-200 light:text-zinc-800`}
+          className={`min-w-0 max-w-[60%] truncate font-mono text-[12px] text-zinc-500 light:text-zinc-400`}
         >
-          {session.label}
+          {shortCommand(session.label, 90)}
         </span>
         {Number.isFinite(ms) && ms >= 0 && (
-          <span className="text-[10px] text-zinc-500 light:text-zinc-400 tabular-nums shrink-0">
+          <span className="text-[13px] text-pink-400 light:text-pink-600 tabular-nums shrink-0">
             {formatDuration(ms / 1000)}
           </span>
         )}

@@ -62,7 +62,7 @@ export function ChainOfThought({
   return (
     <ChainOfThoughtContext.Provider value={chainOfThoughtContext}>
       <div
-        className={cn("not-prose max-w-prose space-y-1.5 mt-3 mb-3", className)}
+        className={cn("not-prose w-full space-y-1.5 mt-3 mb-3", className)}
         {...props}
       >
         {children}

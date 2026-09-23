@@ -71,7 +71,7 @@ All optional; every one of these can also be set in-app (Admin settings) instead
 | `AGENT_TERMINAL_ROOT=<path>` | `terminal_agent_root` | Working directory every terminal command runs in (defaults to the agent filesystem sandbox). |
 | `AGENT_TERMINAL_TIMEOUT_MS` | — | Per-command wall-clock limit (default 120000, clamped 5s–600s). |
 | `AGENT_TERMINAL_SHELL` | — | Shell override (defaults to Git Bash on Windows, `/bin/bash` elsewhere). |
-| `AGENT_MAX_TOOL_CALLS` | `agent_max_tool_calls` | Tool-call budget per agent response (default 10, hard cap 200) — raise it for long multi-step runs. |
+| `AGENT_MAX_TOOL_CALLS` | `agent_max_tool_calls` | Tool-call budget per agent response (default 10, hard cap 1000) — raise it for long multi-step runs. |
 | `AGENT_MCP_TOOL_TIMEOUT_MS` | `mcp_tool_timeout_ms` | Per-call timeout for MCP tool executions (default 120000, clamped 5s–600s). A hung MCP server can no longer wedge the agent turn. |
 
 Terminal commands also refuse a denylist of host-wrecking commands (shutdown, format, diskpart, `dd` to raw devices, fork bombs, recursive deletes of OS roots, …) and ride the normal per-tool approval flow — except provably read-only commands (`ls`, `git status`, `cat`…), which auto-approve since they cannot mutate anything. Enabling the terminal skill also enables the background task tools (`terminal-task-start` / `task-output` / `task-stop`) so long builds and dev servers can run without blocking the turn.

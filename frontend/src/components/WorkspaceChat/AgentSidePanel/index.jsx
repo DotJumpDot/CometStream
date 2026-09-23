@@ -18,8 +18,15 @@ import {
 } from "@phosphor-icons/react";
 import {
   getAgentActivity,
+  groupSessions,
+  groupTrajectory,
   resetAgentActivity,
+  rollupSessionGroup,
+  rollupTrajectoryGroup,
+  shortCommand,
   subscribeAgentActivity,
+  TRAJECTORY_WINDOW,
+  windowTrajectory,
 } from "@/utils/agentActivity";
 import {
   getLatestSources,
@@ -46,13 +53,45 @@ import FileViewer from "./FileViewer";
 export const AGENT_PANEL_OPEN_EVENT = "agent-side-panel-open";
 
 /**
+ * Window event that toggles the side panel (e.g. from the chat header
+ * button). Opening resets to the panel home; closing leaves state alone.
+ * @type {string}
+ */
+export const AGENT_PANEL_TOGGLE_EVENT = "agent-side-panel-toggle";
+
+/**
+ * Chat header button for the agent side panel: same 35px circle metrics as
+ * the chat settings button it sits next to. Dispatches a toggle - the
+ * panel owns its open state, the header stays stateless.
+ */
+export function AgentPanelButton() {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        window.dispatchEvent(new CustomEvent(AGENT_PANEL_TOGGLE_EVENT))
+      }
+      title={t("agent_panel.open")}
+      aria-label={t("agent_panel.open")}
+      className="group border-none cursor-pointer hidden md:flex items-center justify-center w-[35px] h-[35px] rounded-full transition-all hover:bg-zinc-700 light:hover:bg-slate-200"
+    >
+      <SidebarSimple
+        size={18}
+        className="text-zinc-300 light:text-slate-600 group-hover:text-white light:group-hover:text-slate-800"
+      />
+    </button>
+  );
+}
+
+/**
  * Right-docked agent side panel (ZCode-style): one merged view of the
  * session's work - Changes on top (aggregated file changes with
  * click-to-expand diffs), Plan below (the todo-write stepper), Sessions
  * (terminal executions + subagent runs with expandable output), and Sources
  * (the chat's latest citations). Hidden by default; opens itself the first
- * time an agent event lands, and can be toggled with the edge button or the
- * composer toolbar buttons.
+ * time an agent event lands, and can be toggled with the chat header
+ * button or opened from the composer toolbar buttons.
  *
  * Uses the same ChatSidebar animation wrapper as the Sources panel so both
  * right-side panels share the identical open/close motion. Session-scoped
@@ -72,6 +111,12 @@ export default function AgentSidePanel() {
   // panel's normal Changes/Plan/Sources sections.
   const [viewerPath, setViewerPath] = useState(null);
   const sessionsRef = useRef(null);
+  // Ref mirror so the toggle handler always reads the current state
+  // (assigned in an effect - refs must not be touched during render).
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
 
   // Layout effect on purpose: the sources store is populated by the new
   // chat's message actions in passive effects, which run after layout
@@ -106,7 +151,20 @@ export default function AgentSidePanel() {
       }
     };
     window.addEventListener(AGENT_PANEL_OPEN_EVENT, onOpen);
-    return () => window.removeEventListener(AGENT_PANEL_OPEN_EVENT, onOpen);
+    const onToggle = () => {
+      // Opening resets to the panel home; closing keeps state for next time.
+      if (!openRef.current) {
+        setViewerPath(null);
+        setOpen(true);
+      } else {
+        setOpen(false);
+      }
+    };
+    window.addEventListener(AGENT_PANEL_TOGGLE_EVENT, onToggle);
+    return () => {
+      window.removeEventListener(AGENT_PANEL_OPEN_EVENT, onOpen);
+      window.removeEventListener(AGENT_PANEL_TOGGLE_EVENT, onToggle);
+    };
   }, []);
 
   // File references render inside markdown HTML (dangerouslySetInnerHTML),
@@ -145,29 +203,19 @@ export default function AgentSidePanel() {
   const combinedSources = useMemo(() => combineLikeSources(sources), [sources]);
 
   return (
-    // `contents` on md+ keeps the edge button's absolute positioning and the
-    // ChatSidebar flex item laid out by the app-level row, while hiding the
-    // whole panel below the md breakpoint.
+    // `contents` on md+ keeps the ChatSidebar flex item laid out by the
+    // app-level row; the whole panel (open affordance included) hides below
+    // the md breakpoint, where the header button hides too.
     <div className="hidden md:contents">
-      {!open && (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          title={t("agent_panel.open")}
-          aria-label={t("agent_panel.open")}
-          className="absolute top-1/2 -translate-y-1/2 right-0 z-30 flex items-center gap-x-2 rounded-l-lg border border-r-0 border-white/10 light:border-black/10 bg-zinc-900 light:bg-white px-2 py-3 text-zinc-400 light:text-zinc-500 hover:text-white light:hover:text-zinc-900 hover:bg-zinc-800 light:hover:bg-slate-100"
-        >
-          <SidebarSimple className="w-4 h-4" />
-          <span className="text-xs font-medium [writing-mode:vertical-rl] rotate-180">
-            {t("agent_panel.title")}
-          </span>
-        </button>
-      )}
-      {/* 382 = 350px card + 16px gaps on both sides, so the floating card
-          clears the screen edge the same way the chat card does. */}
+      {/* Card fills the 382px wrapper (374 + 0 + 8): it docks 16px off
+          the chat (same rhythm as the screen margins) and the content
+          gains the freed width for diffs/output. The top offset is
+          relative positioning (not mt-4): child margins collapse through
+          the animation wrapper above, which would pin the card to the
+          viewport top and leave it 16px short at the bottom. */}
       <ChatSidebar isOpen={open} width={382}>
         <aside
-          className="mt-4 mx-4 w-[350px] rounded-[16px] bg-zinc-900 light:bg-white light:border-2 light:border-slate-300 flex flex-col overflow-hidden"
+          className="relative top-4 ml-0 mr-2 w-[374px] rounded-[16px] bg-zinc-900 light:bg-white light:border-2 light:border-slate-300 flex flex-col overflow-hidden"
           style={{ height: "calc(100% - 32px)" }}
         >
           {viewerPath ? (
@@ -425,6 +473,9 @@ function PlanTab({ items, done }) {
  * Sessions tab: terminal executions + subagent runs, newest first. Each row
  * shows live status; clicking expands the full command / output / result so
  * the panel doubles as the session inspector. Filter chips narrow by kind.
+ * Consecutive runs of the same command fold into one "N similar runs"
+ * group row (marathon runs collapse from 50 rows to a handful); expanding
+ * a group reveals its members with the same row UI.
  * @param {Object} props
  * @param {Array<{id: number|string, kind: string, label: string, status: string, detail: string, startedAt: number, endedAt: number|null}>} props.sessions
  */
@@ -432,6 +483,7 @@ function SessionsTab({ sessions }) {
   const { t } = useTranslation();
   const [filter, setFilter] = useState("all");
   const [expandedId, setExpandedId] = useState(null);
+  const [expandedGroup, setExpandedGroup] = useState(null);
 
   if (sessions.length === 0)
     return (
@@ -442,6 +494,7 @@ function SessionsTab({ sessions }) {
 
   const visible =
     filter === "all" ? sessions : sessions.filter((s) => s.kind === filter);
+  const groups = groupSessions(visible);
 
   return (
     <div className="mt-1">
@@ -466,49 +519,74 @@ function SessionsTab({ sessions }) {
         ))}
       </div>
       <div className="flex flex-col gap-y-1">
-        {visible.map((session) => {
-          const expanded = expandedId === session.id;
-          const KindIcon = session.kind === "subagent" ? Robot : Terminal;
+        {groups.map((group) => {
+          if (group.members.length === 1) {
+            const session = group.members[0];
+            return (
+              <SessionRow
+                key={session.id}
+                session={session}
+                expanded={expandedId === session.id}
+                onToggle={() =>
+                  setExpandedId(expandedId === session.id ? null : session.id)
+                }
+              />
+            );
+          }
+          const rollup = rollupSessionGroup(group);
+          const open = expandedGroup === group.key;
           const dot =
-            session.status === "running"
+            rollup.status === "running"
               ? "bg-sky-400 animate-pulse"
-              : session.status === "error"
+              : rollup.status === "error"
                 ? "bg-red-400"
                 : "bg-emerald-400";
-          const ms =
-            session.endedAt != null && session.startedAt != null
-              ? session.endedAt - session.startedAt
-              : null;
+          const KindIcon = group.kind === "subagent" ? Robot : Terminal;
           return (
             <div
-              key={session.id}
-              className="rounded-lg bg-white/[0.04] light:bg-black/[0.04] overflow-hidden"
+              key={group.key}
+              // Group headers carry a sky tint so a folded "N similar runs"
+              // row never reads as a plain singleton row.
+              className="rounded-lg bg-sky-500/[0.08] light:bg-sky-600/[0.08] overflow-hidden"
             >
               <button
                 type="button"
-                onClick={() => setExpandedId(expanded ? null : session.id)}
-                title={session.label}
+                onClick={() => setExpandedGroup(open ? null : group.key)}
+                title={group.label}
                 className="flex items-center gap-x-2 w-full rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors border-none cursor-pointer"
               >
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
                 <KindIcon className="w-3.5 h-3.5 text-zinc-400 light:text-zinc-500 shrink-0" />
-                <span
-                  className={`flex-1 min-w-0 truncate text-[12px] text-zinc-200 light:text-zinc-800 ${
-                    session.kind === "terminal" ? "font-mono" : ""
-                  }`}
-                >
-                  {session.label}
+                <span className="flex-1 min-w-0 truncate text-[12px] text-zinc-200 light:text-zinc-800 font-mono">
+                  {shortCommand(group.label)}
                 </span>
-                {Number.isFinite(ms) && ms >= 0 && (
+                <span className="rounded-full bg-sky-500/15 light:bg-sky-600/15 px-1.5 py-px text-[10px] font-medium text-sky-300 light:text-sky-700 tabular-nums shrink-0">
+                  {t("agent_panel.similar_runs", { count: rollup.count })}
+                </span>
+                {rollup.ms != null && (
                   <span className="text-[10px] text-zinc-500 light:text-zinc-400 tabular-nums shrink-0">
-                    {ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`}
+                    {rollup.ms < 1000
+                      ? `${rollup.ms}ms`
+                      : `${(rollup.ms / 1000).toFixed(1)}s`}
                   </span>
                 )}
               </button>
-              {expanded && !!session.detail && (
-                <pre className="mx-2 mb-2 p-2 rounded-md bg-zinc-950/70 light:bg-slate-100 text-[11px] leading-relaxed text-zinc-300 light:text-zinc-700 font-mono whitespace-pre-wrap break-words max-h-[260px] overflow-y-auto">
-                  {session.detail}
-                </pre>
+              {open && (
+                <div className="px-1 pb-1 flex flex-col gap-y-1">
+                  {group.members.map((session) => (
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      nested={true}
+                      expanded={expandedId === session.id}
+                      onToggle={() =>
+                        setExpandedId(
+                          expandedId === session.id ? null : session.id
+                        )
+                      }
+                    />
+                  ))}
+                </div>
               )}
             </div>
           );
@@ -524,15 +602,79 @@ function SessionsTab({ sessions }) {
 }
 
 /**
+ * One session row: status dot, kind icon, truncated label, duration, and
+ * an expandable output tail. Shared by singleton rows and group members;
+ * members render on a darker inset surface so they read as "inside" the
+ * tinted group header.
+ */
+function SessionRow({ session, expanded, onToggle, nested = false }) {
+  const KindIcon = session.kind === "subagent" ? Robot : Terminal;
+  const dot =
+    session.status === "running"
+      ? "bg-sky-400 animate-pulse"
+      : session.status === "error"
+        ? "bg-red-400"
+        : "bg-emerald-400";
+  const ms =
+    session.endedAt != null && session.startedAt != null
+      ? session.endedAt - session.startedAt
+      : null;
+  return (
+    <div
+      className={`rounded-lg overflow-hidden ${
+        // Nested members sit on a darker inset surface so they read as
+        // "inside" the tinted group header.
+        nested
+          ? "bg-zinc-950/50 light:bg-slate-100"
+          : "bg-white/[0.04] light:bg-black/[0.04]"
+      }`}
+    >
+      {" "}
+      <button
+        type="button"
+        onClick={onToggle}
+        title={session.label}
+        className="flex items-center gap-x-2 w-full rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors border-none cursor-pointer"
+      >
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
+        <KindIcon className="w-3.5 h-3.5 text-zinc-400 light:text-zinc-500 shrink-0" />
+        <span
+          className={`flex-1 min-w-0 truncate text-[12px] text-zinc-200 light:text-zinc-800 ${
+            session.kind === "terminal" ? "font-mono" : ""
+          }`}
+        >
+          {shortCommand(session.label)}
+        </span>
+        {Number.isFinite(ms) && ms >= 0 && (
+          <span className="text-[10px] text-zinc-500 light:text-zinc-400 tabular-nums shrink-0">
+            {ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`}
+          </span>
+        )}
+      </button>
+      {expanded && !!session.detail && (
+        <pre className="mx-2 mb-2 p-2 rounded-md bg-zinc-950/70 light:bg-slate-100 text-[11px] leading-relaxed text-zinc-300 light:text-zinc-700 font-mono whitespace-pre-wrap break-words max-h-[260px] overflow-y-auto">
+          {session.detail}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/**
  * Trajectory tab: one row per LLM iteration (per-turn debug view for local
  * models) - what the turn sent (message deltas), what it requested (tool
  * calls with arg previews), and usage. Expands inline. Session-only.
+ * Consecutive iterations with the same model and tool set fold into one
+ * "#a–#b" range group (marathon runs collapse from 100 rows to a handful);
+ * groups beyond the recent window hide behind a "show all" expander.
  * @param {Object} props
  * @param {Array} props.records - trajectoryEvent payloads in order
  */
 function TrajectoryTab({ records }) {
   const { t } = useTranslation();
   const [expandedSeq, setExpandedSeq] = useState(null);
+  const [expandedGroup, setExpandedGroup] = useState(null);
+  const [showAll, setShowAll] = useState(false);
 
   if (records.length === 0)
     return (
@@ -541,40 +683,70 @@ function TrajectoryTab({ records }) {
       </p>
     );
 
+  const groups = groupTrajectory(records);
+  const visible = windowTrajectory(groups, showAll);
+
   return (
     <div className="flex flex-col gap-y-1 mt-1">
-      {records.map((record) => {
-        const expanded = expandedSeq === record.seq;
-        const tools = record.requestedTools || [];
-        const deltas = record.newMessages || [];
-        const usage = record.usage || {};
+      {groups.length > TRAJECTORY_WINDOW && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="border-none cursor-pointer self-start rounded-full px-2 py-0.5 text-[11px] font-medium text-zinc-400 light:text-zinc-500 hover:text-white light:hover:text-zinc-900 hover:bg-white/[0.06] light:hover:bg-black/[0.05] transition-colors"
+        >
+          {showAll
+            ? t("agent_panel.show_recent")
+            : t("agent_panel.show_all", { count: groups.length })}
+        </button>
+      )}
+      {visible.map((group) => {
+        if (group.members.length === 1) {
+          const record = group.members[0];
+          return (
+            <TrajectoryRow
+              key={record.seq}
+              record={record}
+              expanded={expandedSeq === record.seq}
+              onToggle={() =>
+                setExpandedSeq(expandedSeq === record.seq ? null : record.seq)
+              }
+            />
+          );
+        }
+        const rollup = rollupTrajectoryGroup(group);
+        const open = expandedGroup === group.key;
         const usageText = [
-          usage.prompt_tokens != null ? `${usage.prompt_tokens}p` : null,
-          usage.completion_tokens != null
-            ? `${usage.completion_tokens}c`
-            : null,
+          rollup.prompt > 0 ? `${rollup.prompt}p` : null,
+          rollup.completion > 0 ? `${rollup.completion}c` : null,
         ]
           .filter(Boolean)
           .join(" ");
         return (
           <div
-            key={record.seq}
-            className="rounded-lg bg-white/[0.04] light:bg-black/[0.04] overflow-hidden"
+            key={group.key}
+            // Range groups carry a violet tint so a folded "#a–#b" row
+            // never reads as a plain singleton iteration row.
+            className="rounded-lg bg-violet-500/[0.08] light:bg-violet-600/[0.08] overflow-hidden"
           >
             <button
               type="button"
-              onClick={() => setExpandedSeq(expanded ? null : record.seq)}
+              onClick={() => setExpandedGroup(open ? null : group.key)}
               className="flex items-center gap-x-2 w-full rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors border-none cursor-pointer"
             >
               <span className="text-[10px] font-mono text-zinc-500 light:text-zinc-400 tabular-nums shrink-0">
-                #{record.seq}
+                #{group.from}–{group.to}
               </span>
               <span className="flex-1 min-w-0 truncate text-[12px] text-zinc-200 light:text-zinc-800 font-mono">
-                {record.model || record.provider || "llm"}
+                {group.model}
               </span>
-              {tools.length > 0 && (
+              <span className="rounded-full bg-violet-500/15 light:bg-violet-600/15 px-1.5 py-px text-[10px] font-medium text-violet-300 light:text-violet-700 tabular-nums shrink-0">
+                {t("agent_panel.similar_iterations", {
+                  count: rollup.count,
+                })}
+              </span>
+              {rollup.tools > 0 && (
                 <span className="text-[10px] text-amber-400 light:text-amber-600 tabular-nums shrink-0">
-                  {tools.length} tool{tools.length === 1 ? "" : "s"}
+                  {rollup.tools} tool{rollup.tools === 1 ? "" : "s"}
                 </span>
               )}
               {usageText && (
@@ -583,57 +755,125 @@ function TrajectoryTab({ records }) {
                 </span>
               )}
             </button>
-            {expanded && (
-              <div className="mx-2 mb-2 p-2 rounded-md bg-zinc-950/70 light:bg-slate-100 max-h-[260px] overflow-y-auto">
-                {record.error && (
-                  <p className="text-[11px] text-red-400 light:text-red-500 font-mono whitespace-pre-wrap break-words mb-2">
-                    {record.error}
-                  </p>
-                )}
-                {tools.length > 0 && (
-                  <div className="mb-2">
-                    <p className="text-[10px] uppercase tracking-wide text-zinc-500 light:text-zinc-400 mb-1">
-                      {t("agent_panel.trajectory_tools")}
-                    </p>
-                    {tools.map((tool, i) => (
-                      <div key={i} className="mb-1 last:mb-0">
-                        <p className="text-[11px] font-mono text-sky-300 light:text-sky-700 break-words">
-                          {tool.name}
-                        </p>
-                        {!!tool.args && (
-                          <pre className="text-[11px] font-mono text-zinc-300 light:text-zinc-700 whitespace-pre-wrap break-words">
-                            {tool.args}
-                          </pre>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {deltas.length > 0 && (
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wide text-zinc-500 light:text-zinc-400 mb-1">
-                      {t("agent_panel.trajectory_messages", {
-                        count: deltas.length,
-                      })}
-                    </p>
-                    {deltas.map((msg, i) => (
-                      <p
-                        key={i}
-                        className="text-[11px] font-mono text-zinc-400 light:text-zinc-600 whitespace-pre-wrap break-words mb-1 last:mb-0"
-                      >
-                        <span className="text-zinc-500 light:text-zinc-500">
-                          [{msg.role}]
-                        </span>{" "}
-                        {msg.preview}
-                      </p>
-                    ))}
-                  </div>
-                )}
+            {open && (
+              <div className="px-1 pb-1 flex flex-col gap-y-1">
+                {group.members.map((record) => (
+                  <TrajectoryRow
+                    key={record.seq}
+                    record={record}
+                    nested={true}
+                    expanded={expandedSeq === record.seq}
+                    onToggle={() =>
+                      setExpandedSeq(
+                        expandedSeq === record.seq ? null : record.seq
+                      )
+                    }
+                  />
+                ))}
               </div>
             )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * One trajectory iteration row: seq, model, tool count, usage, and an
+ * expandable tools/messages detail. Shared by singleton rows and group
+ * members; members render on a darker inset surface so they read as
+ * "inside" the tinted range header.
+ */
+function TrajectoryRow({ record, expanded, onToggle, nested = false }) {
+  const { t } = useTranslation();
+  const tools = record.requestedTools || [];
+  const deltas = record.newMessages || [];
+  const usage = record.usage || {};
+  const usageText = [
+    usage.prompt_tokens != null ? `${usage.prompt_tokens}p` : null,
+    usage.completion_tokens != null ? `${usage.completion_tokens}c` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <div
+      className={`rounded-lg overflow-hidden ${
+        nested
+          ? "bg-zinc-950/50 light:bg-slate-100"
+          : "bg-white/[0.04] light:bg-black/[0.04]"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center gap-x-2 w-full rounded-lg px-2 py-1.5 text-left hover:bg-white/[0.05] light:hover:bg-black/[0.05] transition-colors border-none cursor-pointer"
+      >
+        <span className="text-[10px] font-mono text-zinc-500 light:text-zinc-400 tabular-nums shrink-0">
+          #{record.seq}
+        </span>
+        <span className="flex-1 min-w-0 truncate text-[12px] text-zinc-200 light:text-zinc-800 font-mono">
+          {record.model || record.provider || "llm"}
+        </span>
+        {tools.length > 0 && (
+          <span className="text-[10px] text-amber-400 light:text-amber-600 tabular-nums shrink-0">
+            {tools.length} tool{tools.length === 1 ? "" : "s"}
+          </span>
+        )}
+        {usageText && (
+          <span className="text-[10px] text-zinc-500 light:text-zinc-400 tabular-nums shrink-0">
+            {usageText}
+          </span>
+        )}
+      </button>
+      {expanded && (
+        <div className="mx-2 mb-2 p-2 rounded-md bg-zinc-950/70 light:bg-slate-100 max-h-[260px] overflow-y-auto">
+          {record.error && (
+            <p className="text-[11px] text-red-400 light:text-red-500 font-mono whitespace-pre-wrap break-words mb-2">
+              {record.error}
+            </p>
+          )}
+          {tools.length > 0 && (
+            <div className="mb-2">
+              <p className="text-[10px] uppercase tracking-wide text-zinc-500 light:text-zinc-400 mb-1">
+                {t("agent_panel.trajectory_tools")}
+              </p>
+              {tools.map((tool, i) => (
+                <div key={i} className="mb-1 last:mb-0">
+                  <p className="text-[11px] font-mono text-sky-300 light:text-sky-700 break-words">
+                    {tool.name}
+                  </p>
+                  {!!tool.args && (
+                    <pre className="text-[11px] font-mono text-zinc-300 light:text-zinc-700 whitespace-pre-wrap break-words">
+                      {tool.args}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {deltas.length > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-zinc-500 light:text-zinc-400 mb-1">
+                {t("agent_panel.trajectory_messages", {
+                  count: deltas.length,
+                })}
+              </p>
+              {deltas.map((msg, i) => (
+                <p
+                  key={i}
+                  className="text-[11px] font-mono text-zinc-400 light:text-zinc-600 whitespace-pre-wrap break-words mb-1 last:mb-0"
+                >
+                  <span className="text-zinc-500 light:text-zinc-500">
+                    [{msg.role}]
+                  </span>{" "}
+                  {msg.preview}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

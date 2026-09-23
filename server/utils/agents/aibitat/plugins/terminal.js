@@ -535,38 +535,81 @@ function summarizeCommand(command, maxChars = SUMMARY_MAX_CHARS) {
 
 /**
  * Classifies a shell command for the session row chip so the chat reads at
- * a glance (`Search - $ grep …` vs a bare `$ …`). First match wins in
- * specificity order: heredoc/redirect writes before anything they chain
- * with, then installs, searches, fetches, and plain runs.
+ * a glance (`Search - $ grep …` vs a bare `$ …`). Only the first pipeline
+ * stage is classified (a trailing `| head` is a consumer, not the class);
+ * first match wins in specificity order: heredoc/redirect writes before
+ * anything they chain with, then installs, searches, fetches,
+ * destructive/process control (kill/sleep), VCS, tests, file ops, viewers,
+ * listers, and plain runs.
  * @param {string} command - Raw shell command line.
- * @returns {"Search"|"Run"|"Install"|"Write"|"Fetch"|null} Category or null
+ * @returns {"Search"|"Run"|"Install"|"Write"|"Fetch"|"Kill"|"Sleep"|"Git"|"Test"|"Files"|"Cat"|"List"|"Pwd"|"Bash"|null} Category or null
  * for anything unrecognized (the row renders chipless).
  */
 function categorizeCommand(command) {
   const cmd = String(command ?? "");
   if (!cmd.trim()) return null;
+  // Classify the FIRST pipeline stage: a trailing `| head`/`| tail` is a
+  // pager consumer, not the command's class (`node server.js | head` is a
+  // Run, not a Cat). Only `|` is stripped - `;`/`&&` chains keep their
+  // leftmost-command precedence naturally since the first-match order
+  // already prefers the leading class.
+  const stage = cmd.split("|")[0];
   // Heredoc file writes (`cat > file << 'EOF'`) and in-place edits.
-  if (/<<-?\s*['"]?[A-Za-z_]/.test(cmd)) return "Write";
-  if (/\bsed\b[^\n]*\s-i\b/.test(cmd)) return "Write";
+  if (/<<-?\s*['"]?[A-Za-z_]/.test(stage)) return "Write";
+  if (/\bsed\b[^\n]*\s-i\b/.test(stage)) return "Write";
   if (
     /(^|[|;&\s])\s*(grep|rg|find|findstr|locate|where|which|Select-String)\b/i.test(
-      cmd
+      stage
     )
   )
     return "Search";
   if (
-    /\b((npm|yarn|pnpm|bun)\s+(install|i|add|dlx)|pip3?\s+install)\b/i.test(cmd)
+    /\b((npm|yarn|pnpm|bun)\s+(install|i|add|dlx)|pip3?\s+install)\b/i.test(
+      stage
+    )
   )
     return "Install";
-  if (/(^|[|;&\s])\s*(curl|wget|Invoke-WebRequest|\birm\b)\b/i.test(cmd))
+  if (/(^|[|;&\s])\s*(curl|wget|Invoke-WebRequest|\birm\b)\b/i.test(stage))
     return "Fetch";
+  if (/(^|[|;&\s])\s*(kill|pkill|killall|taskkill|Stop-Process)\b/i.test(stage))
+    return "Kill";
+  if (/(^|[|;&\s])\s*(sleep|timeout|Start-Sleep|\bwait\b)\b/i.test(stage))
+    return "Sleep";
+  if (/(^|[|;&\s])\s*(git|gh)\b/i.test(stage)) return "Git";
+  if (
+    /(^|[|;&\s])\s*(pytest|jest|vitest|phpunit|rspec|ctest|go\s+test|run_tests)\b/i.test(
+      stage
+    )
+  )
+    return "Test";
+  if (
+    /(^|[|;&\s])\s*(cp|mv|rm|mkdir|rmdir|touch|chmod|chown|ln|del|erase|copy|xcopy|move|robocopy|ren|rename)\b/i.test(
+      stage
+    )
+  )
+    return "Files";
   // Shell-redirection writes (`> file`, `>> file`) - but not stderr
   // plumbing (`2>`, `&>`, `>/dev/null`) which accompanies any command.
-  if (/(?<![\d&])>\s*(?!\/dev\/null\b|>)[\w.~/\\-][^|;&\n]*/.test(cmd))
+  if (/(?<![\d&])>\s*(?!\/dev\/null\b|>)[\w.~/\\-][^|;&\n]*/.test(stage))
     return "Write";
   if (
+    /(^|[|;&\s])\s*(cat|head|tail|less|more|Get-Content|\bbat\b|\btype\b)\b/i.test(
+      stage
+    )
+  )
+    return "Cat";
+  if (/(^|[|;&\s])\s*(ls|dir|tree|vdir|exa|eza|\bll\b|\bla\b)\b/i.test(stage))
+    return "List";
+  if (/(^|[|;&\s])\s*pwd\b/i.test(stage)) return "Pwd";
+  if (
+    /(^|[|;&\s])\s*(bash|zsh|fish|pwsh|powershell|\bsh\b|\bcmd\b)\b/i.test(
+      stage
+    )
+  )
+    return "Bash";
+  if (
     /(^|[|;&\s])\s*(node|python3?|npm\s+(run|start)|yarn\s+(run|start|dev)|go\s+run|dotnet\s+run|uvicorn|gunicorn)\b/i.test(
-      cmd
+      stage
     )
   )
     return "Run";

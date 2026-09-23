@@ -112,6 +112,13 @@ const WORKSPACE_AGENT = {
     role +=
       "\n\nVisible progress notes (mandatory on every tool-calling turn): your hidden reasoning is never shown to the user. Every response that calls tools MUST start with 1-2 plain sentences saying what you are about to do and why - never emit a tool-calling turn with empty visible text. When tool results arrive, your next response MUST start with 1-2 plain sentences saying what happened, including any error, surprise, or problem you hit and what you will try next. No bullet lists, no headers, no code in these notes - just plain sentences. The final summary covers the details; these notes are the live trail the user watches.";
 
+    // Plan-first for multi-step work: local models happily grind through 100+
+    // turns with no visible plan (measured on long runs), so this is a
+    // first-call rule, not a suggestion. todo-write is always in the function
+    // list (toolReranker exemption) and drives the side-panel Plan tab.
+    role +=
+      "\n\nPlan first for multi-step work (mandatory): if the user's task needs 3 or more steps (file edits, commands, checks, or verifications), your FIRST tool call MUST be todo-write with the complete step list - exactly one item in_progress, the rest pending - before any other tool runs. Re-send the full list after each step (mark done, advance in_progress). The list is the checklist the user watches in the side panel. Tasks of 1-2 steps are exempt - just do them.";
+
     return {
       role,
       functions: [

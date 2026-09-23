@@ -1,5 +1,6 @@
 const {
   sanitizeTodoItems,
+  agentTodo,
 } = require("../../../utils/agents/aibitat/plugins/agent-todo.js");
 
 describe("todo-write skill", () => {
@@ -47,6 +48,29 @@ describe("todo-write skill", () => {
         status: "pending",
       }));
       expect(sanitizeTodoItems(many).items).toHaveLength(30);
+    });
+  });
+
+  describe("tool description", () => {
+    // The description is the model's instruction sheet: the 3+-step
+    // first-call rule must survive refactors or multi-step runs silently
+    // lose their plan (measured on long runs).
+    function toolDefinition() {
+      const captured = [];
+      agentTodo.plugin().setup({ function: (def) => captured.push(def) });
+      return captured[0];
+    }
+
+    it("registers as todo-write with an items schema", () => {
+      const def = toolDefinition();
+      expect(def.name).toBe("todo-write");
+      expect(def.parameters.required).toContain("items");
+    });
+
+    it("mandates first-call use for 3+ step tasks", () => {
+      const def = toolDefinition();
+      expect(def.description).toMatch(/3 or more steps/i);
+      expect(def.description).toMatch(/MUST call this tool FIRST/i);
     });
   });
 });

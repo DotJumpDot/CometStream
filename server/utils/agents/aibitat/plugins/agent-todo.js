@@ -51,6 +51,8 @@ const agentTodo = {
           super: aibitat,
           name: "todo-write",
           description:
+            "For any task that needs 3 or more steps, you MUST call this tool FIRST " +
+            "with the full step list before doing any other work - for 1-2 step tasks you may skip it. " +
             "Create or update the session plan shown to the user in the side panel. " +
             "Call this BEFORE starting a multi-step task with the full list of steps, " +
             "and again after completing each step to mark it done and start the next. " +

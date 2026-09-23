@@ -249,16 +249,16 @@ function NewThreadButton({ workspace, onNewThread }) {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-x-2 h-[30px] pl-[32px] pr-2 rounded-[8px] border-none text-zinc-400 light:text-slate-500 hover:text-zinc-200 light:hover:text-slate-800 hover:bg-white/[0.04] light:hover:bg-black/[0.04] transition-colors duration-150 group/new-thread"
+      className="w-full flex items-center gap-x-2 h-8 pl-2.5 pr-2 rounded-[8px] border-none text-zinc-400 light:text-slate-500 hover:text-zinc-200 light:hover:text-slate-800 hover:bg-white/[0.04] light:hover:bg-black/[0.04] transition-colors duration-150 group/new-thread"
     >
       {loading ? (
         <CircleNotch
           weight="bold"
-          size={14}
+          size={16}
           className="shrink-0 animate-spin"
         />
       ) : (
-        <Plus weight="bold" size={14} className="shrink-0" />
+        <Plus weight="bold" size={16} className="shrink-0" />
       )}
       <p className="text-left text-[13px]">
         {loading ? t("sidebar.starting_thread") : t("sidebar.new_thread")}
@@ -275,11 +275,11 @@ function DeleteAllThreadButton({ ctrlPressed, threads, onDelete }) {
     <button
       type="button"
       onClick={onDelete}
-      className="w-full flex items-center gap-x-2 h-[30px] pl-[32px] pr-2 rounded-[8px] border-none hover:bg-red-400/15 transition-colors duration-150 group/delete-all"
+      className="w-full flex items-center gap-x-2 h-8 pl-2.5 pr-2 rounded-[8px] border-none hover:bg-red-400/15 transition-colors duration-150 group/delete-all"
     >
       <Trash
         weight="bold"
-        size={14}
+        size={16}
         className="shrink-0 text-zinc-400 group-hover/delete-all:text-red-400 transition-colors"
       />
       <p className="text-left text-[13px] text-zinc-400 light:text-theme-text-secondary group-hover/delete-all:text-red-400 transition-colors">

@@ -3,7 +3,7 @@ import { List, Plus, Plugs, PushPin } from "@phosphor-icons/react";
 import NewWorkspaceModal, {
   useNewWorkspaceModal,
 } from "../Modals/NewWorkspace";
-import ActiveWorkspaces from "./ActiveWorkspaces";
+import ActiveWorkspaces, { NewTaskButton } from "./ActiveWorkspaces";
 import HistoryNav from "./HistoryNav";
 import useLogo from "@/hooks/useLogo";
 import useUser from "@/hooks/useUser";
@@ -226,6 +226,9 @@ function SidebarQuickLinks({ user, showNewWsModal }) {
           </p>
         </Link>
       )}
+      {/* New task sits with the actions (uniform 2px rhythm, 34px rows) -
+          it targets the current project, not the project list. */}
+      <NewTaskButton />
     </div>
   );
 }

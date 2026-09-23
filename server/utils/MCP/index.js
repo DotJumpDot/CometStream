@@ -34,11 +34,14 @@ const MCP_TRANSPORT_ERROR_PATTERN =
  * @returns {string} Absolute sandbox path.
  */
 function agentSandboxRoot() {
+  // Two levels up (server/storage), matching the canonical resolution in
+  // utils/files/index.js. One level would resolve inside utils/ and create
+  // a stray server/utils/storage/ sandbox at runtime.
   const base =
     process.env.NODE_ENV === "development"
-      ? path.resolve(__dirname, "../storage")
+      ? path.resolve(__dirname, "../../storage")
       : path.resolve(
-          process.env.STORAGE_DIR ?? path.resolve(__dirname, "../storage"),
+          process.env.STORAGE_DIR ?? path.resolve(__dirname, "../../storage"),
           "."
         );
   return path.join(base, "anythingllm-fs");
