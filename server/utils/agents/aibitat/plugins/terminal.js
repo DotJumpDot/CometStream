@@ -858,6 +858,54 @@ function deniedReason(trimmed) {
       return `Command blocked by the terminal safety filter (matched ${pattern}).`;
     }
   }
+  const rootAccess = rootAccessReason(trimmed);
+  if (rootAccess) return rootAccess;
+  return null;
+}
+
+// Whole-disk access guardrail. The terminal jail pins only the STARTING
+// directory - `cd / && find …` walks straight out of it, and a stray
+// root-level scan burned the host disk for half an hour in the wild.
+// Blocked: cd to a filesystem/drive root or home, and recursive scanning
+// binaries invoked with absolute-path targets (a recursive scan of even
+// `C:\Users` pegs the disk for minutes). Relative paths and cd-then-scan
+// stay allowed - the goal is no whole-disk churn, not a full path sandbox.
+//
+// Two scanner shapes, because flags differ: unix-style tools flag with `-`,
+// so ANY absolute-ish token in their command is suspect; `dir`/`tree` flag
+// with `/x` (would collide), so they get a recursive-flag + absolute-target
+// pattern instead.
+const CD_ROOT_PATTERN =
+  /(^|[;&|(]\s*|\bthen\s+)cd\s+["']?(\/{1,2}|\/[a-z]\/?|[a-z]:[/\\]?|~|%USERPROFILE%|\$HOME)["']?(?=\s|$)/i;
+const ROOT_SCAN_BINARIES =
+  /(^|[|;&\s])\s*(find|grep|rg|du|fd|locate|whereis|gci|get-childitem|get-child-item)\b/i;
+const ABSOLUTE_TOKEN =
+  /(^|[\s=])["']?(\/[^\s"'|;&)]*|[a-z]:[^\s"'|;&)]*|\\[^\s"'|;&)]*|~|\$HOME|%USERPROFILE%)["']?(?=$|[\s)&|;])/i;
+const WINDOWS_RECURSIVE_SCAN =
+  /(^|[|;&\s])\s*(dir|tree)\b[^|;&\n]*\/[srf]\b[^|;&\n]*["']?([a-z]:|\\\\|~)/i;
+
+/**
+ * Whole-disk access check (see the guardrail comment above).
+ * @param {string} trimmed - Trimmed command line.
+ * @returns {string|null} Block reason, or null when allowed.
+ */
+function rootAccessReason(trimmed) {
+  if (CD_ROOT_PATTERN.test(trimmed)) {
+    return "Command blocked: cd to a filesystem root, drive root, or home directory is not allowed. Stay in the current working folder and use relative or project-scoped paths.";
+  }
+  // Judge scanners on the command MINUS any cd segments: a scoped cd
+  // (`cd /c/Code/my-app && find .`) is the sanctioned way to point a scan at
+  // a project, and its absolute argument is not a scan target.
+  const withoutCd = trimmed.replace(
+    /(^|[;&|(]\s*|\bthen\s+)cd\s+("[^"]*"|'[^']*'|[^;&|]+)/gi,
+    " "
+  );
+  if (
+    (ROOT_SCAN_BINARIES.test(withoutCd) && ABSOLUTE_TOKEN.test(withoutCd)) ||
+    WINDOWS_RECURSIVE_SCAN.test(withoutCd)
+  ) {
+    return "Command blocked: recursive scans from absolute paths are not allowed (whole-disk scans peg the host for minutes). cd into the target folder and scan relatively, or scan the current folder.";
+  }
   return null;
 }
 
@@ -1575,6 +1623,8 @@ module.exports = {
   summarizeCommand,
   categorizeCommand,
   isReadOnlyCommand,
+  deniedReason,
+  rootAccessReason,
   snapshotWorkdir,
   detectWorkdirChanges,
   emitWorkdirFileCards,

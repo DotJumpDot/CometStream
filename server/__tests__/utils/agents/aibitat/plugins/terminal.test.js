@@ -18,6 +18,7 @@ const {
   summarizeCommand,
   categorizeCommand,
   isReadOnlyCommand,
+  deniedReason,
   startBackgroundTask,
   pollBackgroundTask,
   stopBackgroundTask,
@@ -401,6 +402,51 @@ describe("terminal agent skill", () => {
       ]) {
         expect(combined.test(command)).toBe(false);
       }
+    });
+  });
+
+  describe("root access guardrail (deniedReason)", () => {
+    it("blocks the real-world runaway root scan", () => {
+      // A spawned agent command observed in the wild: cd to the filesystem
+      // root then find - a 30+ minute whole-disk burn.
+      expect(deniedReason('cd / && find . -path ./app -prune -o -name "main.py" -print')).toContain(
+        "filesystem root"
+      );
+    });
+
+    it.each([
+      "find / -name main.py",
+      "find C:\\ -name main.py",
+      "grep -r password /",
+      "rg secret /",
+      "du -sh /",
+      "dir /s C:\\",
+      "tree /f ~",
+      "Get-ChildItem C:\\ -Recurse",
+      "Get-ChildItem C:\\Users -Recurse",
+      "cd /",
+      "cd /c",
+      "cd C:\\",
+      "cd ~ && du -sh .",
+      "echo x && cd / ; ls",
+      "dir /s /b C:\\Users",
+    ])("blocks whole-disk access: %p", (command) => {
+      expect(deniedReason(command)).not.toBeNull();
+    });
+
+    it.each([
+      "find . -name main.py",
+      "grep -r TODO src/",
+      "rg pattern .",
+      "du -sh .",
+      "ls -la",
+      "dir /s src\\components",
+      "cd /c/Code/my-app && find . -name main.py",
+      "cd .. && ls",
+      "cd backend && python -m app.main",
+      "tree backend",
+    ])("allows scoped project work: %p", (command) => {
+      expect(deniedReason(command)).toBeNull();
     });
   });
 });
