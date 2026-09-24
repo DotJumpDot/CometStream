@@ -48,6 +48,17 @@ function SessionCard({ session = {} }) {
     session.endedAt != null && session.startedAt != null
       ? session.endedAt - session.startedAt
       : null;
+  // Live write payload size: terminal commands execute atomically (no
+  // incremental progress exists), but for Write-kind runs the full command
+  // - heredoc payload included - is known at start, so the running row
+  // names its weight instead of just pulsing. Line breaks read like the
+  // completion's `+N`; byte size is the fallback before any break.
+  const writeDetail =
+    running && category === "Write" && typeof session.detail === "string"
+      ? session.detail
+      : "";
+  const writeLines = writeDetail ? (writeDetail.match(/\n/g) || []).length : 0;
+  const writeBytes = writeDetail ? writeDetail.length : 0;
   // Same expand contract as file rows: sessions with captured output open
   // inline to the full command + tail; rows without detail stay static.
   const hasDetail = !!session.detail;
@@ -92,6 +103,11 @@ function SessionCard({ session = {} }) {
             {formatDuration(ms / 1000)}
           </span>
         )}
+        {(writeLines > 0 || writeBytes > 0) && (
+          <span className="font-mono text-[13px] text-emerald-500 light:text-emerald-600 tabular-nums shrink-0">
+            +{writeLines > 0 ? writeLines : formatWriteBytes(writeBytes)}
+          </span>
+        )}
         {hasDetail && (
           <CaretDown
             className={`w-3 h-3 text-zinc-500 light:text-zinc-400 shrink-0 transition-transform ${
@@ -117,6 +133,18 @@ function SessionCard({ session = {} }) {
       )}
     </div>
   );
+}
+
+/**
+ * Compact byte counter for the live write-payload hint (mirrors the
+ * FileChangeCard checkpoint format so both rows read alike).
+ * @param {number} bytes - command/detail length
+ * @returns {string} Compact label without the `+` prefix.
+ */
+function formatWriteBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${Math.round(n)}B`;
+  return `${(n / 1024).toFixed(1)}KB`;
 }
 
 export default memo(SessionCard);

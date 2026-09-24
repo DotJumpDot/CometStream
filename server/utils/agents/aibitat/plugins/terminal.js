@@ -1282,7 +1282,9 @@ const terminalAgent = {
             "Run a shell command in the project working directory and return stdout/stderr with the exit code. " +
             "Use it to scaffold projects, install dependencies, start dev servers in the background (&), " +
             "and self-test with curl. Long output is truncated. The working directory stays fixed per call - " +
-            "chain commands with && (e.g. 'cd backend && ls') instead of relying on cd persisting.",
+            "chain commands with && (e.g. 'cd backend && ls') instead of relying on cd persisting. " +
+            "Servers need wall-clock seconds to bind: after starting one, wait (sleep) before curling it, " +
+            "and retry the same curl before assuming it failed.",
           examples: [
             {
               prompt: "Check the toolchain and list the project files",
@@ -1429,7 +1431,8 @@ const terminalAgent = {
           description:
             "Start a shell command in the BACKGROUND and return immediately with a task id - it does NOT block your turn. " +
             "Use it for long builds, installs, dev servers, and test suites, then do other steps and poll with task-output. " +
-            "Start ONE task per call. Same working directory and safety filter as terminal-agent.",
+            "Start ONE task per call. Same working directory and safety filter as terminal-agent. " +
+            "Background tasks need wall-clock time: do other steps (or sleep) before polling - polling faster changes nothing.",
           examples: [
             {
               prompt:
@@ -1502,7 +1505,9 @@ const terminalAgent = {
           name: "task-output",
           description:
             "Poll a background task started by terminal-task-start: status plus the output tail. " +
-            "Call it after doing other work, or to check whether a build/server is ready. No approval needed.",
+            "Call it after doing other work, or to check whether a build/server is ready. No approval needed. " +
+            "Call this TOOL with the numeric taskId - never run `task-output <id>` as a shell command. " +
+            "A starting/running task needs more wall-clock time: sleep or do other steps before polling again.",
           parameters: {
             $schema: "http://json-schema.org/draft-07/schema#",
             type: "object",
@@ -1524,6 +1529,12 @@ const terminalAgent = {
             return bgGate(async () => {
               const poll = pollBackgroundTask(taskId, { tailChars });
               if (!poll.ok) return `Error: ${poll.error}`;
+              // Still-running polls carry a backoff hint: fast models poll
+              // faster than servers boot and misread "not yet up" as
+              // failure, so the result itself says to wait.
+              if (poll.running)
+                poll.hint =
+                  "Still running - sleep or do other steps before polling again; polling faster changes nothing.";
               const task = backgroundTasks.get(Number(taskId));
               // First poll that observes completion closes the session row.
               if (!poll.running && task && !task.sessionClosed) {

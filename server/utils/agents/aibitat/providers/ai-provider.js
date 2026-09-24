@@ -34,8 +34,11 @@ const { bindAbortSignal } = require("../../../helpers/abortSignals");
  * @property {number} prompt_tokens - Number of tokens in the prompt/input
  * @property {number} completion_tokens - Number of tokens in the completion/output
  * @property {number} total_tokens - Total tokens used
+ * @property {number} cached_tokens - Prompt tokens served from server cache
  * @property {number} duration - Duration in seconds
- * @property {number} outputTps - Output tokens per second
+ * @property {number} outputTps - Output tokens per second (client-measured)
+ * @property {number} serverTps - Server-measured generation tok/s (0 when unreported)
+ * @property {number} serverPromptTps - Server-measured prompt tok/s (0 when unreported)
  * @property {string|null} model - Model name
  * @property {string|null} provider - Provider class name
  * @property {Date|null} timestamp - Timestamp of the completion
@@ -100,8 +103,15 @@ class Provider {
       prompt_tokens: 0,
       completion_tokens: 0,
       total_tokens: 0,
+      // Prompt tokens served from the server KV/prefix cache (OpenAI-style
+      // `prompt_tokens_details.cached_tokens`; llama.cpp reports it too).
+      cached_tokens: 0,
       duration: 0,
       outputTps: 0,
+      // Server-measured speeds (llama.cpp `timings`): pure model numbers
+      // without harness/streaming gaps. Zero when the backend omits them.
+      serverTps: 0,
+      serverPromptTps: 0,
       model: null,
       provider: null,
       timestamp: null,
@@ -657,8 +667,11 @@ class Provider {
       prompt_tokens: 0,
       completion_tokens: 0,
       total_tokens: 0,
+      cached_tokens: 0,
       outputTps: 0,
       duration: 0,
+      serverTps: 0,
+      serverPromptTps: 0,
       model: null,
       provider: null,
       timestamp: null,
@@ -680,8 +693,12 @@ class Provider {
    * Updates the stored usage metrics from a provider response.
    * Override in subclasses to handle provider-specific usage formats.
    * @param {Object} usage - The usage object from the provider response
+   * @param {Object} [_timeInfo] - Provider timing info (consumed by
+   * subclasses like cerebras; the base implementation uses `timings`)
+   * @param {Object} [timings] - Server-reported timings, e.g. llama.cpp
+   * `timings` ({predicted_per_second, prompt_per_second, cache_n}).
    */
-  recordUsage(usage = {}) {
+  recordUsage(usage = {}, _timeInfo = null, timings = null) {
     let duration = 0;
     if (this._requestStartTime > 0) {
       duration = (Date.now() - this._requestStartTime) / 1000;
@@ -695,12 +712,26 @@ class Provider {
       safeUsage.completion_tokens || safeUsage.output_tokens
     );
     const totalTokens = toNonNegativeNumber(safeUsage.total_tokens);
+    // Prefix-cache hits ride the standard OpenAI details field; llama.cpp
+    // sends it on both streaming and non-streaming completions.
+    const cachedTokens = toNonNegativeNumber(
+      safeUsage.prompt_tokens_details?.cached_tokens ??
+        safeUsage.cached_tokens ??
+        timings?.cache_n
+    );
+    const serverTps = toNonNegativeNumber(
+      timings?.predicted_per_second ?? timings?.predicted_n_per_second
+    );
+    const serverPromptTps = toNonNegativeNumber(timings?.prompt_per_second);
 
     this.applyUsage({
       prompt_tokens: promptTokens,
       completion_tokens: completionTokens,
       total_tokens: totalTokens || promptTokens + completionTokens,
+      cached_tokens: Math.min(cachedTokens, promptTokens || cachedTokens),
       duration,
+      serverTps,
+      serverPromptTps,
     });
   }
 
@@ -718,6 +749,9 @@ class Provider {
     const promptTokens = toNonNegativeNumber(safeUsage.prompt_tokens);
     const completionTokens = toNonNegativeNumber(safeUsage.completion_tokens);
     const totalTokens = toNonNegativeNumber(safeUsage.total_tokens);
+    const cachedTokens = toNonNegativeNumber(safeUsage.cached_tokens);
+    const serverTps = toNonNegativeNumber(safeUsage.serverTps);
+    const serverPromptTps = toNonNegativeNumber(safeUsage.serverPromptTps);
     const duration = toNonNegativeNumber(safeUsage.duration);
 
     const timestamp = new Date();
@@ -733,9 +767,12 @@ class Provider {
       prompt_tokens: promptTokens,
       completion_tokens: completionTokens,
       total_tokens: totalTokens,
+      cached_tokens: cachedTokens,
       outputTps:
         completionTokens && duration > 0 ? completionTokens / duration : 0,
       duration,
+      serverTps,
+      serverPromptTps,
       model: this.model,
       provider: this.constructor.name,
       timestamp,
@@ -746,6 +783,7 @@ class Provider {
     totals.prompt_tokens += promptTokens;
     totals.completion_tokens += completionTokens;
     totals.total_tokens += totalTokens;
+    totals.cached_tokens += cachedTokens;
     totals.duration += duration;
     totals.outputTps =
       totals.completion_tokens && totals.duration > 0

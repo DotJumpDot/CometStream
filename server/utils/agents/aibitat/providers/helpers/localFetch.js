@@ -28,8 +28,9 @@ const NO_KEEP_ALIVE_HTTPS = new https.Agent({ keepAlive: false });
  * @returns {Promise<import("node-fetch").Response>}
  */
 function fetchNoKeepAlive(url, init = {}) {
-  const agent =
-    String(url).startsWith("https:") ? NO_KEEP_ALIVE_HTTPS : NO_KEEP_ALIVE_HTTP;
+  const agent = String(url).startsWith("https:")
+    ? NO_KEEP_ALIVE_HTTPS
+    : NO_KEEP_ALIVE_HTTP;
   return nodeFetch(url, { ...init, agent });
 }
 

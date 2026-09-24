@@ -12,6 +12,7 @@ const {
   MAX_ARG_REPAIRS_PER_TURN,
 } = require("./utils/toolArgRepair.js");
 const { recordTrajectoryIteration } = require("./plugins/trajectory.js");
+const { accumulateToolIo, toolIoSnapshot } = require("./plugins/tool-usage.js");
 
 /**
  * AIbitat is a class that manages the conversation between agents.
@@ -1220,6 +1221,12 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
           arguments: args,
           result,
         });
+        // Run-level tool I/O accounting for the live usage split (ContextRing
+        // card + trajectory records). Observation only - failures here must
+        // never affect the batch loop.
+        try {
+          accumulateToolIo(this, { name, fnDef: fn, args, result });
+        } catch {}
         executed++;
 
         /**
@@ -1247,6 +1254,9 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
             type: "usageMetrics",
             uuid: directOutputUUID,
             metrics: this.providerInstance.getCumulativeUsage(),
+            // Same snapshot the trajectory records carry: lets the frontend
+            // close the last-turn lag so end-of-run totals are exact.
+            toolIo: toolIoSnapshot(this),
           });
           this?.flushCitations?.(directOutputUUID);
           this?.emitChatId?.(directOutputUUID);
@@ -1294,6 +1304,7 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
       type: "usageMetrics",
       uuid: responseUuid,
       metrics: this.providerInstance.getCumulativeUsage(),
+      toolIo: toolIoSnapshot(this),
     });
     this?.flushCitations?.(responseUuid);
     this?.emitChatId?.(responseUuid);
@@ -1463,6 +1474,12 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
           arguments: args,
           result,
         });
+        // Run-level tool I/O accounting for the live usage split (ContextRing
+        // card + trajectory records). Observation only - failures here must
+        // never affect the batch loop.
+        try {
+          accumulateToolIo(this, { name, fnDef: fn, args, result });
+        } catch {}
         executed++;
 
         if (this.skipHandleExecution) {
@@ -1478,6 +1495,9 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
             type: "usageMetrics",
             uuid: msgUUID,
             metrics: this.providerInstance.getCumulativeUsage(),
+            // Same snapshot the trajectory records carry: lets the frontend
+            // close the last-turn lag so end-of-run totals are exact.
+            toolIo: toolIoSnapshot(this),
           });
           this?.flushCitations?.(msgUUID);
           return result;
@@ -1520,6 +1540,7 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
       type: "usageMetrics",
       uuid: msgUUID,
       metrics: this.providerInstance.getCumulativeUsage(),
+      toolIo: toolIoSnapshot(this),
     });
     this?.flushCitations?.(msgUUID);
     this?.emitChatId?.(msgUUID);

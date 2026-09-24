@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Workspace from "@/models/workspace";
 import CustomLlmProviders from "@/models/customLlmProviders";
+import {
+  getAgentActivity,
+  runStatsFromTrajectory,
+  subscribeAgentActivity,
+} from "@/utils/agentActivity";
 import useAnchoredOverlay from "./useAnchoredOverlay";
 
 /**
@@ -163,6 +168,17 @@ export default function ContextRing({
     };
   }, [chatHistory, workspace?.openAiPrompt, limits]);
 
+  // Live run stats: the agent panel already accumulates per-iteration
+  // trajectory records (session-scoped, reset on chat switch) carrying real
+  // provider counts, per-round tok/s, and the tool-I/O split. Subscribing
+  // here keeps the popover live without touching the estimate path above.
+  const [activity, setActivity] = useState(() => getAgentActivity());
+  useEffect(() => subscribeAgentActivity(setActivity), []);
+  const runStats = useMemo(
+    () => runStatsFromTrajectory(activity.trajectory, activity.toolIo),
+    [activity.trajectory, activity.toolIo]
+  );
+
   // Hold-to-open (like the reference UI) plus a plain click toggle that
   // pins the panel; hover handles the quick peek.
   const startHold = () => {
@@ -315,8 +331,68 @@ export default function ContextRing({
                   />
                 </div>
 
+                {runStats.rounds > 0 && (
+                  <div className="mt-2.5 pt-2 border-t border-white/10">
+                    <div className="text-[11px] font-medium text-theme-text-primary mb-1.5">
+                      {t("context_ring.live_run")}
+                    </div>
+                    <div className="flex flex-col gap-y-1">
+                      <UsageRow
+                        label={t("context_ring.rounds", {
+                          count: runStats.rounds,
+                        })}
+                        plain={`${runStats.prompt.toLocaleString()}↑ ${runStats.completion.toLocaleString()}↓`}
+                      />
+                      <UsageRow
+                        label={t("context_ring.cache_hit")}
+                        plain={`${Math.round(runStats.cacheHit * 100)}%`}
+                      />
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-theme-text-secondary">
+                          {t("context_ring.speed")}
+                        </span>
+                        <span className="text-[11px] text-theme-text-primary tabular-nums">
+                          {t("context_ring.speed_value", {
+                            last: formatTps(runStats.tps.last),
+                            avg: formatTps(runStats.tps.avg),
+                            max: formatTps(runStats.tps.max),
+                          })}
+                        </span>
+                      </div>
+                      <UsageRow
+                        label={t("context_ring.tool_calls", {
+                          count: runStats.toolCalls,
+                        })}
+                        tokens={
+                          runStats.toolTokensEst > 0
+                            ? runStats.toolTokensEst
+                            : null
+                        }
+                      />
+                      {runStats.byKind.map((row) => (
+                        <div
+                          key={row.kind}
+                          className="flex items-center justify-between pl-3"
+                        >
+                          <span className="text-[11px] text-theme-text-secondary">
+                            {t(
+                              `context_ring.kind_${row.kind.replace("-", "_")}`,
+                              { defaultValue: row.kind }
+                            )}{" "}
+                            · {row.calls}
+                          </span>
+                          <span className="text-[11px] text-theme-text-primary">
+                            ~{row.tokensEst.toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-2.5 pt-2 border-t border-white/10 text-[10px] text-theme-text-secondary">
                   {t("context_ring.estimated")}
+                  {runStats.rounds > 0 && ` ${t("context_ring.live_note")}`}
                   {model ? ` · ${model}` : ""}
                 </div>
               </>
@@ -328,13 +404,26 @@ export default function ContextRing({
   );
 }
 
-function UsageRow({ label, tokens }) {
+function UsageRow({ label, tokens, plain }) {
   return (
     <div className="flex items-center justify-between">
       <span className="text-[11px] text-theme-text-secondary">{label}</span>
-      <span className="text-[11px] text-theme-text-primary">
-        ~{tokens.toLocaleString()}
+      <span className="text-[11px] text-theme-text-primary tabular-nums">
+        {plain != null ? (
+          plain
+        ) : tokens != null ? (
+          <>~{tokens.toLocaleString()}</>
+        ) : null}
       </span>
     </div>
   );
+}
+
+/**
+ * One-decimal tok/s for the live speed readout, no unit (the label carries
+ * it) so last/avg/max stay compact.
+ */
+function formatTps(value) {
+  const n = Number(value) || 0;
+  return n.toFixed(1);
 }

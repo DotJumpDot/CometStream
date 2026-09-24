@@ -13,6 +13,10 @@ let state = {
   fileChanges: [],
   sessions: [],
   trajectory: [],
+  // Latest cumulative tool-I/O snapshot from the server (usageMetrics
+  // events). Null until the first run - the ContextRing live section hides
+  // until trajectory records exist anyway.
+  toolIo: null,
 };
 
 function emit() {
@@ -85,54 +89,74 @@ export function setAgentTodo(items) {
 }
 
 /**
- * Display grouping for marathon runs: consecutive sessions with the same
- * kind and command stem collapse into one expandable group row, so 50+
+ * Display grouping for marathon runs: sessions with the same kind and
+ * command verb collapse into one expandable group row, so 50
  * near-identical terminal runs read as a short list instead of a wall.
- * Pure (no store access) so it stays unit-testable outside React.
+ * Grouping is by verb (not adjacency and not the full command): `cat a`
+ * and `cat b` fold together even with other commands between them, because
+ * the row answers "what have the cat calls done", with each member one
+ * click away. Pure (no store access) so it stays unit-testable outside
+ * React.
  */
-export const SESSION_STEM_CHARS = 48;
 
 /**
- * Normalizes a session into a grouping key: kind plus the command head
- * (cut at the first ellipsis, capped to a fixed width). Heredoc repeat
- * runs share a stem even when their line counts differ.
- * @param {Object} session - session row ({kind, label})
- * @returns {string} Grouping key.
+ * Extracts the grouping verb from a session label: the first command word
+ * after `$`, `cd`-hop, and narration-echo stripping (same preamble rules
+ * as shortCommand). `cat > f <<EOF` and `cat f` both group under `cat`.
+ * @param {string} label - session label (often `$ cd <dir> && <cmd>`)
+ * @returns {string} Lowercase verb, or "(else)" when none is readable.
  */
-export function sessionStem(session = {}) {
-  const label = String(session?.label ?? "");
-  const cut = label.indexOf("…");
-  const head = (cut >= 0 ? label.slice(0, cut) : label).slice(
-    0,
-    SESSION_STEM_CHARS
-  );
-  const kind = session?.kind === "subagent" ? "subagent" : "terminal";
-  return `${kind}:${head.trim()}`;
+export function sessionVerb(label = "") {
+  let text = String(label ?? "")
+    .trim()
+    .replace(/^\$\s+/, "");
+  const parts = text
+    .split(/\s+&&\s+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  while (parts.length > 1 && /^cd(\s|$)/.test(parts[0])) parts.shift();
+  while (parts.length > 1 && /^echo\s+("[^"$`]*"|'[^'$`]*')\s*$/.test(parts[0]))
+    parts.shift();
+  text = parts.length ? parts[0] : "";
+  const first = text.split(/\s+/).filter(Boolean)[0] ?? "";
+  const base =
+    first
+      .replace(/^["']|["']$/g, "")
+      .split(/[\\/]/)
+      .filter(Boolean)
+      .pop() ?? "";
+  const verb = base.toLowerCase();
+  return verb || "(else)";
 }
 
 /**
- * Folds consecutive same-stem sessions (newest-first order, as stored)
- * into groups. Singletons pass through as one-member groups so callers
- * render one code path.
+ * Folds same-verb sessions (in input order, newest first as stored) into
+ * groups keyed by kind + verb. Singletons pass through as one-member
+ * groups so callers render one code path.
  * @param {Array} sessions - session rows, newest first
- * @returns {Array<{key: string, kind: string, label: string, members: Array}>} Groups in order.
+ * @returns {Array<{key: string, kind: string, verb: string, label: string, members: Array}>} Groups in first-seen order.
  */
 export function groupSessions(sessions = []) {
   const groups = [];
+  const byKey = new Map();
   for (const session of sessions) {
     if (!session || session.id == null) continue;
-    const stem = sessionStem(session);
-    const last = groups[groups.length - 1];
-    if (last && last.stem === stem) {
-      last.members.push(session);
-    } else {
-      groups.push({
-        key: `${stem}::${groups.length}`,
-        kind: session.kind === "subagent" ? "subagent" : "terminal",
-        stem,
+    const kind = session.kind === "subagent" ? "subagent" : "terminal";
+    const verb = sessionVerb(session.label);
+    const key = `${kind}:${verb}`;
+    let group = byKey.get(key);
+    if (!group) {
+      group = {
+        key: `${key}::${groups.length}`,
+        kind,
+        verb,
         label: String(session.label ?? ""),
         members: [session],
-      });
+      };
+      byKey.set(key, group);
+      groups.push(group);
+    } else {
+      group.members.push(session);
     }
   }
   return groups;
@@ -164,15 +188,19 @@ export function rollupSessionGroup(group) {
 }
 
 /**
- * Groups consecutive trajectory records with the same model and the same
- * requested tool set into range groups (#a–#b), so 100 near-identical
- * single-tool iterations read as a handful of rows instead of a wall.
- * Pure (no store access) so it stays unit-testable outside React.
+ * Groups trajectory records with the same model and the same requested
+ * tool set, so repeated single-tool iterations read as a handful of rows
+ * instead of a wall. Grouping is by tool set, not adjacency: #32 and #38
+ * calling the same tool fold together even with other work between them.
+ * Groups keep first-seen order with chronological members; the header
+ * range (#from–#to) may therefore span gaps. Pure (no store access) so it
+ * stays unit-testable outside React.
  * @param {Array} records - trajectoryEvent payloads in order
- * @returns {Array<{key: string, stem: string, from: number, to: number, model: string, toolNames: Array<string>, members: Array}>} Groups in order.
+ * @returns {Array<{key: string, stem: string, from: number, to: number, model: string, toolNames: Array<string>, members: Array}>} Groups in first-seen order.
  */
 export function groupTrajectory(records = []) {
   const groups = [];
+  const byStem = new Map();
   for (const record of records) {
     if (!record || typeof record.seq !== "number") continue;
     const tools = Array.isArray(record.requestedTools)
@@ -181,12 +209,9 @@ export function groupTrajectory(records = []) {
     const stem = `${record.model || record.provider || "llm"}::${tools
       .map((t) => t?.name || "?")
       .join(",")}`;
-    const last = groups[groups.length - 1];
-    if (last && last.stem === stem) {
-      last.members.push(record);
-      last.to = record.seq;
-    } else {
-      groups.push({
+    let group = byStem.get(stem);
+    if (!group) {
+      group = {
         key: `${stem}::${groups.length}`,
         stem,
         from: record.seq,
@@ -194,15 +219,22 @@ export function groupTrajectory(records = []) {
         model: record.model || record.provider || "llm",
         toolNames: tools.map((t) => t?.name || "?"),
         members: [record],
-      });
+      };
+      byStem.set(stem, group);
+      groups.push(group);
+    } else {
+      group.members.push(record);
+      group.to = record.seq;
     }
   }
   return groups;
 }
 
 /**
- * Rolls a trajectory group up for its collapsed row: member count,
- * total tool calls, and summed token usage.
+ * Rolls a trajectory group up for its collapsed row: member count, total
+ * tool calls, and the tokens consumed inside the group. Members contribute
+ * their own per-round usage (never the cumulative run totals, which would
+ * multiply-count across members and swallow other groups' work in gaps).
  * @param {{members: Array}} group - group from groupTrajectory
  * @returns {{count: number, tools: number, prompt: number, completion: number}} Rollup.
  */
@@ -213,9 +245,11 @@ export function rollupTrajectoryGroup(group) {
   let completion = 0;
   for (const m of members) {
     tools += Array.isArray(m?.requestedTools) ? m.requestedTools.length : 0;
-    const u = m?.usage || {};
-    if (Number.isFinite(u.prompt_tokens)) prompt += u.prompt_tokens;
-    if (Number.isFinite(u.completion_tokens)) completion += u.completion_tokens;
+    const r = m?.round || {};
+    const rp = Number(r.prompt_tokens);
+    const rc = Number(r.completion_tokens);
+    if (Number.isFinite(rp)) prompt += Math.max(0, rp);
+    if (Number.isFinite(rc)) completion += Math.max(0, rc);
   }
   return { count: members.length, tools, prompt, completion };
 }
@@ -349,7 +383,13 @@ export function windowTrajectory(records = [], showAll = false) {
 
 /** Clears the store (chat switched or session reset). */
 export function resetAgentActivity() {
-  state = { todo: [], fileChanges: [], sessions: [], trajectory: [] };
+  state = {
+    todo: [],
+    fileChanges: [],
+    sessions: [],
+    trajectory: [],
+    toolIo: null,
+  };
   emit();
 }
 
@@ -366,6 +406,139 @@ export function addTrajectoryRecord(record = {}) {
     trajectory: [...state.trajectory, record].slice(-100),
   };
   emit();
+}
+
+/**
+ * Stores the latest cumulative tool-I/O snapshot from a usageMetrics
+ * event. This closes the trajectory lag: per-iteration records snapshot
+ * the accumulator before the turn's tools execute, so the final turn's
+ * bytes only arrive with the run-end usageMetrics event.
+ * @param {Object} snapshot - {calls, tokensEst, byKind} from the server
+ */
+export function setRunToolIo(snapshot = null) {
+  if (
+    !snapshot ||
+    typeof snapshot !== "object" ||
+    !Number.isFinite(snapshot.calls)
+  )
+    return;
+  state = { ...state, toolIo: snapshot };
+  emit();
+}
+
+/**
+ * Display kinds for the live usage split. Server `files-write` and
+ * `files-read` merge into one Files row; unknown kinds fold into Built-in
+ * so a future server kind cannot break the card.
+ */
+const RUNSTAT_KINDS = ["mcp", "terminal", "subagent", "files", "builtin"];
+
+function runstatKind(raw) {
+  if (raw === "mcp" || raw === "terminal" || raw === "subagent") return raw;
+  if (raw === "files-write" || raw === "files-read" || raw === "files")
+    return "files";
+  return "builtin";
+}
+
+/**
+ * Derives the live-run summary for the ContextRing card from accumulated
+ * trajectory records plus the latest tool-I/O snapshot. Pure so it stays
+ * unit-testable outside React.
+ *
+ * Token notes (shown in the card footer): model I/O (prompt/completion)
+ * are REAL provider counts; cache hits come from the server when it
+ * reports them (llama.cpp `cached_tokens`, OpenAI `prompt_tokens_details`);
+ * tool payloads are chars/4 estimates of what each tool moved, and overlap
+ * the model counts (results re-enter the context) - they split "where did
+ * it go", they do not add to the total.
+ * @param {Array} records - trajectoryEvent payloads in order
+ * @param {Object|null} toolIo - cumulative {calls, tokensEst, byKind}
+ * @returns {{rounds: number, prompt: number, completion: number, cached: number, cacheHit: number, tps: {last: number, avg: number, max: number, server: boolean}, toolCalls: number, toolTokensEst: number, byKind: Array<{kind: string, calls: number, tokensEst: number}>}}
+ */
+export function runStatsFromTrajectory(records = [], toolIo = null) {
+  const rounds = (Array.isArray(records) ? records : []).filter(
+    (r) => r && typeof r.seq === "number"
+  );
+  // Cumulative provider counts: the LAST record holds the run totals (every
+  // record snapshots the accumulator, so summing would multiply-count).
+  const lastUsage = rounds.length ? rounds[rounds.length - 1].usage || {} : {};
+  // Per-round tok/s from each iteration's own usage only. Server-measured
+  // speeds win when the backend reports them (no harness gaps in them);
+  // otherwise the client-measured outputTps covers every provider.
+  const serverSpeeds = rounds
+    .map((r) => r?.round?.serverTps)
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const clientSpeeds = rounds
+    .map((r) => r?.round?.outputTps)
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const speeds = serverSpeeds.length ? serverSpeeds : clientSpeeds;
+  const lastSpeeds = rounds
+    .map((r) =>
+      serverSpeeds.length ? r?.round?.serverTps : r?.round?.outputTps
+    )
+    .filter((v) => Number.isFinite(v));
+  // Tool call counts come from the request lists (exact, current-iteration).
+  const kindCalls = {};
+  let toolCalls = 0;
+  for (const r of rounds) {
+    const tools = Array.isArray(r?.requestedTools) ? r.requestedTools : [];
+    toolCalls += tools.length;
+    for (const t of tools) {
+      const kind = runstatKind(t?.kind);
+      kindCalls[kind] = (kindCalls[kind] ?? 0) + 1;
+    }
+  }
+  // Tool token split comes from the cumulative server snapshot (exact at
+  // run end via usageMetrics; lags the final turn mid-run - see setRunToolIo).
+  const snapKinds =
+    toolIo && typeof toolIo === "object" && toolIo.byKind
+      ? toolIo.byKind
+      : null;
+  const byKind = RUNSTAT_KINDS.map((kind) => {
+    let calls = kindCalls[kind] ?? 0;
+    let tokensEst = 0;
+    if (snapKinds) {
+      // Snapshot keys are server kinds - fold write+read into files.
+      for (const [raw, bucket] of Object.entries(snapKinds)) {
+        if (runstatKind(raw) === kind)
+          tokensEst += Number(bucket?.tokensEst) || 0;
+      }
+      // Prefer the snapshot's own call counts (they include executed calls
+      // only, while requestedTools counts requests incl. repairs/skips).
+      let snapCalls = 0;
+      for (const [raw, bucket] of Object.entries(snapKinds)) {
+        if (runstatKind(raw) === kind) snapCalls += Number(bucket?.calls) || 0;
+      }
+      if (snapCalls > 0) calls = snapCalls;
+    }
+    return { kind, calls, tokensEst };
+  }).filter((row) => row.calls > 0 || row.tokensEst > 0);
+  return {
+    rounds: rounds.length,
+    prompt: Number(lastUsage.prompt_tokens) || 0,
+    completion: Number(lastUsage.completion_tokens) || 0,
+    cached: Number(lastUsage.cached_tokens) || 0,
+    cacheHit:
+      Number(lastUsage.prompt_tokens) > 0
+        ? Math.min(
+            1,
+            (Number(lastUsage.cached_tokens) || 0) /
+              Number(lastUsage.prompt_tokens)
+          )
+        : 0,
+    tps: {
+      last: lastSpeeds.length ? lastSpeeds[lastSpeeds.length - 1] : 0,
+      avg: speeds.length
+        ? speeds.reduce((a, b) => a + b, 0) / speeds.length
+        : 0,
+      max: speeds.length ? Math.max(...speeds) : 0,
+      server: serverSpeeds.length > 0,
+    },
+    toolCalls,
+    toolTokensEst:
+      snapKinds && Number.isFinite(toolIo.tokensEst) ? toolIo.tokensEst : 0,
+    byKind,
+  };
 }
 
 /**

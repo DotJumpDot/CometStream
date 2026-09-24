@@ -8,7 +8,16 @@ function langDisplayName(lang) {
   return languageNames.of(lang);
 }
 
-function compareStructures(lang, a, b, subdir = null) {
+/**
+ * Fork semantics (see AGENTS.md "Conventions"): `en` is the ground truth and
+ * every other locale falls back to it at runtime, so keys missing from a
+ * locale are EXPECTED - reported as a count, never a failure. What must
+ * fail: orphan keys (present in a locale but not in `en` - they can never
+ * render and usually mean `en` was forgotten) and type mismatches (e.g. a
+ * string where `en` has a subtree). Upstream's strict key-parity check is
+ * intentionally relaxed here; the fork adds new strings to `en` only.
+ */
+function compareStructures(lang, a, b, stats, subdir = null) {
   //if a and b aren't the same type, they can't be equal
   if (typeof a !== typeof b && a !== null && b !== null) {
     console.log("Invalid type comparison", [
@@ -29,41 +38,28 @@ function compareStructures(lang, a, b, subdir = null) {
   // Need the truthy guard because
   // typeof null === 'object'
   if (a && typeof a === "object") {
-    var keysA = Object.keys(a).sort(),
-      keysB = Object.keys(b).sort();
+    const keysA = Object.keys(a).sort();
+    const keysB = Object.keys(b).sort();
 
-    //if a and b are objects with different no of keys, unequal
-    if (keysA.length !== keysB.length) {
-      console.log("Keys are missing!", {
-        [lang]: keysA,
-        en: keysB,
-        ...(!!subdir ? { subdir } : {}),
-        diff: {
-          added: keysB.filter((key) => !keysA.includes(key)),
-          removed: keysA.filter((key) => !keysB.includes(key)),
-        },
-      });
-      return false;
-    }
-
-    //if keys aren't all the same, unequal
-    if (
-      !keysA.every(function (k, i) {
-        return k === keysB[i];
-      })
-    ) {
-      console.log("Keys are not equal!", {
-        [lang]: keysA,
-        en: keysB,
+    // Keys a locale has that `en` does not - orphans. i18next resolves them,
+    // but nothing in the app can ever reference them, so they are drift.
+    const orphans = keysA.filter((key) => !keysB.includes(key));
+    if (orphans.length > 0) {
+      console.log("Orphan keys not present in en!", {
+        [lang]: orphans,
         ...(!!subdir ? { subdir } : {}),
       });
       return false;
     }
 
-    //recurse on the values for each key
+    // Missing keys fall back to `en` at runtime - counted for the summary,
+    // not a failure.
+    for (const key of keysB) if (!keysA.includes(key)) stats.missing += 1;
+
+    //recurse on the values for each key both sides have
     return keysA.every(function (key) {
-      //if we made it here, they have identical keys
-      return compareStructures(lang, a[key], b[key], key);
+      //if we made it here, the locale key exists in `en`
+      return compareStructures(lang, a[key], b[key], stats, key);
     });
 
     //for primitives just ignore since we don't check values.
@@ -85,8 +81,14 @@ console.log(
   ).join(",")}]`
 );
 for (const [lang, translations] of Object.entries(TRANSLATIONS)) {
-  const passed = compareStructures(lang, translations, PRIMARY);
-  console.log(`${langDisplayName(lang)} (${lang}): ${passed ? "✅" : "❌"}`);
+  // Missing = keys that resolve through en-fallback at runtime (by design).
+  const stats = { missing: 0 };
+  const passed = compareStructures(lang, translations, PRIMARY, stats);
+  const fallbackNote =
+    stats.missing > 0 ? ` · ${stats.missing} keys fall back to en` : "";
+  console.log(
+    `${langDisplayName(lang)} (${lang}): ${passed ? "✅" : "❌"}${passed ? fallbackNote : ""}`
+  );
   !passed && failed.push(lang);
 }
 
@@ -96,6 +98,6 @@ if (failed.length !== 0)
     failed
   );
 console.log(
-  `👍 All translation files located match the schema defined by the English file!`
+  `👍 All translation files have no orphan keys or type mismatches (missing keys fall back to en)!`
 );
 process.exit(0);

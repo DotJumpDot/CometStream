@@ -8,11 +8,74 @@ import {
   addAgentFileChange,
   addTrajectoryRecord,
   setAgentTodo,
+  setRunToolIo,
   upsertAgentSession,
 } from "@/utils/agentActivity";
 
 export const AGENT_SESSION_START = "agentSessionStart";
 export const AGENT_SESSION_END = "agentSessionEnd";
+
+// Pending file-write rows older than this sweep on the next fileChangeCard
+// (a run killed mid-write leaves no orphans). The ChatHistory renderer
+// additionally hides rows past twice this age as a backstop.
+export const FILE_PROGRESS_STALE_MS = 3 * 60 * 1000;
+
+// A live file-write stream emits progress every few hundred ms. Silence
+// past this age means the stream is dead or finished without a completion
+// card (MCP file writes succeed without emitting fileChangeCard), so the
+// row drops even when no completion ever arrives to match it.
+export const FILE_PROGRESS_ALIVE_MS = 60 * 1000;
+
+/**
+ * Matches a live file-write checkpoint row against a completed file path.
+ * Either direction may prefix-match: mid-stream the guess is usually a
+ * prefix of the final path. Short guesses (< 4 chars) never match - they
+ * are still just a key fragment.
+ * @param {{pathGuess?: string|null}} row - pending progress row
+ * @param {string} finalPath - fileChangeCard path
+ * @returns {boolean} True when the row belongs to this file.
+ */
+export function pendingProgressMatches(row = {}, finalPath = "") {
+  const guess = typeof row?.pathGuess === "string" ? row.pathGuess : "";
+  const final = typeof finalPath === "string" ? finalPath : "";
+  if (guess.length < 4 || !final) return false;
+  // Compare basenames as well: completion paths may be project-relative
+  // while the guess is a bare filename (create-* tools), or vice versa.
+  // Either side under 4 chars never matches (still a key fragment).
+  const base = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
+  const pairs = [
+    [guess, final],
+    [base(guess), base(final)],
+  ];
+  return pairs.some(
+    ([a, b]) =>
+      Math.min(a.length, b.length) >= 4 &&
+      (a === b || a.startsWith(b) || b.startsWith(a))
+  );
+}
+
+/**
+ * Drops settled pending file-write rows from a chat history array: rows
+ * matching any settled name plus rows older than the stale budget (a run
+ * killed mid-write leaves no orphans). Pure so the fileChangeCard and
+ * fileDownloadCard handlers share it.
+ * @param {Array} prev - chat history rows
+ * @param {Array<string>} settledNames - completed file paths/names
+ * @returns {Array} Filtered rows.
+ */
+export function clearSettledFileProgress(prev = [], settledNames = []) {
+  const names = (Array.isArray(settledNames) ? settledNames : []).filter(
+    (n) => typeof n === "string" && n
+  );
+  const now = Date.now();
+  return prev.filter(
+    (msg) =>
+      !!msg.content &&
+      (msg.type !== "fileWriteProgress" ||
+        (!names.some((name) => pendingProgressMatches(msg, name)) &&
+          now - (msg.at || 0) < FILE_PROGRESS_STALE_MS))
+  );
+}
 
 // Socket events where the agent execution loop has paused and is waiting on
 // the user to type a response (feedback prompt, clarifying questions). While
@@ -42,6 +105,9 @@ const AGENT_PASSIVE_STREAM_EVENTS = [
   "usageMetrics",
   "citations",
   "removeStatusResponse",
+  // Live file-write checkpoints tick a pending row in place; they carry no
+  // new work state.
+  "toolCallProgress",
 ];
 
 /**
@@ -177,6 +243,59 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
     // trigger TTS auto-play
     if (data.content?.type === "chatId" && data.content?.chatId)
       emitAssistantMessageCompleteEvent(data.content.chatId);
+
+    // Run-end tool-I/O snapshot (closes the trajectory lag so end-of-run
+    // kind totals are exact). Store-only, no chat row.
+    if (data.content?.type === "usageMetrics" && data.content?.toolIo)
+      setRunToolIo(data.content.toolIo);
+
+    // Live file-write checkpoints: one pending row per streaming tool call
+    // (stable uuid per call index), updated in place as args stream in.
+    // The completion's fileChangeCard replaces it below.
+    if (data.content?.type === "toolCallProgress") {
+      const progress = data.content;
+      if (!progress?.uuid || !progress?.name) return;
+      return setChatHistory((prev) => {
+        const anchor = progress.pathGuess || progress.name;
+        const now = Date.now();
+        const row = {
+          uuid: progress.uuid,
+          type: "fileWriteProgress",
+          role: "assistant",
+          name: progress.name,
+          pathGuess: progress.pathGuess || null,
+          argChars: Number(progress.argChars) || 0,
+          linesGuess: Number(progress.linesGuess) || 0,
+          at: now,
+          content: anchor,
+          sources: [],
+          closed: true,
+          error: null,
+          animate: false,
+          pending: true,
+          metrics: {},
+        };
+        if (prev.some((msg) => msg.uuid === progress.uuid)) {
+          return prev.map((msg) =>
+            msg.uuid === progress.uuid ? { ...msg, ...row } : msg
+          );
+        }
+        // Silence-aged rows drop here too: a stream dead longer than the
+        // alive budget never produces a completion to match against, so
+        // waiting for one would orphan the row (e.g. MCP writes, which
+        // succeed without any fileChangeCard).
+        return [
+          ...prev.filter(
+            (msg) =>
+              !!msg.content &&
+              (msg.type !== "fileWriteProgress" ||
+                msg.uuid === progress.uuid ||
+                now - (msg.at || 0) < FILE_PROGRESS_ALIVE_MS)
+          ),
+          row,
+        ];
+      });
+    }
 
     return setChatHistory((prev) => {
       if (data.content.type === "removeStatusResponse")
@@ -341,7 +460,9 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
     // Panel feed mirrors chat-stream chips (reads are chat-only).
     addAgentFileChange(change);
     return setChatHistory((prev) => [
-      ...prev.filter((msg) => !!msg.content),
+      // The completion settles its live checkpoint row (exact, prefix, or
+      // basename match); unrelated stale rows sweep too.
+      ...clearSettledFileProgress(prev, [change.path]),
       {
         uuid: v4(),
         type: "fileChangeCard",
@@ -414,9 +535,16 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
   }
 
   if (data.type === "fileDownloadCard") {
+    // Generated-file tools (create-text-file, xlsx/pdf/docx/pptx, images)
+    // succeed through this card, so it settles live checkpoint rows exactly
+    // like a fileChangeCard does.
+    const content = data.content || {};
     return setChatHistory((prev) => {
       return [
-        ...prev.filter((msg) => !!msg.content),
+        ...clearSettledFileProgress(prev, [
+          content.filename,
+          content.displayFilename,
+        ]),
         {
           type: "fileDownloadCard",
           uuid: v4(),

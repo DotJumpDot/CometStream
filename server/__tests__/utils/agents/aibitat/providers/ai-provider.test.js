@@ -58,6 +58,54 @@ describe("Provider usage tracking", () => {
     expect(totals.provider).toBe("TestProvider");
   });
 
+  test("recordUsage tracks prefix-cache hits and server timings", () => {
+    const provider = new TestProvider();
+
+    provider.resetUsage();
+    // llama.cpp streaming final chunk shape.
+    provider.recordUsage(
+      {
+        prompt_tokens: 1000,
+        completion_tokens: 50,
+        total_tokens: 1050,
+        prompt_tokens_details: { cached_tokens: 800 },
+      },
+      null,
+      {
+        cache_n: 800,
+        prompt_n: 1000,
+        prompt_per_second: 95.5,
+        predicted_per_second: 21.2,
+      }
+    );
+    const last = provider.getUsage();
+    expect(last.cached_tokens).toBe(800);
+    expect(last.serverTps).toBe(21.2);
+    expect(last.serverPromptTps).toBe(95.5);
+
+    provider.resetUsage();
+    // Backends without cache/timing fields degrade to zero, not NaN.
+    provider.recordUsage({ prompt_tokens: 100, completion_tokens: 10 });
+    const plain = provider.getUsage();
+    expect(plain.cached_tokens).toBe(0);
+    expect(plain.serverTps).toBe(0);
+
+    const totals = provider.getCumulativeUsage();
+    expect(totals.prompt_tokens).toBe(1100);
+    expect(totals.cached_tokens).toBe(800);
+  });
+
+  test("recordUsage clamps cached tokens to the prompt size", () => {
+    const provider = new TestProvider();
+    provider.resetUsage();
+    provider.recordUsage({
+      prompt_tokens: 100,
+      completion_tokens: 10,
+      prompt_tokens_details: { cached_tokens: 9999 },
+    });
+    expect(provider.getUsage().cached_tokens).toBe(100);
+  });
+
   test("resetUsage does not clear the accumulated totals", () => {
     const provider = new TestProvider();
 

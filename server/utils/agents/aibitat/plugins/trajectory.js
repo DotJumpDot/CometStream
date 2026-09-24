@@ -72,11 +72,23 @@ function summarizeMessage(message = {}) {
 }
 
 /**
- * Summarizes requested tool calls (name + bounded args preview).
+ * Summarizes requested tool calls (name + kind + bounded args preview).
+ * Kinds come from the offered function definitions (MCP tools carry the
+ * `isMCPTool` flag; built-ins classify by name) so the ContextRing card can
+ * split tool traffic without a second lookup.
  * @param {Array} functionCalls - Parsed calls from the completion.
- * @returns {Array<{name: string, args: string}>}
+ * @param {Array} [functions] - Offered tool definitions ({name, isMCPTool}).
+ * @returns {Array<{name: string, kind: string, args: string}>}
  */
-function summarizeToolCalls(functionCalls = []) {
+function summarizeToolCalls(functionCalls = [], functions = []) {
+  const { classifyToolKind } = require("./tool-usage.js");
+  const defs = new Map();
+  try {
+    for (const fn of Array.isArray(functions) ? functions : [])
+      if (fn?.name) defs.set(fn.name, fn);
+  } catch {
+    // Lookup is best-effort - every call still records as builtin.
+  }
   return functionCalls.slice(0, TRAJ_TOOL_PREVIEW).map((call) => {
     let args = "";
     try {
@@ -88,7 +100,14 @@ function summarizeToolCalls(functionCalls = []) {
       args =
         args.slice(0, TRAJ_ARGS_CHARS) +
         `…[+${args.length - TRAJ_ARGS_CHARS} chars]`;
-    return { name: call?.name || "(unnamed)", args };
+    const name = call?.name || "(unnamed)";
+    let kind = "builtin";
+    try {
+      kind = classifyToolKind(name, defs.get(name) ?? null);
+    } catch {
+      // Kind never blocks the record.
+    }
+    return { name, kind, args };
   });
 }
 
@@ -127,6 +146,30 @@ function recordTrajectoryIteration(aibitat, input = {}) {
       usage = null;
     }
 
+    // Per-round usage (this iteration's tokens + tok/s only) for the live
+    // speed readout. Cumulative `usage` above keeps the run totals; without
+    // this split the card could show an average but never last/max tok/s.
+    let round = null;
+    try {
+      round = aibitat?.providerInstance?.getUsage?.() ?? null;
+    } catch {
+      round = null;
+    }
+
+    // Tool I/O accumulated since the previous record (lagged by one turn by
+    // construction: results only exist after the completion that requested
+    // them) plus the run-total snapshot. The final turn's tools land via
+    // the run-end usageMetrics event, which carries the same snapshot.
+    let executedTools = [];
+    let toolIo = null;
+    try {
+      const toolUsage = require("./tool-usage.js");
+      executedTools = toolUsage.drainPendingToolIo(aibitat);
+      toolIo = toolUsage.toolIoSnapshot(aibitat);
+    } catch {
+      // Accounting never blocks the record.
+    }
+
     const record = {
       seq: trajectory.length + 1,
       at: new Date().toISOString(),
@@ -135,12 +178,15 @@ function recordTrajectoryIteration(aibitat, input = {}) {
       depth: Number.isInteger(input.depth) ? input.depth : 0,
       offeredTools: functions.length,
       newMessages: deltas,
-      requestedTools: summarizeToolCalls(calls),
+      requestedTools: summarizeToolCalls(calls, functions),
       textChars:
         typeof result.textResponse === "string"
           ? result.textResponse.length
           : 0,
       usage,
+      round,
+      executedTools,
+      toolIo,
       ...(input.error ? { error: String(input.error).slice(0, 500) } : {}),
     };
     trajectory.push(record);

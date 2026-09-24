@@ -33,6 +33,11 @@ const ACTION_VERB_KEYS = {
  * icon + filename + muted directory + `+N -N` line counts on the right.
  * Edit/create rows expand inline to a colored unified diff; read rows are
  * static.
+ *
+ * Pending rows (`pending`) are the live counterpart: while a file-write
+ * tool's arguments stream in, the row ticks up a streamed-byte counter in
+ * place, then the completion's fileChangeCard replaces it. Pending rows
+ * never expand and carry no diff.
  * @param {Object} props
  * @param {string} props.action - "edit" | "create" | "read"
  * @param {string} props.path - display path (relative to the agent's allowed root)
@@ -41,6 +46,9 @@ const ACTION_VERB_KEYS = {
  * @param {string} [props.diff] - unified diff (edit/create only)
  * @param {boolean} [props.diffTruncated] - diff was capped server-side
  * @param {number} [props.readLines] - lines read (read action only)
+ * @param {boolean} [props.pending] - live streaming row (byte counter)
+ * @param {number} [props.streamedBytes] - streamed arg bytes so far
+ * @param {number} [props.streamedLines] - guessed content lines so far
  */
 function FileChangeCard({
   action = "edit",
@@ -50,20 +58,35 @@ function FileChangeCard({
   diff = "",
   diffTruncated = false,
   readLines = null,
+  pending = false,
+  streamedBytes = 0,
+  streamedLines = 0,
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   const segments = splitPath(path);
-  const Icon = ACTION_ICONS[action] ?? FileCode;
-  const hasDiff = action !== "read" && !!diff;
-  const isRead = action === "read";
+  const Icon = pending ? FilePlus : (ACTION_ICONS[action] ?? FileCode);
+  const hasDiff = !pending && action !== "read" && !!diff;
+  const isRead = !pending && action === "read";
 
-  const ariaLabel = isRead
-    ? t("chat_window.file_change.read_file", { path })
-    : action === "create"
-      ? t("chat_window.file_change.created_file", { path })
-      : t("chat_window.file_change.edited_file", { path });
+  const ariaLabel = pending
+    ? t("chat_window.file_change.writing_file", { path: path || "…" })
+    : isRead
+      ? t("chat_window.file_change.read_file", { path })
+      : action === "create"
+        ? t("chat_window.file_change.created_file", { path })
+        : t("chat_window.file_change.edited_file", { path });
+
+  // Live checkpoint reads like the completion row: `+N` lines while the
+  // payload has line breaks, byte size before the first break arrives.
+  const lines = Number(streamedLines) || 0;
+  const streamedLabel =
+    pending && lines > 0
+      ? `+${lines}`
+      : pending && Number(streamedBytes) > 0
+        ? `+${formatStreamedBytes(streamedBytes)}`
+        : null;
 
   return (
     <div className="not-prose w-full mt-2 mb-2">
@@ -82,7 +105,9 @@ function FileChangeCard({
       >
         <span
           className={`flex h-6 w-6 items-center justify-center rounded-md shrink-0 ${
-            ACTION_BADGES[action] ?? "bg-white/5 text-zinc-400"
+            pending
+              ? "bg-emerald-500/15 text-emerald-400 light:text-emerald-500 animate-pulse"
+              : (ACTION_BADGES[action] ?? "bg-white/5 text-zinc-400")
           }`}
         >
           <Icon className="w-3.5 h-3.5" />
@@ -91,10 +116,15 @@ function FileChangeCard({
       snug against the filename instead of at the far right edge. */}
         <span className="min-w-0 flex items-baseline gap-x-1.5">
           <span className="text-[12px] text-zinc-400 light:text-zinc-500 shrink-0">
-            {t(ACTION_VERB_KEYS[action] ?? "chat_window.file_change.verb_edit")}
+            {pending
+              ? t("chat_window.file_change.writing")
+              : t(
+                  ACTION_VERB_KEYS[action] ??
+                    "chat_window.file_change.verb_edit"
+                )}
           </span>
           <span className="font-mono text-[13px] text-zinc-100 light:text-zinc-900 shrink-0">
-            {segments.basename}
+            {segments.basename || "…"}
           </span>
           {segments.dirname && (
             <span className="font-mono text-[11px] text-zinc-500 light:text-zinc-400 truncate">
@@ -103,7 +133,11 @@ function FileChangeCard({
           )}
         </span>
         <span className="flex items-center gap-x-2 flex-shrink-0">
-          {isRead ? (
+          {streamedLabel ? (
+            <span className="font-mono text-[15px] text-emerald-500 light:text-emerald-600 tabular-nums">
+              {streamedLabel}
+            </span>
+          ) : isRead ? (
             readLines != null && (
               <span className="text-xs text-zinc-500 light:text-zinc-400">
                 {t("chat_window.file_change.lines", { count: readLines })}
@@ -147,6 +181,18 @@ function FileChangeCard({
       )}
     </div>
   );
+}
+
+/**
+ * Compact byte counter for live rows (`+4.2KB`, `+812B`). One decimal keeps
+ * the checkpoint readable while it ticks; integers below 1KB.
+ * @param {number} bytes - streamed bytes so far
+ * @returns {string} Compact label without the `+` prefix.
+ */
+function formatStreamedBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${Math.round(n)}B`;
+  return `${(n / 1024).toFixed(1)}KB`;
 }
 
 export default memo(FileChangeCard);

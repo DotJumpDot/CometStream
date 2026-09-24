@@ -32,6 +32,7 @@ import {
   stripToolCalls,
 } from "./ThoughtContainer";
 import { MessageActionsProvider } from "./MessageActionsContext";
+import { FILE_PROGRESS_ALIVE_MS } from "@/utils/chat/agent";
 
 export default forwardRef(function (
   {
@@ -292,6 +293,31 @@ function buildMessages({
           diff={props.diff}
           diffTruncated={!!props.diffTruncated}
           readLines={props.readLines ?? null}
+        />
+      );
+      return acc;
+    }
+
+    // Live file-write checkpoints: a pending row per streaming tool call,
+    // updated in place as args stream in and replaced by the completion's
+    // fileChangeCard (see agent.js). Stale rows (run killed mid-write) hide
+    // here as a backstop to the sweep on fileChangeCard.
+    if (props.type === "fileWriteProgress" && !!props.content) {
+      // Backstop to the sweep on fileChangeCard: rows this stale belong to
+      // a stream that died (or finished card-less, like MCP writes).
+      if (Date.now() - (props.at || 0) > FILE_PROGRESS_ALIVE_MS) {
+        chainRef.chain = null;
+        return acc;
+      }
+      chainRef.chain = null;
+      acc.push(
+        <FileChangeCard
+          key={`file-progress-${props.uuid || index}`}
+          pending={true}
+          action={props.action || "create"}
+          path={props.pathGuess || ""}
+          streamedBytes={props.argChars ?? 0}
+          streamedLines={props.linesGuess ?? 0}
         />
       );
       return acc;

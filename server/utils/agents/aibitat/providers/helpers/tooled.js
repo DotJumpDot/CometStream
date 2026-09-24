@@ -8,6 +8,18 @@ const {
 const {
   extractReasoningContent,
 } = require("../../../../helpers/chat/responses");
+const {
+  FILE_WRITE_TOOLS,
+  guessPathFromArgs,
+  guessLinesFromArgs,
+} = require("../../plugins/tool-usage.js");
+
+// Minimum gap between live file-write progress events for one call
+// (see toolCallsByIndex loop below). Deltas arrive per token and the chat
+// row re-renders per event - a few updates per second read as live without
+// thrashing React. A byte gate would stall on slow models (small models
+// stream args at ~20 tok/s, so 4KB is tens of seconds of silence).
+const TOOL_PROGRESS_MS = 400;
 
 /**
  * Shared native OpenAI-compatible tool calling utilities.
@@ -253,14 +265,21 @@ async function tooledStream(
   };
 
   const toolCallsByIndex = {};
+  // Live file-write progress: per-slot timestamp of the last throttled
+  // `toolCallProgress` event (see TOOL_PROGRESS_MS).
+  const toolProgressMarks = {};
   let usage = null;
   let time_info = null;
+  let timings = null;
   let reasoningText = "";
 
   for await (const chunk of stream) {
     // Capture usage from final chunk (some providers send usage after finish_reason)
     if (chunk?.usage) usage = chunk.usage;
     if (chunk?.time_info) time_info = chunk.time_info;
+    // llama.cpp reports server timings (incl. prefix-cache hits) on the
+    // final streamed chunk - forwarded to recordUsage below.
+    if (chunk?.timings) timings = chunk.timings;
 
     if (!chunk?.choices?.[0]) continue;
     const choice = chunk.choices[0];
@@ -336,6 +355,35 @@ async function tooledStream(
             type: "toolCallInvocation",
             content: `Assembling Tool Call: ${toolCallsByIndex[idx].name}(${toolCallsByIndex[idx].arguments})`,
           });
+          // Structured progress for file-write tools only: the chat renders
+          // a pending file row that ticks up as args stream in, then the
+          // completion's fileChangeCard replaces it. Other tools keep the
+          // existing (hidden) assembly notice - a progress row for every
+          // `ls` would be noise.
+          try {
+            const entry = toolCallsByIndex[idx];
+            if (
+              entry.name &&
+              FILE_WRITE_TOOLS.has(entry.name) &&
+              typeof entry.arguments === "string"
+            ) {
+              const now = Date.now();
+              const last = toolProgressMarks[idx] ?? -1;
+              if (last < 0 || now - last >= TOOL_PROGRESS_MS) {
+                toolProgressMarks[idx] = now;
+                eventHandler?.("reportStreamEvent", {
+                  uuid: `${msgUUID}:tool_call_progress:${idx}`,
+                  type: "toolCallProgress",
+                  name: entry.name,
+                  argChars: entry.arguments.length,
+                  linesGuess: guessLinesFromArgs(entry.arguments),
+                  pathGuess: guessPathFromArgs(entry.arguments),
+                });
+              }
+            }
+          } catch {
+            // Progress is best-effort UI - assembly continues regardless.
+          }
         }
       }
     }
@@ -344,7 +392,7 @@ async function tooledStream(
   // Auto-record usage if provider is passed and usage is available
   if (provider?.recordUsage && usage) {
     try {
-      provider.recordUsage(usage, time_info);
+      provider.recordUsage(usage, time_info, timings);
     } catch {}
   }
 
@@ -475,7 +523,7 @@ async function tooledComplete(
   // Auto-record usage if provider is passed and usage is available
   if (provider?.recordUsage && usage) {
     try {
-      provider.recordUsage(usage);
+      provider.recordUsage(usage, null, response.timings ?? null);
     } catch {}
   }
 

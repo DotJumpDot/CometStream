@@ -86,8 +86,8 @@ export function AgentPanelButton() {
 
 /**
  * Right-docked agent side panel (ZCode-style): one merged view of the
- * session's work - Changes on top (aggregated file changes with
- * click-to-expand diffs), Plan below (the todo-write stepper), Sessions
+ * session's work - Plan on top (the todo-write stepper), Changes below
+ * (aggregated file changes with click-to-expand diffs), Sessions
  * (terminal executions + subagent runs with expandable output), and Sources
  * (the chat's latest citations). Hidden by default; opens itself the first
  * time an agent event lands, and can be toggled with the chat header
@@ -108,7 +108,7 @@ export default function AgentSidePanel() {
   const [activity, setActivity] = useState(getAgentActivity);
   const [sources, setSources] = useState(getLatestSources);
   // Sandbox-relative path being read in the file viewer; null shows the
-  // panel's normal Changes/Plan/Sources sections.
+  // panel's normal Plan/Changes/Sources sections.
   const [viewerPath, setViewerPath] = useState(null);
   const sessionsRef = useRef(null);
   // Ref mirror so the toggle handler always reads the current state
@@ -245,6 +245,21 @@ export default function AgentSidePanel() {
               <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
                 <section>
                   <SectionHeader
+                    icon={<ListChecks className="w-3.5 h-3.5" />}
+                    label={t("agent_panel.tab_plan")}
+                    count={activity.todo.length}
+                    right={
+                      activity.todo.length > 0 && (
+                        <span className="text-xs text-zinc-500 light:text-zinc-400 tabular-nums">
+                          {todoDone}/{activity.todo.length}
+                        </span>
+                      )
+                    }
+                  />
+                  <PlanTab items={activity.todo} done={todoDone} />
+                </section>
+                <section>
+                  <SectionHeader
                     icon={<GitDiff className="w-3.5 h-3.5" />}
                     label={t("agent_panel.tab_changes")}
                     count={activity.fileChanges.length}
@@ -266,21 +281,6 @@ export default function AgentSidePanel() {
                     }
                   />
                   <ChangesTab changes={activity.fileChanges} />
-                </section>
-                <section>
-                  <SectionHeader
-                    icon={<ListChecks className="w-3.5 h-3.5" />}
-                    label={t("agent_panel.tab_plan")}
-                    count={activity.todo.length}
-                    right={
-                      activity.todo.length > 0 && (
-                        <span className="text-xs text-zinc-500 light:text-zinc-400 tabular-nums">
-                          {todoDone}/{activity.todo.length}
-                        </span>
-                      )
-                    }
-                  />
-                  <PlanTab items={activity.todo} done={todoDone} />
                 </section>
                 <section ref={sessionsRef} className="scroll-mt-2">
                   <SectionHeader
@@ -825,6 +825,21 @@ function TrajectoryRow({ record, expanded, onToggle, nested = false }) {
             {usageText}
           </span>
         )}
+        {Number(record.round?.cached_tokens) > 0 &&
+          Number(record.round?.prompt_tokens) > 0 && (
+            <span
+              className="text-[10px] text-emerald-500 light:text-emerald-600 tabular-nums shrink-0"
+              title={t("context_ring.cache_hit")}
+            >
+              {t("agent_panel.trajectory_cache_hit", {
+                pct: Math.round(
+                  (Number(record.round.cached_tokens) /
+                    Number(record.round.prompt_tokens)) *
+                    100
+                ),
+              })}
+            </span>
+          )}
       </button>
       {expanded && (
         <div className="mx-2 mb-2 p-2 rounded-md bg-zinc-950/70 light:bg-slate-100 max-h-[260px] overflow-y-auto">
