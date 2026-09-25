@@ -56,6 +56,13 @@ const TERMINAL_TOOLS = new Set([
   "task-stop",
 ]);
 
+// Long-text tools whose streamed args deserve a live pending row like file
+// writes: exit-plan-mode proposals arrive as one large JSON blob (plan doc +
+// todos) and would otherwise pop in all at once after a silent token burn.
+// The chat renders a "receiving plan" row ticking up in chars until the
+// completion's planCard replaces it (see agent.js).
+const PLAN_PROGRESS_TOOLS = new Set(["exit-plan-mode"]);
+
 const SUBAGENT_TOOLS = new Set(["delegate-task", "submit-task-result"]);
 
 const FILES_WRITE_NAMES = new Set([
@@ -119,6 +126,9 @@ function classifyToolKind(name, fnDef = null) {
   if (SUBAGENT_TOOLS.has(name)) return TOOL_KINDS.SUBAGENT;
   if (FILES_WRITE_NAMES.has(name)) return TOOL_KINDS.FILES_WRITE;
   if (name === "todo-write" || name === "chat-history")
+    return TOOL_KINDS.BUILTIN;
+  // Plan-mode tools are session-state calls like todo-write, not file work.
+  if (name === "enter-plan-mode" || name === "exit-plan-mode")
     return TOOL_KINDS.BUILTIN;
   if (name.startsWith(FILES_READ_PREFIX)) return TOOL_KINDS.FILES_READ;
   if (fnDef?.isMCPTool) return TOOL_KINDS.MCP;
@@ -245,6 +255,7 @@ function toolIoSnapshot(aibitat) {
 module.exports = {
   TOOL_KINDS,
   FILE_WRITE_TOOLS,
+  PLAN_PROGRESS_TOOLS,
   classifyToolKind,
   guessPathFromArgs,
   guessLinesFromArgs,

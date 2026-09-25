@@ -64,6 +64,7 @@ const SystemSettings = {
     "imported_agent_skills",
     "agent_clarifying_questions_enabled",
     "agent_clarifying_questions_max_per_turn",
+    "plan_mode_auto_approve",
     "custom_app_name",
     "feature_flags",
     "meta_page_title",
@@ -98,6 +99,7 @@ const SystemSettings = {
     "agent_sql_connections",
     "agent_clarifying_questions_enabled",
     "agent_clarifying_questions_max_per_turn",
+    "plan_mode_auto_approve",
     "custom_app_name",
     "default_system_prompt",
 
@@ -657,6 +659,17 @@ const SystemSettings = {
           { label: "agent_clarifying_questions_max_per_turn" },
           "3"
         )) || 3
+      ),
+      // Default YES (unset): long runs must not park waiting for a click.
+      // The exit-plan-mode handler reads the same label with the same
+      // fallback, so the toggle and the gate can never disagree.
+      PlanModeAutoApprove: !["false", "0", "no"].includes(
+        String(
+          await this.getValueOrFallback(
+            { label: "plan_mode_auto_approve" },
+            "true"
+          )
+        ).toLowerCase()
       ),
     };
   },

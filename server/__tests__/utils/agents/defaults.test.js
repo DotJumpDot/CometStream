@@ -175,6 +175,38 @@ describe("WORKSPACE_AGENT.getDefinition", () => {
     expect(definition.role).toContain("Plan first for multi-step work");
     expect(definition.role).toContain("FIRST tool call MUST be todo-write");
     expect(definition.role).toContain("3 or more steps");
+    expect(definition.role).toContain("Never restate or paraphrase");
+  });
+
+  it("documents plan mode for design-before-code tasks", async () => {
+    const workspace = { id: 1, openAiPrompt: null };
+    const definition = await WORKSPACE_AGENT.getDefinition(
+      "openai",
+      workspace,
+      null
+    );
+
+    expect(definition.role).toContain("enter-plan-mode");
+    expect(definition.role).toContain("exit-plan-mode");
+    expect(definition.role).toMatch(/FIRST tool call MUST be enter-plan-mode/);
+  });
+
+  it("expands array-type default skills to parent#child load ids", async () => {
+    // Regression: pushing the bare parent name ("plan-mode-agent") crashes
+    // the single-stage attach path (plugin.plugin is an array, not a
+    // function) and kills the whole run before the first turn.
+    const workspace = { id: 1, openAiPrompt: null };
+    const definition = await WORKSPACE_AGENT.getDefinition(
+      "openai",
+      workspace,
+      null
+    );
+
+    expect(definition.functions).toContain(
+      "plan-mode-agent#enter-plan-mode"
+    );
+    expect(definition.functions).toContain("plan-mode-agent#exit-plan-mode");
+    expect(definition.functions).not.toContain("plan-mode-agent");
   });
 });
 

@@ -48,6 +48,10 @@ Everything the AnythingLLM base offers — workspaces, documents, embeddings, mu
 
 - **Batched tool calls** — the model creates 10 files in one reasoned turn, desktop-coding-agent style.
 - **Plan-first protocol** — 3+-step tasks open with a full todo list before any tool runs, updating per step in the panel's Plan tab.
+- **Plan mode (design before code)** — big or unclear tasks (5+ steps, or the approach itself needs deciding) enter a read-only planning phase first:
+  - exploration only: reads, search, web, read-only terminal — writes, mutations, subagents, and external actions are blocked
+  - the design doc lands in the chat as a card you Approve or Reject; approval seeds the execution checklist and starts the build
+  - plans auto-approve by default (toggle in Agent Skill Settings) so long runs don't park waiting on a click
 - **Opt-in terminal skill** — agents build, serve, and self-test with shell commands:
   - jailed to a working root, with timeout + output caps
   - host-wrecking command denylist, whole-disk scans refused

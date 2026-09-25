@@ -220,6 +220,30 @@ export default function handleChat(
   } else if (type === "todoListCard") {
     // Plan updates render only in the agent side panel - no chat bubble.
     setAgentTodo(chatResult.content?.items || []);
+  } else if (type === "planCard") {
+    // Plan-mode design docs render as chat cards on both stream paths.
+    const plan = chatResult.content?.plan || "";
+    if (plan) {
+      const planMsg = {
+        uuid,
+        type: "planCard",
+        role: "assistant",
+        plan,
+        status: chatResult.content?.status || "proposed",
+        content: plan,
+        sources: [],
+        closed: true,
+        error: null,
+        animate: false,
+        pending: false,
+        metrics,
+      };
+      const settled = _chatHistory.filter(
+        (msg) => msg.type !== "planWriteProgress"
+      );
+      setChatHistory([...settled, planMsg]);
+      _chatHistory.push(planMsg);
+    }
   } else if (type === "sessionCard") {
     // Terminal/subagent session rows render only in the side panel.
     upsertAgentSession(chatResult.content || {});

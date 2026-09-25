@@ -8,7 +8,13 @@ const MAX_TEXT_LENGTH = 1000;
 // Tools that survive reranking regardless of semantic score. todo-write is
 // UI-coupled (it drives the Plan tab in the chat side panel) and costs almost
 // no tokens, so pruning it breaks the panel contract for multi-step tasks.
-const ALWAYS_INCLUDED_TOOLS = new Set(["todo-write"]);
+// enter/exit-plan-mode ride along: plan mode must stay discoverable or the
+// design-before-code path silently disappears on long tool lists.
+const ALWAYS_INCLUDED_TOOLS = new Set([
+  "todo-write",
+  "enter-plan-mode",
+  "exit-plan-mode",
+]);
 
 class ToolReranker {
   /**

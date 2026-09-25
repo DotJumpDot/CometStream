@@ -155,6 +155,7 @@ const handledEvents = [
   "rechartVisualize",
   "toolApprovalRequest",
   "clarificationRequest",
+  "planCard",
   "contextCompactStart",
   "contextCompactEnd",
   "trajectoryEvent",
@@ -251,16 +252,21 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
 
     // Live file-write checkpoints: one pending row per streaming tool call
     // (stable uuid per call index), updated in place as args stream in.
-    // The completion's fileChangeCard replaces it below.
+    // The completion's fileChangeCard replaces it below. Plan proposals
+    // (exit-plan-mode) ride the same channel with a planWriteProgress row
+    // until the completion's planCard replaces it.
     if (data.content?.type === "toolCallProgress") {
       const progress = data.content;
       if (!progress?.uuid || !progress?.name) return;
+      const isPlan = progress.name === "exit-plan-mode";
       return setChatHistory((prev) => {
-        const anchor = progress.pathGuess || progress.name;
+        const anchor = isPlan
+          ? progress.name
+          : progress.pathGuess || progress.name;
         const now = Date.now();
         const row = {
           uuid: progress.uuid,
-          type: "fileWriteProgress",
+          type: isPlan ? "planWriteProgress" : "fileWriteProgress",
           role: "assistant",
           name: progress.name,
           pathGuess: progress.pathGuess || null,
@@ -283,15 +289,19 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
         // Silence-aged rows drop here too: a stream dead longer than the
         // alive budget never produces a completion to match against, so
         // waiting for one would orphan the row (e.g. MCP writes, which
-        // succeed without any fileChangeCard).
+        // succeed without any fileChangeCard). Applies to plan rows too.
         return [
-          ...prev.filter(
-            (msg) =>
+          ...prev.filter((msg) => {
+            const isProgressRow =
+              msg.type === "fileWriteProgress" ||
+              msg.type === "planWriteProgress";
+            return (
               !!msg.content &&
-              (msg.type !== "fileWriteProgress" ||
+              (!isProgressRow ||
                 msg.uuid === progress.uuid ||
                 now - (msg.at || 0) < FILE_PROGRESS_ALIVE_MS)
-          ),
+            );
+          }),
           row,
         ];
       });
@@ -489,6 +499,34 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
   if (data.type === "todoListCard") {
     setAgentTodo(data.content?.items || []);
     return;
+  }
+
+  // Plan-mode design docs render as chat cards (proposed, then approved or
+  // rejected) so the design history reads chronologically in the thread.
+  // Landing settles the streaming planWriteProgress row like a
+  // fileChangeCard settles its file row.
+  if (data.type === "planCard") {
+    const plan = data.content?.plan || "";
+    if (!plan) return;
+    return setChatHistory((prev) => [
+      ...prev.filter(
+        (msg) => !!msg.content && msg.type !== "planWriteProgress"
+      ),
+      {
+        uuid: v4(),
+        type: "planCard",
+        role: "assistant",
+        plan,
+        status: data.content?.status || "proposed",
+        content: plan,
+        sources: [],
+        closed: true,
+        error: null,
+        animate: false,
+        pending: false,
+        metrics: {},
+      },
+    ]);
   }
 
   // Model trajectory records render only in the agent side panel's

@@ -8,6 +8,7 @@ import FileChangeCard from "./FileChangeCard";
 import FileDownloadCard from "./FileDownloadCard";
 import SessionCard from "./SessionCard";
 import ContextCompactCard from "./ContextCompactCard";
+import PlanCard from "./PlanCard";
 import AgentRunSummary from "./AgentRunSummary";
 import JumpRail, { isJumpTurn } from "./JumpRail";
 import ImageGenerationPending from "./ImageGenerationPending";
@@ -381,6 +382,40 @@ function buildMessages({
           key={`route-${props.uuid}`}
           routedTo={props.routedTo}
           isStreaming={isStreaming}
+        />
+      );
+      return acc;
+    }
+
+    // Streaming plan proposal: pending row ticking up in chars while the
+    // exit-plan-mode args stream in; the completion's planCard settles it
+    // (see agent.js). Same orphan backstop as file rows.
+    if (props.type === "planWriteProgress" && !!props.content) {
+      if (Date.now() - (props.at || 0) > FILE_PROGRESS_ALIVE_MS) {
+        chainRef.chain = null;
+        return acc;
+      }
+      chainRef.chain = null;
+      acc.push(
+        <PlanCard
+          key={`plan-progress-${props.uuid || index}`}
+          status="proposed"
+          pendingChars={props.argChars ?? 0}
+        />
+      );
+      return acc;
+    }
+
+    // Plan-mode design doc (socket planCard events + persisted trace rows):
+    // proposals, approvals, and rejections each render as their own card so
+    // the design history reads chronologically.
+    if (props.type === "planCard" && props.plan) {
+      chainRef.chain = null;
+      acc.push(
+        <PlanCard
+          key={`plan-${props.uuid || props.chatId || index}`}
+          plan={props.plan}
+          status={props.status || "proposed"}
         />
       );
       return acc;

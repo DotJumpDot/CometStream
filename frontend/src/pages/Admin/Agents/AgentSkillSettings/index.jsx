@@ -4,6 +4,7 @@ import { SlidersHorizontal } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import MaxToolCallStack from "./MaxToolCallStack";
 import AgentClarifyingQuestions from "./AgentClarifyingQuestions";
+import AgentPlanMode from "./AgentPlanMode";
 import AgentSkillReranker from "./AgentSkillReranker";
 
 export default function AgentSkillSettings() {
@@ -35,6 +36,8 @@ function AgentSkillSettingsModal({ isOpen, closeModal }) {
         <AgentSkillReranker />
         <div className="border-b border-zinc-800 light:border-slate-200 h-[1px] w-full" />
         <AgentClarifyingQuestions />
+        <div className="border-b border-zinc-800 light:border-slate-200 h-[1px] w-full" />
+        <AgentPlanMode />
       </div>
     </Modal>
   );

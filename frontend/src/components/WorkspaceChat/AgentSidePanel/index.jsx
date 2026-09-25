@@ -395,6 +395,9 @@ function PlanTab({ items, done }) {
     );
 
   const percent = Math.round((done / items.length) * 100);
+  // ZCode's todo card leads with the active step - mirror that here so the
+  // current work reads without scanning the whole stepper.
+  const current = items.find((item) => item.status === "in_progress");
 
   return (
     <div className="mt-1">
@@ -407,7 +410,16 @@ function PlanTab({ items, done }) {
           style={{ width: `${percent}%` }}
         />
       </div>
-      <ol className="mt-4">
+      {current && (
+        <p className="mt-3 flex items-start gap-x-2 rounded-lg bg-cta-button/10 px-2.5 py-2 text-[12px] leading-5 text-white light:text-zinc-900">
+          <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-cta-button animate-pulse shrink-0" />
+          <span className="min-w-0">
+            <span className="font-semibold">{t("agent_panel.plan_now")}: </span>
+            <span className="break-words">{current.content}</span>
+          </span>
+        </p>
+      )}
+      <ol className="mt-3">
         {items.map((item, i) => {
           const isLast = i === items.length - 1;
           const label =

@@ -12,6 +12,7 @@ import StatusResponse from "../../StatusResponse";
 import FileChangeCard from "../../FileChangeCard";
 import FileDownloadCard from "../../FileDownloadCard";
 import SessionCard from "../../SessionCard";
+import PlanCard from "../../PlanCard";
 
 /**
  * Renders a persisted agent run trace (see server `plugins/trace.js`) in
@@ -23,8 +24,8 @@ import SessionCard from "../../SessionCard";
  * exactly like they break the live chain, preserving chronological
  * interleave. Solo bare tool calls hide via the shared StatusResponse rule.
  * `agentNote` progress sentences render as reply-styled prose between the
- * runs. Plans and sessions have no live-chain equivalent and keep their compact
- * static rows.
+ * runs. Sessions have no live-chain equivalent and keep their compact
+ * static rows; plan docs render the full PlanCard like the live chat.
  * @param {Object} props
  * @param {Array<{type: string, content: any}>} [props.trace] - recorded events
  */
@@ -119,6 +120,9 @@ function TraceRow({ event }) {
   if (type === "sessionCard" && content?.id != null) {
     return <SessionCard session={content} />;
   }
+  if (type === "planCard" && content?.plan) {
+    return <PlanCard plan={content.plan} status={content.status} />;
+  }
   // Thoughts and statuses only ever arrive inside a regrouped run (rendered
   // by StatusResponse above); anything reaching here renders nothing.
   return null;
@@ -166,13 +170,18 @@ function TracePlan({ items }) {
                 className="w-3.5 h-3.5 text-emerald-400 shrink-0"
               />
             ) : item?.status === "in_progress" ? (
-              <SpinnerGap className="w-3.5 h-3.5 text-cta-button shrink-0" />
+              <SpinnerGap className="w-3.5 h-3.5 text-cta-button shrink-0 animate-spin" />
             ) : (
               <Circle className="w-3 h-3 text-zinc-500 light:text-zinc-400 shrink-0" />
             )}
             <span className="min-w-0 truncate">{item?.content || ""}</span>
           </li>
         ))}
+        {list.length > 20 && (
+          <li className="text-[11px] text-zinc-500 light:text-zinc-400 pl-[22px] tabular-nums">
+            {t("agent_panel.plan_more", { count: list.length - 20 })}
+          </li>
+        )}
       </ul>
     </div>
   );

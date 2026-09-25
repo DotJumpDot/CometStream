@@ -52,8 +52,7 @@ describe("formatMessagesForTools attachment content (native tool path)", () => {
   });
 });
 
-describe("max_tokens forwarding from the tooled maxTokens option", () => {
-  const messages = [{ role: "user", content: "hi" }];
+describe("max_tokens forwarding from the tooled maxTokens option", () => {  const messages = [{ role: "user", content: "hi" }];
 
   function fakeClient({ stream = false } = {}) {
     const create = jest.fn(async () => {
@@ -452,5 +451,59 @@ describe("batched tool calls (functionCalls)", () => {
     expect(result.functionCalls).toHaveLength(1);
     expect(result.functionCalls[0].arguments).toEqual({});
     expect(result.functionCalls[0]).not.toHaveProperty("argsParseError");
+  });
+});
+
+describe("live progress checkpoints (toolCallProgress)", () => {
+  function streamingClient(chunks) {
+    const create = jest.fn(async () =>
+      (async function* () {
+        yield* chunks;
+      })()
+    );
+    return { client: { chat: { completions: { create } } }, create };
+  }
+
+  function toolChunks(name, parts) {
+    return parts.map((args, i) => ({
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              i === 0
+                ? { index: 0, id: "call-1", function: { name, arguments: args } }
+                : { index: 0, function: { arguments: args } },
+            ],
+          },
+        },
+      ],
+    }));
+  }
+
+  it("emits progress for exit-plan-mode proposals like file writes", async () => {
+    const { client } = streamingClient(
+      toolChunks("exit-plan-mode", ['{"plan": "## Goal', '\\nBuild it."}'])
+    );
+    const events = [];
+    const handler = (type, event) => events.push({ type, event });
+    await tooledStream(client, "m", [], [], handler, {});
+    const progress = events.filter(
+      (e) => e.event?.type === "toolCallProgress"
+    );
+    expect(progress.length).toBeGreaterThan(0);
+    expect(progress[0].event.name).toBe("exit-plan-mode");
+    expect(progress[0].event.argChars).toBeGreaterThan(0);
+  });
+
+  it("stays silent for ordinary tools", async () => {
+    const { client } = streamingClient(
+      toolChunks("terminal-agent", ['{"command": "ls', ' -la"}'])
+    );
+    const events = [];
+    const handler = (type, event) => events.push({ type, event });
+    await tooledStream(client, "m", [], [], handler, {});
+    expect(
+      events.filter((e) => e.event?.type === "toolCallProgress")
+    ).toHaveLength(0);
   });
 });

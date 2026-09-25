@@ -14,6 +14,7 @@ const DEFAULT_SKILLS = [
   AgentPlugins.webScraping.name,
   AgentPlugins.webBrowsing.name,
   AgentPlugins.agentTodo.name,
+  AgentPlugins.planMode.name,
 ];
 
 // Skills that must never be injected when the instance is running in multi-user mode.
@@ -110,7 +111,7 @@ const WORKSPACE_AGENT = {
     // final summary. Measured behavior: a soft suggestion yields one lead-in
     // sentence at best, so this is written as a per-turn protocol instead.
     role +=
-      "\n\nVisible progress notes (mandatory on every tool-calling turn): your hidden reasoning is never shown to the user. Every response that calls tools MUST start with 1-2 plain sentences saying what you are about to do and why - never emit a tool-calling turn with empty visible text. When tool results arrive, your next response MUST start with 1-2 plain sentences saying what happened, including any error, surprise, or problem you hit and what you will try next. No bullet lists, no headers, no code in these notes - just plain sentences. The final summary covers the details; these notes are the live trail the user watches.";
+      "\n\nVisible progress notes (mandatory on every tool-calling turn): your hidden reasoning is never shown to the user. Every response that calls tools MUST start with 1-2 plain sentences saying what you are about to do and why - never emit a tool-calling turn with empty visible text. When tool results arrive, your next response MUST start with 1-2 plain sentences saying what happened, including any error, surprise, or problem you hit and what you will try next. No bullet lists, no headers, no code in these notes - just plain sentences. Never restate or paraphrase the user's message (saying back what was asked wastes the note) - name the concrete next action instead: the exact tool and target, e.g. the file you are about to read or the command you are about to run. The final summary covers the details; these notes are the live trail the user watches.";
 
     // Plan-first for multi-step work: local models happily grind through 100+
     // turns with no visible plan (measured on long runs), so this is a
@@ -118,6 +119,14 @@ const WORKSPACE_AGENT = {
     // list (toolReranker exemption) and drives the side-panel Plan tab.
     role +=
       "\n\nPlan first for multi-step work (mandatory): if the user's task needs 3 or more steps (file edits, commands, checks, or verifications), your FIRST tool call MUST be todo-write with the complete step list - exactly one item in_progress, the rest pending - before any other tool runs. Re-send the full list after each step (mark done, advance in_progress). The list is the checklist the user watches in the side panel. Tasks of 1-2 steps are exempt - just do them.";
+
+    // Plan mode for big tasks (HARNESS AMENDMENT 4, applies to runs from
+    // this build onward; prompt text unchanged, judge weighs asymmetry the
+    // same way as Amendment 3): big or unclear tasks must ENTER plan mode by
+    // themselves. A description-only rule was measured to yield no plan on
+    // long runs (same lesson as todo-write), so this is a first-call MUST.
+    role +=
+      "\n\nPlan mode for design-before-code (mandatory for big tasks): if the task needs 5 or more steps OR the approach itself needs deciding (new feature, multi-file change, architecture, unclear requirements), your FIRST tool call MUST be enter-plan-mode (not todo-write - the checklist comes second, after entering), then todo-write with the step list - it locks you to read-only exploration (reads, search, web, read-only terminal, todo-write, clarifying questions) and blocks all writes until your exit-plan-mode design is approved. Explore, then submit the full design PLUS its execution checklist with exit-plan-mode (include `todos` whenever the plan implies 2+ steps - approval seeds the side-panel Plan tab directly); after approval, build and keep the list updated with todo-write. Tasks under 5 steps with a clear approach skip plan mode and use todo-write directly.";
 
     return {
       role,
@@ -172,8 +181,18 @@ async function agentSkillsFromSystemSettings() {
     []
   );
   DEFAULT_SKILLS.forEach((skill) => {
-    if (!_disabledDefaultSkills.includes(skill))
-      systemFunctions.push(AgentPlugins[skill].name);
+    if (_disabledDefaultSkills.includes(skill)) return;
+    const plugin = AgentPlugins[skill];
+    if (!plugin) return;
+    // Array parents (filesystem-style multi-tool skills) load per child via
+    // the parent#child convention - pushing the bare parent name crashes the
+    // single-stage attach path (plugin.plugin is an array, not a function).
+    if (Array.isArray(plugin.plugin)) {
+      for (const sub of plugin.plugin)
+        systemFunctions.push(`${plugin.name}#${sub.name}`);
+      return;
+    }
+    systemFunctions.push(plugin.name);
   });
 
   // Load non-imported built-in skills that are configurable.

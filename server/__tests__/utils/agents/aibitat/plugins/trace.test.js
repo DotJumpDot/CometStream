@@ -56,9 +56,25 @@ describe("agent run trace recorder", () => {
       expect(
         recordTraceEvent(aibitat, "sessionCard", { label: "$ ls" })
       ).toBe(true);
+      expect(recordTraceEvent(aibitat, "planCard", { plan: "## Goal" })).toBe(
+        true
+      );
       expect(recordTraceEvent(aibitat, "reportStreamEvent", {})).toBe(false);
       expect(recordTraceEvent(aibitat, "toolApprovalRequest", {})).toBe(false);
-      expect(aibitat._pendingTrace).toHaveLength(4);
+      expect(aibitat._pendingTrace).toHaveLength(5);
+    });
+
+    it("caps oversized plan docs", () => {
+      const aibitat = {};
+      recordTraceEvent(aibitat, "planCard", {
+        plan: "x".repeat(25_000),
+        status: "proposed",
+      });
+      const saved = aibitat._pendingTrace[0].content;
+      // capText keeps a 20k head plus a truncation marker tail.
+      expect(saved.plan.length).toBeLessThan(25_000);
+      expect(saved.plan).toContain("truncated");
+      expect(saved.status).toBe("proposed");
     });
 
     it("clones payloads so live mutation cannot corrupt history", () => {

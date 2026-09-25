@@ -85,6 +85,10 @@ export default function ToolApprovalRequest({
               <ToolApprovalResponseOption
                 approved={approved}
                 skillName={skillName}
+                // Plan approval must never be whitelisted: an always-allowed
+                // exit-plan-mode would approve unseen designs. The server
+                // ignores the whitelist for forced prompts regardless.
+                hideAlwaysAllow={skillName === "exit-plan-mode"}
                 alwaysAllow={alwaysAllow}
                 setAlwaysAllow={setAlwaysAllow}
                 onApprove={() => handleResponse(true)}
@@ -208,6 +212,7 @@ function ToolApprovalPayload({ payload, isExpanded }) {
 function ToolApprovalResponseOption({
   approved,
   skillName,
+  hideAlwaysAllow = false,
   alwaysAllow,
   setAlwaysAllow,
   onApprove,
@@ -234,7 +239,11 @@ function ToolApprovalResponseOption({
           {t("chat_window.agent_invocation.reject")}
         </button>
       </div>
-      <label className="flex items-center gap-2 cursor-pointer text-white/60 light:text-slate-600 text-xs hover:text-white/80 light:hover:text-slate-800 transition-colors">
+      <label
+        className={`items-center gap-2 cursor-pointer text-white/60 light:text-slate-600 text-xs hover:text-white/80 light:hover:text-slate-800 transition-colors ${
+          hideAlwaysAllow ? "hidden" : "flex"
+        }`}
+      >
         <input
           type="checkbox"
           checked={alwaysAllow}

@@ -6,6 +6,7 @@
 const {
   TOOL_KINDS,
   FILE_WRITE_TOOLS,
+  PLAN_PROGRESS_TOOLS,
   classifyToolKind,
   guessPathFromArgs,
   estimateChars,
@@ -33,7 +34,16 @@ describe("classifyToolKind", () => {
       TOOL_KINDS.FILES_READ
     );
     expect(classifyToolKind("todo-write")).toBe(TOOL_KINDS.BUILTIN);
+    expect(classifyToolKind("enter-plan-mode")).toBe(TOOL_KINDS.BUILTIN);
+    expect(classifyToolKind("exit-plan-mode")).toBe(TOOL_KINDS.BUILTIN);
     expect(classifyToolKind("some-unknown-thing")).toBe(TOOL_KINDS.BUILTIN);
+  });
+
+  it("gates live progress rows to file writes and plan proposals", () => {
+    expect(FILE_WRITE_TOOLS.has("filesystem-write-text-file")).toBe(true);
+    expect(FILE_WRITE_TOOLS.has("exit-plan-mode")).toBe(false);
+    expect(PLAN_PROGRESS_TOOLS.has("exit-plan-mode")).toBe(true);
+    expect(PLAN_PROGRESS_TOOLS.has("terminal-agent")).toBe(false);
   });
 
   it("identifies MCP tools by definition flag, not name", () => {

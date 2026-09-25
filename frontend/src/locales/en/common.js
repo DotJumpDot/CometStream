@@ -885,6 +885,11 @@ const TRANSLATIONS = {
             "How many clarifying questions the agent may ask in a single survey.",
         },
       },
+      "plan-mode": {
+        title: "Auto-approve implementation plans",
+        description:
+          "When enabled (default), plans submitted with exit-plan-mode approve immediately and the run keeps building. Turn it off to review and Approve/Reject every design first.",
+      },
     },
   },
   recorded: {
@@ -1656,6 +1661,13 @@ const TRANSLATIONS = {
     trajectory_cache_hit: "{{pct}}% cached",
     plan_empty:
       "The agent's plan will appear here when it starts a multi-step task.",
+    plan_now: "Now",
+    plan_more: "+{{count}} more",
+    plan_title: "Implementation plan",
+    plan_proposed: "Proposed",
+    plan_approved: "Approved",
+    plan_rejected: "Rejected",
+    plan_streaming: "Receiving plan… {{count}} chars",
     changes_empty:
       "File changes the agent makes will be listed here with their diffs.",
     sessions_empty:

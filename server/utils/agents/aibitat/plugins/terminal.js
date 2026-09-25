@@ -1404,26 +1404,8 @@ const terminalAgent = {
           }
           return handler();
         };
-        const finishBgSession = (sessionId, socket, poll) => {
-          const sessions = require("./sessions.js");
-          const tail = [
-            poll.stdoutTail ? `--- stdout (tail) ---\n${poll.stdoutTail}` : "",
-            poll.stderrTail ? `--- stderr (tail) ---\n${poll.stderrTail}` : "",
-          ]
-            .filter(Boolean)
-            .join("\n")
-            .slice(-4000);
-          const status = poll.timedOut ? "error" : "done";
-          sessions.finishSession(
-            sessionId,
-            status,
-            `\n--- background task ${poll.taskId} ${poll.timedOut ? "timed out" : `exit ${poll.exitCode ?? "?"}`} in ${poll.durationMs ?? 0}ms ---\n${tail}`
-          );
-          const current = sessions
-            .listSessions()
-            .find((entry) => entry.id === sessionId);
-          if (current) socket?.send?.("sessionCard", { ...current });
-        };
+        const finishBgSession = (sessionId, socket, poll) =>
+          finishBackgroundSession(sessionId, socket, poll);
 
         aibitat.function({
           super: aibitat,
@@ -1491,6 +1473,11 @@ const terminalAgent = {
               // Stash the session id on the task for completion updates.
               const task = backgroundTasks.get(started.taskId);
               if (task) task.sessionId = session.id;
+              // Stamp the owning run so the run-end sweep can close this
+              // row if the model never polls (settleFinishedBackgroundTasks).
+              if (task)
+                task.runKey =
+                  this.super.handlerProps?.invocation?.workspace_id ?? null;
               return JSON.stringify({
                 ok: true,
                 taskId: started.taskId,
@@ -1591,6 +1578,76 @@ const terminalAgent = {
 };
 
 /**
+ * Finishes a background task's session entry and mirrors it to the frontend
+ * panel. Module-level so both the task-output/task-stop handlers and the
+ * run-end sweep (settleFinishedBackgroundTasks) close rows through one path -
+ * a row otherwise stays `running` forever when the model never polls.
+ * @param {number|null} sessionId - registry id from startSession (null skips)
+ * @param {object} socket - aibitat socket for sessionCard events
+ * @param {object} poll - pollBackgroundTask envelope for the finished task
+ */
+function finishBackgroundSession(sessionId, socket, poll = {}) {
+  if (sessionId == null) return;
+  const sessions = require("./sessions.js");
+  const tail = [
+    poll.stdoutTail ? `--- stdout (tail) ---\n${poll.stdoutTail}` : "",
+    poll.stderrTail ? `--- stderr (tail) ---\n${poll.stderrTail}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .slice(-4000);
+  const status = poll.timedOut ? "error" : "done";
+  sessions.finishSession(
+    sessionId,
+    status,
+    `\n--- background task ${poll.taskId} ${poll.timedOut ? "timed out" : `exit ${poll.exitCode ?? "?"}`} in ${poll.durationMs ?? 0}ms ---\n${tail}`
+  );
+  const current = sessions
+    .listSessions()
+    .find((entry) => entry.id === sessionId);
+  if (current) socket?.send?.("sessionCard", { ...current });
+}
+
+/**
+ * Run-end sweep for background tasks. A model that starts tasks but never
+ * polls them (common for instant commands run in the background) leaves
+ * their Sessions rows `running` forever - including in the persisted trace,
+ * where reload replays the stale state. This closes rows for tasks that
+ * already finished; still-running tasks (servers, watchers) are untouched
+ * so long-lived work survives the run that spawned it.
+ * @param {any} runKey - stamp matching the run's tasks (workspace_id; null
+ *   when the invocation carries none). Tasks stamped for another run are
+ *   never touched - only their own run's sweep may close them.
+ * @param {object|null} socket - aibitat socket for the closing sessionCards
+ * @returns {number} Count of rows settled.
+ */
+function settleFinishedBackgroundTasks(runKey, socket = null) {
+  let settled = 0;
+  for (const [taskId, task] of backgroundTasks) {
+    if (!task || task.sessionClosed || task.stale) continue;
+    // Unstamped tasks predate the runKey stamp or belong to another run.
+    if (task.runKey !== runKey) continue;
+    let poll;
+    try {
+      poll = pollBackgroundTask(taskId);
+    } catch {
+      continue;
+    }
+    if (!poll.ok || poll.running) continue;
+    task.sessionClosed = true;
+    if (task.sessionId != null) {
+      try {
+        finishBackgroundSession(task.sessionId, socket, poll);
+        settled++;
+      } catch {
+        // Best-effort UI - a stuck row must never break run teardown.
+      }
+    }
+  }
+  return settled;
+}
+
+/**
  * Finishes a terminal session entry and mirrors it to the frontend panel.
  * Non-zero exits are normal command failures the model handles, so only
  * timeouts/kills mark the session errored.
@@ -1650,6 +1707,8 @@ module.exports = {
   pollBackgroundTask,
   stopBackgroundTask,
   backgroundTasks,
+  finishBackgroundSession,
+  settleFinishedBackgroundTasks,
   loadPersistedTasks,
   savePersistedTasks,
   tasksStateFile,

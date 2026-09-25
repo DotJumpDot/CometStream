@@ -118,8 +118,12 @@ const httpSocket = {
           skillName,
           payload = {},
           description = null,
+          // Forced prompt (plan-mode approval): skip the auto shortcuts so a
+          // plan gate can never pass unseen. Without a Telegram context the
+          // request still auto-denies below - safe, plan mode stays active.
+          forcePrompt = false,
         }) {
-          if (skillIsAutoApproved({ skillName })) {
+          if (!forcePrompt && skillIsAutoApproved({ skillName })) {
             return {
               approved: true,
               message: "Skill is auto-approved.",
@@ -129,10 +133,9 @@ const httpSocket = {
           const {
             AgentSkillWhitelist,
           } = require("../../../../models/agentSkillWhitelist");
-          const isWhitelisted = await AgentSkillWhitelist.isWhitelisted(
-            skillName,
-            null
-          );
+          const isWhitelisted =
+            !forcePrompt &&
+            (await AgentSkillWhitelist.isWhitelisted(skillName, null));
           if (isWhitelisted) {
             console.log(
               chalk.green(`Skill ${skillName} is whitelisted - auto-approved.`)

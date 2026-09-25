@@ -10,6 +10,7 @@ const {
 } = require("../../../../helpers/chat/responses");
 const {
   FILE_WRITE_TOOLS,
+  PLAN_PROGRESS_TOOLS,
   guessPathFromArgs,
   guessLinesFromArgs,
 } = require("../../plugins/tool-usage.js");
@@ -357,14 +358,17 @@ async function tooledStream(
           });
           // Structured progress for file-write tools only: the chat renders
           // a pending file row that ticks up as args stream in, then the
-          // completion's fileChangeCard replaces it. Other tools keep the
-          // existing (hidden) assembly notice - a progress row for every
-          // `ls` would be noise.
+          // completion's fileChangeCard replaces it. Plan proposals
+          // (exit-plan-mode) ride the same channel with a "receiving plan"
+          // row until the completion's planCard replaces it. Other tools
+          // keep the existing (hidden) assembly notice - a progress row for
+          // every `ls` would be noise.
           try {
             const entry = toolCallsByIndex[idx];
+            const isPlanProposal = PLAN_PROGRESS_TOOLS.has(entry.name);
             if (
               entry.name &&
-              FILE_WRITE_TOOLS.has(entry.name) &&
+              (FILE_WRITE_TOOLS.has(entry.name) || isPlanProposal) &&
               typeof entry.arguments === "string"
             ) {
               const now = Date.now();

@@ -73,6 +73,7 @@ All optional; every one of these can also be set in-app (Admin settings) instead
 | `AGENT_TERMINAL_SHELL` | — | Shell override (defaults to Git Bash on Windows, `/bin/bash` elsewhere). |
 | `AGENT_MAX_TOOL_CALLS` | `agent_max_tool_calls` | Tool-call budget per agent response (default 10, hard cap 1000) — raise it for long multi-step runs. |
 | `AGENT_MCP_TOOL_TIMEOUT_MS` | `mcp_tool_timeout_ms` | Per-call timeout for MCP tool executions (default 120000, clamped 5s–600s). A hung MCP server can no longer wedge the agent turn. |
+| `PLAN_MODE_AUTO_APPROVE=0` | `plan_mode_auto_approve` | Plan-mode gate (default on): when enabled, `exit-plan-mode` designs approve immediately; turn it off to review and Approve/Reject every design before the agent builds. The forced approval always bypasses tool auto-approve/whitelist either way. |
 
 Terminal commands also refuse a denylist of host-wrecking commands (shutdown, format, diskpart, `dd` to raw devices, fork bombs, recursive deletes of OS roots, …) plus whole-disk access (`cd /`, `cd ~`, and recursive scans like `find /` or `dir /s C:\` — a stray root scan pegs the host for minutes; cd into the project and scan relatively instead), and ride the normal per-tool approval flow — except provably read-only commands (`ls`, `git status`, `cat`…), which auto-approve since they cannot mutate anything. Enabling the terminal skill also enables the background task tools (`terminal-task-start` / `task-output` / `task-stop`) so long builds and dev servers can run without blocking the turn.
 

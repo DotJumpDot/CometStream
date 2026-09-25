@@ -16,6 +16,7 @@ const { requestUserInput } = require("./request-user-input.js");
 const { createScheduledJob } = require("./create-scheduled-job/index.js");
 const { modelRouterCooldown } = require("./model-router-cooldown.js");
 const { agentTodo } = require("./agent-todo.js");
+const { planMode } = require("./plan-mode.js");
 const { terminalAgent } = require("./terminal.js");
 const { delegateAgent } = require("./delegate.js");
 
@@ -38,6 +39,7 @@ module.exports = {
   createScheduledJob,
   modelRouterCooldown,
   agentTodo,
+  planMode,
   terminalAgent,
   delegateAgent,
 
@@ -60,6 +62,7 @@ module.exports = {
   [createScheduledJob.name]: createScheduledJob,
   [modelRouterCooldown.name]: modelRouterCooldown,
   [agentTodo.name]: agentTodo,
+  [planMode.name]: planMode,
   [terminalAgent.name]: terminalAgent,
   [delegateAgent.name]: delegateAgent,
 };

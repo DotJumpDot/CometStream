@@ -23,6 +23,7 @@ const {
   pollBackgroundTask,
   stopBackgroundTask,
   backgroundTasks,
+  settleFinishedBackgroundTasks,
   snapshotWorkdir,
   detectWorkdirChanges,
   emitWorkdirFileCards,
@@ -591,6 +592,129 @@ describe("background tasks", () => {
     expect(poll.note).toContain("restarted");
     // Stopping a stale snapshot re-reports instead of erroring.
     expect(stopBackgroundTask(started.taskId).running).toBe(false);
+  }, 30_000);
+});
+
+describe("settleFinishedBackgroundTasks (run-end sweep)", () => {
+  let sandbox;
+  let stateDir;
+  const sessions = require("../../../../../utils/agents/aibitat/plugins/sessions");
+
+  beforeEach(() => {
+    sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "cs-term-settle-"));
+    process.env.AGENT_TERMINAL_ROOT = sandbox;
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "cs-term-settle-state-"));
+    process.env.STORAGE_DIR = stateDir;
+    sessions.clearSessions();
+  });
+
+  afterEach(() => {
+    for (const task of backgroundTasks.values()) {
+      try {
+        if (task.running) task.proc.kill("SIGKILL");
+      } catch {
+        // Already exited.
+      }
+    }
+    backgroundTasks.clear();
+    sessions.clearSessions();
+    delete process.env.STORAGE_DIR;
+    fs.rmSync(stateDir, { recursive: true, force: true });
+    // Same Windows cwd-handle race as the background-tasks block above:
+    // a killed process releases its cwd asynchronously.
+    let lastError = null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      try {
+        fs.rmSync(sandbox, { recursive: true, force: true });
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400);
+      }
+    }
+    if (lastError) throw lastError;
+  });
+
+  async function waitForSettled(id, timeoutMs = 10_000) {
+    const start = Date.now();
+    for (;;) {
+      const poll = pollBackgroundTask(id);
+      if (!poll.ok || !poll.running) return poll;
+      if (Date.now() - start > timeoutMs)
+        throw new Error(`background task ${id} still running`);
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
+  function fakeSocket() {
+    const sent = [];
+    return { sent, send: (...args) => sent.push(args) };
+  }
+
+  // Mirrors the terminal-task-start handler: links a session row + run key.
+  function linkRow(taskId, runKey) {
+    const task = backgroundTasks.get(taskId);
+    const row = sessions.startSession({
+      kind: "terminal",
+      label: `& task ${taskId}`,
+    });
+    task.sessionId = row.id;
+    task.runKey = runKey;
+    return row;
+  }
+
+  it("closes finished-but-unpolled rows for its own run key", async () => {
+    const socket = fakeSocket();
+    const started = startBackgroundTask("echo settle-me", { cwd: sandbox });
+    expect(started.ok).toBe(true);
+    const row = linkRow(started.taskId, 42);
+    await waitForSettled(started.taskId);
+    // Never polled: still open before the sweep (the live bug).
+    expect(
+      sessions.listSessions().find((s) => s.id === row.id).status
+    ).toBe("running");
+    expect(settleFinishedBackgroundTasks(42, socket)).toBe(1);
+    expect(
+      sessions.listSessions().find((s) => s.id === row.id).status
+    ).toBe("done");
+    const cards = socket.sent.filter((args) => args[0] === "sessionCard");
+    expect(cards).toHaveLength(1);
+    expect(cards[0][1].status).toBe("done");
+    expect(cards[0][1].detail).toContain("settle-me");
+  }, 30_000);
+
+  it("leaves still-running tasks alone", async () => {
+    const socket = fakeSocket();
+    // Finite sleep: orphan-safe if jest dies (same reason as the stop test).
+    const started = startBackgroundTask("sleep 30", { cwd: sandbox });
+    expect(started.ok).toBe(true);
+    const row = linkRow(started.taskId, 42);
+    expect(pollBackgroundTask(started.taskId).running).toBe(true);
+    expect(settleFinishedBackgroundTasks(42, socket)).toBe(0);
+    expect(
+      sessions.listSessions().find((s) => s.id === row.id).status
+    ).toBe("running");
+    expect(socket.sent).toHaveLength(0);
+  }, 30_000);
+
+  it("ignores tasks stamped for another run and stale snapshots", async () => {
+    const socket = fakeSocket();
+    const foreign = startBackgroundTask("echo foreign", { cwd: sandbox });
+    expect(foreign.ok).toBe(true);
+    linkRow(foreign.taskId, 7);
+    const stale = startBackgroundTask("echo stale", { cwd: sandbox });
+    expect(stale.ok).toBe(true);
+    const staleRow = linkRow(stale.taskId, 42);
+    await waitForSettled(foreign.taskId);
+    await waitForSettled(stale.taskId);
+    // Simulate a restart-rehydrated snapshot: no live state to settle.
+    backgroundTasks.get(stale.taskId).stale = true;
+    expect(settleFinishedBackgroundTasks(42, socket)).toBe(0);
+    expect(
+      sessions.listSessions().find((s) => s.id === staleRow.id).status
+    ).toBe("running");
+    expect(socket.sent).toHaveLength(0);
   }, 30_000);
 });
 

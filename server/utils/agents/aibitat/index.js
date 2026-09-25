@@ -13,6 +13,14 @@ const {
 } = require("./utils/toolArgRepair.js");
 const { recordTrajectoryIteration } = require("./plugins/trajectory.js");
 const { accumulateToolIo, toolIoSnapshot } = require("./plugins/tool-usage.js");
+// Run-end background-task sweep (lazy-safe: terminal.js never requires this
+// module back). Imported here so both execution loops below can settle
+// unpolled tasks before the final usageMetrics goes out.
+const { settleFinishedBackgroundTasks } = require("./plugins/terminal.js");
+const {
+  isToolAllowedInPlanMode,
+  planModeDenialHint,
+} = require("./plugins/plan-mode.js");
 
 /**
  * AIbitat is a class that manages the conversation between agents.
@@ -1171,6 +1179,28 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
           continue;
         }
 
+        // Plan mode: while the agent is designing (between enter-plan-mode
+        // and an approved exit-plan-mode), only read-only exploration tools
+        // run - mutating calls are refused with a message, never executed.
+        // Refusals are free (no budget/depth burn): the model learns the
+        // boundary from the message instead of a limit hit.
+        if (this._planMode && !isToolAllowedInPlanMode(name, args)) {
+          newMessages.push({
+            name,
+            role: "function",
+            content:
+              `Blocked: "${name}" is not allowed in plan mode. Plan mode is read-only exploration - use read tools (filesystem reads, search, web, read-only terminal), todo-write, and request-user-input, then submit the design with exit-plan-mode.` +
+              planModeDenialHint(name),
+            originalFunctionCall: functionCall,
+          });
+          try {
+            this?.introspect?.(
+              `${byAgent || "agent"}: "${name}" blocked - plan mode allows read-only tools only.`
+            );
+          } catch {}
+          continue;
+        }
+
         // Argument repair: never execute a call with malformed arguments or
         // missing/invalid required fields - return a repair turn naming
         // exactly what was wrong so the model re-calls with fixed JSON.
@@ -1299,6 +1329,16 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
       );
     }
 
+    // Run-end sweep: background tasks this run started but never polled
+    // would otherwise sit `running` in Sessions (and the persisted trace)
+    // forever. Finished ones close now; live ones are untouched. Guarded:
+    // teardown must never fail because of panel bookkeeping.
+    try {
+      settleFinishedBackgroundTasks(
+        this.handlerProps?.invocation?.workspace_id ?? null,
+        this.socket
+      );
+    } catch {}
     const responseUuid = completionStream?.uuid || v4();
     eventHandler?.("reportStreamEvent", {
       type: "usageMetrics",
@@ -1425,6 +1465,25 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
           continue;
         }
 
+        // Same plan-mode gate as the batched loop above: read-only tools
+        // run, mutating calls are refused with a message, never executed.
+        if (this._planMode && !isToolAllowedInPlanMode(name, args)) {
+          newMessages.push({
+            name,
+            role: "function",
+            content:
+              `Blocked: "${name}" is not allowed in plan mode. Plan mode is read-only exploration - use read tools (filesystem reads, search, web, read-only terminal), todo-write, and request-user-input, then submit the design with exit-plan-mode.` +
+              planModeDenialHint(name),
+            originalFunctionCall: functionCall,
+          });
+          try {
+            this?.introspect?.(
+              `${byAgent || "agent"}: "${name}" blocked - plan mode allows read-only tools only.`
+            );
+          } catch {}
+          continue;
+        }
+
         // See handleAsyncExecution: validate before executing - malformed
         // arguments or missing/invalid required fields become a repair turn,
         // skipped (not executed) past the per-turn repair cap.
@@ -1536,6 +1595,14 @@ https://docs.anythingllm.com/agent/intelligent-tool-selection
       );
     }
 
+    // Same run-end sweep as the batched loop above: close rows for this
+    // run's finished-but-unpolled background tasks before the final event.
+    try {
+      settleFinishedBackgroundTasks(
+        this.handlerProps?.invocation?.workspace_id ?? null,
+        this.socket
+      );
+    } catch {}
     eventHandler?.("reportStreamEvent", {
       type: "usageMetrics",
       uuid: msgUUID,

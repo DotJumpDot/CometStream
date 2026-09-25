@@ -74,6 +74,11 @@ describe("delegate-task skill", () => {
       expect(attached).not.toContain("delegate-task");
       expect(attached).toContain("terminal-agent");
       expect(attached).toContain("todo-write");
+      // Plan tools are parent-side: a child has no approval surface, so an
+      // exit-plan-mode there would park the parent turn waiting for a user
+      // who cannot see the proposal.
+      expect(attached).not.toContain("enter-plan-mode");
+      expect(attached).not.toContain("exit-plan-mode");
       expect(attached).toContain(
         "filesystem-agent#filesystem-read-text-file"
       );

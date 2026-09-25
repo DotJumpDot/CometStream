@@ -253,8 +253,13 @@ const websocket = {
           skillName,
           payload = {},
           description = null,
+          // Forced prompt (plan-mode approval): a gate that auto-passes on
+          // auto-approve or whitelist would approve unseen content, so all
+          // auto shortcuts are skipped and the user always sees the card.
+          // Abort/timeout semantics below are unchanged.
+          forcePrompt = false,
         }) {
-          if (skillIsAutoApproved({ skillName })) {
+          if (!forcePrompt && skillIsAutoApproved({ skillName })) {
             console.log(
               chalk.green(
                 `Skill ${skillName} is auto-approved by AGENT_AUTO_APPROVED_SKILLS`
@@ -269,10 +274,9 @@ const websocket = {
           const {
             AgentSkillWhitelist,
           } = require("../../../../models/agentSkillWhitelist");
-          const isWhitelisted = await AgentSkillWhitelist.isWhitelisted(
-            skillName,
-            userId
-          );
+          const isWhitelisted =
+            !forcePrompt &&
+            (await AgentSkillWhitelist.isWhitelisted(skillName, userId));
           if (isWhitelisted) {
             console.log(
               chalk.green(
@@ -290,10 +294,11 @@ const websocket = {
           // Chat-scoped permission mode: the user opted out of per-call
           // approval prompts for this chat. "auto-remember" also persists
           // each auto-passed tool to the whitelist so the choice survives
-          // future sessions.
+          // future sessions. Forced prompts (plan approval) always ask.
           if (
-            socket.permissionMode === "auto" ||
-            socket.permissionMode === "auto-remember"
+            !forcePrompt &&
+            (socket.permissionMode === "auto" ||
+              socket.permissionMode === "auto-remember")
           ) {
             if (socket.permissionMode === "auto-remember") {
               await AgentSkillWhitelist.add(skillName, userId);

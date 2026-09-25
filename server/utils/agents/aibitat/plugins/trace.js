@@ -29,6 +29,9 @@ const STATUS_MAX_CHARS = 2_000;
 const THOUGHT_MAX_CHARS = 8_000;
 const SESSION_DETAIL_MAX_CHARS = 2_000;
 const TODO_MAX_ITEMS = 50;
+// Approved design docs ride the same persisted slice as the todo list so a
+// reload restores the WHAT alongside the WHERE-ARE-WE (see plan-mode.js).
+const PLAN_MAX_CHARS = 20_000;
 
 // Socket event types worth persisting. Everything else is either
 // high-volume (reportStreamEvent), interactive (toolApprovalRequest,
@@ -42,6 +45,7 @@ const RECORDED_TYPES = new Set([
   "fileDownloadCard",
   "todoListCard",
   "sessionCard",
+  "planCard",
 ]);
 
 const THINK_BLOCK_REGEX = /<think>([\s\S]*?)<\/think>/gi;
@@ -114,6 +118,12 @@ function recordTraceEvent(aibitat, type, content) {
       ? recorded.items.slice(0, TODO_MAX_ITEMS)
       : [];
     recorded = { ...recorded, items };
+  }
+  if (type === "planCard" && recorded && typeof recorded === "object") {
+    recorded = {
+      ...recorded,
+      plan: capText(recorded.plan, PLAN_MAX_CHARS),
+    };
   }
   trace.push({ type, content: recorded });
   return true;
