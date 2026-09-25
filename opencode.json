@@ -16,6 +16,15 @@
           "-y",
           "chrome-devtools-mcp@1.7.0"
         ]
+      },
+      "sqlite": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "mcp-server-sqlite-npx",
+          "C:/Code/CometStream/server/storage/anythingllm.db"
+        ]
       }
     }
   }

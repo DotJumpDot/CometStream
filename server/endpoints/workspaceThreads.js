@@ -18,6 +18,10 @@ const {
 } = require("../utils/middleware/validWorkspace");
 const { WorkspaceChats } = require("../models/workspaceChats");
 const { convertToChatHistory } = require("../utils/helpers/chat/responses");
+const {
+  resolveSummarizerConfig,
+  compactThreadHistory,
+} = require("../utils/agents/contextCompaction");
 const { getModelTag } = require("./utils");
 
 function workspaceThreadEndpoints(app) {
@@ -200,6 +204,43 @@ function workspaceThreadEndpoints(app) {
       } catch (e) {
         console.error(e.message, e);
         response.sendStatus(500).end();
+      }
+    }
+  );
+
+  // Manual /compact on an idle thread (no live agent websocket). Runs the
+  // same history rewrite as the in-session path and returns the summary so
+  // the client can reload the thread onto the compacted view.
+  app.post(
+    "/workspace/:slug/thread/:threadSlug/compact",
+    [
+      validatedRequest,
+      flexUserRoleValid([ROLES.all]),
+      validWorkspaceAndThreadSlug,
+    ],
+    async (request, response) => {
+      try {
+        const user = await userFromSession(request, response);
+        const workspace = response.locals.workspace;
+        const thread = response.locals.thread;
+        const config = resolveSummarizerConfig(workspace);
+        if (!config)
+          return response
+            .status(400)
+            .json({ compacted: false, reason: "no-provider" });
+        const result = await compactThreadHistory({
+          workspaceId: workspace.id,
+          threadId: thread.id,
+          userId: user?.id ?? null,
+          provider: config.provider,
+          model: config.model,
+        });
+        return response.status(200).json(result);
+      } catch (e) {
+        console.error("thread compact:", e.message);
+        return response
+          .status(500)
+          .json({ compacted: false, reason: "error", error: e.message });
       }
     }
   );

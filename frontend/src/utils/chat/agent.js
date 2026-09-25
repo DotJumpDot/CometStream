@@ -759,9 +759,9 @@ export default function handleSocketResponse(socket, event, setChatHistory) {
         pending: false,
         metrics: {},
       };
-      // Success: the divider leads the kept tail, matching the persisted
-      // rendering. Failure: the card reports what went wrong at the bottom.
-      return content.ok === false ? [...kept, card] : [card, ...kept];
+      // The divider trails the kept tail at its birth line, matching the
+      // persisted chronological rendering; failures report at the bottom.
+      return [...kept, card];
     });
   }
 

@@ -197,10 +197,6 @@ function handleDefaultStreamResponseV2(response, stream, responseProps) {
 
 function convertToChatHistory(history = []) {
   const formattedHistory = [];
-  // Compact rows summarize everything older than themselves, so they always
-  // lead the visible history - the divider reads as "older messages were
-  // folded into this" above whatever was kept verbatim.
-  const compactRows = [];
   for (const record of history) {
     const { prompt, response, createdAt, feedbackScore = null, id } = record;
     // A corrupt/unparseable response row must not 500 the whole thread
@@ -221,10 +217,12 @@ function convertToChatHistory(history = []) {
       continue;
     }
 
-    // Compact rows (written by /compact or auto-compaction) render as a single
-    // "context compressed" divider, not a user/assistant message pair.
+    // Compact rows (written by /compact or auto-compaction) render as a
+    // single "context compressed" divider at their chronological position -
+    // the line in history where the fold happened - not hoisted to the top,
+    // so later messages stay below the divider that precedes them.
     if (data?.type === "compact") {
-      compactRows.push({
+      formattedHistory.push({
         type: "compact",
         role: "assistant",
         content: data.text,
@@ -261,7 +259,7 @@ function convertToChatHistory(history = []) {
     ]);
   }
 
-  return [...compactRows, ...formattedHistory.flat()];
+  return formattedHistory.flat();
 }
 
 /**

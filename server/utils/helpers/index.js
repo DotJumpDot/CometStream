@@ -139,7 +139,7 @@ async function getCustomLLMProvider({
   model = null,
   reasoningEffort = null,
 }) {
-  const { CustomLlmProviders } = require("../models/customLlmProviders");
+  const { CustomLlmProviders } = require("../../models/customLlmProviders");
   const { GenericOpenAiLLM } = require("../AiProviders/genericOpenAi");
 
   const resolved = await CustomLlmProviders.resolveForChat(provider, model);

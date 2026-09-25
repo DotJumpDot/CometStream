@@ -5,16 +5,38 @@ const {
   splitForCompaction,
   buildSummaryTranscript,
   agentHistoryFromRows,
+  resolveSummarizerConfig,
   isCompactCommand,
   stripReasoning,
+  compactThreadHistory,
   KEEP_TAIL_ROWS,
 } = require("../../../utils/agents/contextCompaction");
 
-jest.mock("../../../models/workspaceChats", () => ({}));
-jest.mock("../../../models/workspace", () => ({}));
+jest.mock("../../../models/workspaceChats", () => ({ WorkspaceChats: {} }));
+jest.mock("../../../models/workspace", () => ({ Workspace: {} }));
 jest.mock("../../../utils/files", () => ({
   generatedImageAttachments: jest.fn(() => []),
 }));
+// Instance-level stub (not a module mock): other modules in the require
+// chain (agent plugins) need the real aibitat module at load time.
+const AIbitat = require("../../../utils/agents/aibitat");
+let nextSummary = "mock summary";
+let lastProviderConfig = null;
+beforeEach(() => {
+  nextSummary = "mock summary";
+  lastProviderConfig = null;
+  jest
+    .spyOn(AIbitat.prototype, "getProviderForConfig")
+    .mockImplementation((config) => {
+      lastProviderConfig = config;
+      return {
+        complete: jest.fn(async () => ({ textResponse: nextSummary })),
+      };
+    });
+});
+afterEach(() => {
+  jest.restoreAllMocks();
+});
 
 describe("estimateTokens", () => {
   it("estimates ~4 chars per token", () => {
@@ -172,5 +194,145 @@ describe("stripReasoning", () => {
 
   it("leaves plain text untouched", () => {
     expect(stripReasoning("  plain summary  ")).toBe("plain summary");
+  });
+});
+
+describe("resolveSummarizerConfig", () => {
+  it("prefers the explicit agent provider and model", () => {
+    expect(
+      resolveSummarizerConfig({
+        agentProvider: "custom:7",
+        agentModel: "local-exam",
+        chatProvider: "openai",
+        chatModel: "gpt-4.1-nano",
+      })
+    ).toEqual({ provider: "custom:7", model: "local-exam" });
+  });
+
+  it("skips the model router and falls through to chat settings", () => {
+    expect(
+      resolveSummarizerConfig({
+        agentProvider: "anythingllm-router",
+        agentModel: null,
+        chatProvider: "openai",
+        chatModel: "gpt-4.1-nano",
+      })
+    ).toEqual({ provider: "openai", model: "gpt-4.1-nano" });
+  });
+
+  it("falls back to the system provider with a null model", () => {
+    process.env.LLM_PROVIDER = "custom:9";
+    expect(resolveSummarizerConfig({})).toEqual({
+      provider: "custom:9",
+      model: null,
+    });
+    delete process.env.LLM_PROVIDER;
+  });
+
+  it("returns null when nothing is configured", () => {
+    delete process.env.LLM_PROVIDER;
+    expect(resolveSummarizerConfig({})).toBeNull();
+  });
+});
+
+describe("compactThreadHistory", () => {
+  const { Workspace } = require("../../../models/workspace");
+  const { WorkspaceChats } = require("../../../models/workspaceChats");
+
+  const rows = (n) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: i + 1,
+      prompt: `q${i + 1}`,
+      response: JSON.stringify({ text: `a${i + 1}` }),
+    }));
+
+  beforeEach(() => {
+    Workspace.get = jest.fn(async () => ({ id: 1, autoCompact: true }));
+    WorkspaceChats.markThreadHistoryInvalidV2 = jest.fn(async () => {});
+    WorkspaceChats.new = jest.fn(async () => ({ chat: { id: 999 } }));
+  });
+
+  it("refuses without workspace or provider", async () => {
+    expect(await compactThreadHistory({})).toMatchObject({
+      compacted: false,
+      reason: "no-invocation",
+    });
+    expect(await compactThreadHistory({ workspaceId: 1 })).toMatchObject({
+      compacted: false,
+      reason: "no-invocation",
+    });
+  });
+
+  it("reports nothing-to-compact on short history", async () => {
+    WorkspaceChats.where = jest.fn(async () => rows(5));
+    const result = await compactThreadHistory({
+      workspaceId: 1,
+      threadId: 2,
+      userId: 3,
+      provider: "custom:7",
+      model: "local-exam",
+    });
+    expect(result).toMatchObject({
+      compacted: false,
+      reason: "nothing-to-compact",
+    });
+    expect(WorkspaceChats.new).not.toHaveBeenCalled();
+  });
+
+  it("rewrites history and returns the summary details", async () => {
+    WorkspaceChats.where = jest.fn(async () => rows(8));
+    const result = await compactThreadHistory({
+      workspaceId: 1,
+      threadId: 2,
+      userId: 3,
+      provider: "custom:7",
+      model: "local-exam",
+    });
+    expect(
+      WorkspaceChats.markThreadHistoryInvalidV2
+    ).toHaveBeenCalledWith({ id: { in: [1, 2, 3, 4] } });
+    expect(WorkspaceChats.new).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 1,
+        threadId: 2,
+        include: true,
+        prompt: "/compact",
+      })
+    );
+    expect(result).toMatchObject({
+      compacted: true,
+      summary: "mock summary",
+      compactedMessages: 4,
+      // Both loads are mocked to the same rows; in production the second
+      // load returns the post-rewrite rows (kept + summary row).
+      keptChatIds: [1, 2, 3, 4, 5, 6, 7, 8],
+    });
+    expect(result.tokensBefore).toBeGreaterThan(result.tokensAfter);
+  });
+
+  it("builds the summarizer from the resolved provider config", async () => {
+    WorkspaceChats.where = jest.fn(async () => rows(8));
+    await compactThreadHistory({
+      workspaceId: 1,
+      threadId: null,
+      userId: null,
+      provider: "custom:7",
+      model: null,
+    });
+    expect(lastProviderConfig).toEqual({
+      provider: "custom:7",
+      model: null,
+    });
+  });
+
+  it("errors when the summarizer returns nothing usable", async () => {
+    nextSummary = "   ";
+    WorkspaceChats.where = jest.fn(async () => rows(8));
+    const result = await compactThreadHistory({
+      workspaceId: 1,
+      provider: "custom:7",
+    });
+    expect(result).toMatchObject({ compacted: false, reason: "error" });
+    expect(WorkspaceChats.new).not.toHaveBeenCalled();
   });
 });

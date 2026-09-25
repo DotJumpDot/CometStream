@@ -110,6 +110,18 @@ const WorkspaceThread = {
       .catch(() => []);
     return history;
   },
+  compact: async function (workspaceSlug, threadSlug) {
+    const result = await fetch(
+      `${API_BASE}/workspace/${workspaceSlug}/thread/${threadSlug}/compact`,
+      {
+        method: "POST",
+        headers: baseHeaders(),
+      }
+    )
+      .then((res) => res.json())
+      .catch(() => ({ compacted: false, reason: "error" }));
+    return result;
+  },
   streamChat: async function (
     { workspaceSlug, threadSlug },
     message,

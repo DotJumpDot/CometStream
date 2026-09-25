@@ -23,6 +23,10 @@ const {
 } = require("../models/workspacesSuggestedMessages");
 const { validWorkspaceSlug } = require("../utils/middleware/validWorkspace");
 const { convertToChatHistory } = require("../utils/helpers/chat/responses");
+const {
+  resolveSummarizerConfig,
+  compactThreadHistory,
+} = require("../utils/agents/contextCompaction");
 const { readFileForViewer } = require("../utils/files/fileViewer");
 const { CollectorApi } = require("../utils/collectorApi");
 const { getTTSProvider } = require("../utils/TextToSpeech");
@@ -512,6 +516,37 @@ function workspaceEndpoints(app) {
       } catch (e) {
         console.error(e.message, e);
         response.sendStatus(500).end();
+      }
+    }
+  );
+
+  // Manual /compact on the idle home thread (no live agent websocket).
+  // Same rewrite as the threaded route with threadId null.
+  app.post(
+    "/workspace/:slug/compact",
+    [validatedRequest, flexUserRoleValid([ROLES.all]), validWorkspaceSlug],
+    async (request, response) => {
+      try {
+        const user = await userFromSession(request, response);
+        const workspace = response.locals.workspace;
+        const config = resolveSummarizerConfig(workspace);
+        if (!config)
+          return response
+            .status(400)
+            .json({ compacted: false, reason: "no-provider" });
+        const result = await compactThreadHistory({
+          workspaceId: workspace.id,
+          threadId: null,
+          userId: user?.id ?? null,
+          provider: config.provider,
+          model: config.model,
+        });
+        return response.status(200).json(result);
+      } catch (e) {
+        console.error("workspace compact:", e.message);
+        return response
+          .status(500)
+          .json({ compacted: false, reason: "error", error: e.message });
       }
     }
   );

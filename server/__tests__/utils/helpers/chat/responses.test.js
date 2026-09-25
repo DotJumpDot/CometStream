@@ -87,4 +87,35 @@ describe("convertToChatHistory", () => {
       content: "summary of earlier turns",
     });
   });
+
+  test("keeps compact rows at their chronological position", () => {
+    const row = (id, prompt, text) => ({
+      id,
+      prompt,
+      response: JSON.stringify({ text, sources: [], type: "textResponse" }),
+      createdAt: new Date(`2026-09-20T10:0${id}:00Z`),
+      feedbackScore: null,
+    });
+    const history = convertToChatHistory([
+      row(1, "kept one", "a1"),
+      {
+        id: 2,
+        prompt: "/compact",
+        response: JSON.stringify({ text: "fold", type: "compact" }),
+        createdAt: new Date("2026-09-20T10:02:00Z"),
+        feedbackScore: null,
+      },
+      row(3, "after compact", "a3"),
+    ]);
+    // [user, assistant, divider, user, assistant] - the divider sits at its
+    // birth line between the kept tail and whatever came after, never hoisted.
+    expect(history.map((m) => (m.type === "compact" ? "compact" : m.role))).toEqual([
+      "user",
+      "assistant",
+      "compact",
+      "user",
+      "assistant",
+    ]);
+    expect(history[2]).toMatchObject({ type: "compact", content: "fold" });
+  });
 });

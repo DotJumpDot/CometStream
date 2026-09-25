@@ -97,6 +97,15 @@ const Workspace = {
       .catch(() => []);
     return history;
   },
+  compact: async function (slug) {
+    const result = await fetch(`${API_BASE}/workspace/${slug}/compact`, {
+      method: "POST",
+      headers: baseHeaders(),
+    })
+      .then((res) => res.json())
+      .catch(() => ({ compacted: false, reason: "error" }));
+    return result;
+  },
   /**
    * Export a workspace or thread's chat as a server-generated branded PDF.
    * @param {string} slug - Workspace slug

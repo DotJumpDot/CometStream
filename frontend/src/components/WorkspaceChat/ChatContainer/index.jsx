@@ -7,6 +7,7 @@ import PromptInput, {
   PROMPT_INPUT_ID,
 } from "./PromptInput";
 import Workspace from "@/models/workspace";
+import WorkspaceThread from "@/models/workspaceThread";
 import handleChat, { ABORT_STREAM_EVENT } from "@/utils/chat";
 import { isMobile } from "react-device-detect";
 import { SidebarMobileHeader } from "../../Sidebar";
@@ -21,7 +22,13 @@ import handleSocketResponse, {
   setAgentSessionSocket,
 } from "@/utils/chat/agent";
 import DnDFileUploaderWrapper from "./DnDWrapper";
-import { getAgentActivity } from "@/utils/agentActivity";
+import {
+  getAgentActivity,
+  resetAgentActivity,
+  setAgentTodo,
+  upsertAgentSession,
+  addAgentFileChange,
+} from "@/utils/agentActivity";
 import {
   getPermissionMode,
   subscribePermissionMode,
@@ -58,6 +65,36 @@ export default function ChatContainer({
   const [loadingResponse, setLoadingResponse] = useState(false);
   const [chatHistory, setChatHistory] = useState(knownHistory);
   const [socketId, setSocketId] = useState(null);
+  // Replays one thread-load snapshot of persisted agent trace events into
+  // the side-panel store. Live socket events fill the store while a run is
+  // in flight (see utils/chat/agent.js), but a reload only re-rendered the
+  // trace inline in chat - Plan/Changes/Sessions stayed empty until the
+  // model emitted something new. This container remounts per thread
+  // (keyed by slug+thread in the parent), so a mount-scoped pass over the
+  // loaded snapshot restores the same end state: last plan wins, sessions
+  // upsert in order (running frames settle to their done frame), file
+  // changes accumulate per path exactly once. Reset+replay in one pass
+  // keeps it idempotent. Trajectory stays session-only by design (never
+  // persisted, so nothing to replay).
+  useEffect(() => {
+    resetAgentActivity();
+    for (const message of knownHistory) {
+      const trace = message?.trace;
+      if (!Array.isArray(trace)) continue;
+      for (const event of trace) {
+        if (event?.type === "todoListCard") {
+          setAgentTodo(event.content?.items || []);
+        } else if (event?.type === "sessionCard") {
+          upsertAgentSession(event.content || {});
+        } else if (event?.type === "fileChangeCard") {
+          addAgentFileChange(event.content || {});
+        }
+      }
+    }
+    // Mount-only: the parent remounts this container on thread switch with
+    // a fresh knownHistory snapshot; live events after mount apply
+    // incrementally on top of the replayed state.
+  }, []);
   const [websocket, setWebsocket] = useState(null);
   const { files, parseAttachments } = useContext(DndUploaderContext);
   const { chatHistoryRef } = useChatContainerQuickScroll();
@@ -545,10 +582,12 @@ export default function ChatContainer({
 
       if (!promptMessage || !promptMessage?.userMessage) return false;
 
-      // /compact without an open agent session has nothing to compact - the
-      // server only intercepts the command over the session websocket. Sending
-      // it as a normal prompt would just be handed to the model, so revert the
-      // pending pair and hint instead.
+      // /compact with no live agent session runs over REST instead. The
+      // server only intercepts the command over the session websocket, and
+      // sending it as a normal prompt would just hand it to the model - so
+      // run the idle-thread compaction endpoint and reload onto the
+      // rewritten history (the persisted summary row renders the same
+      // divider card as the live flow).
       if (/^\/compact(\s|$)/i.test(String(promptMessage.userMessage).trim())) {
         const trimmed = [...remHistory];
         const last = trimmed[trimmed.length - 1];
@@ -557,11 +596,56 @@ export default function ChatContainer({
           last?.content === promptMessage.userMessage
         )
           trimmed.pop();
-        setChatHistory(trimmed);
+        setChatHistory([
+          ...trimmed.filter((msg) => !!msg.content),
+          {
+            uuid: v4(),
+            type: "contextCompactPending",
+            content: "compressing-context",
+            role: "assistant",
+            sources: [],
+            closed: false,
+            error: null,
+            animate: false,
+            pending: true,
+            metrics: {},
+          },
+        ]);
+        try {
+          const result = activeThreadSlug
+            ? await WorkspaceThread.compact(workspace.slug, activeThreadSlug)
+            : await Workspace.compact(workspace.slug);
+          if (result?.compacted) {
+            // Reload the rewritten thread: compacted rows are gone
+            // server-side and the summary row renders the divider card.
+            const history = activeThreadSlug
+              ? await WorkspaceThread.chatHistory(
+                  workspace.slug,
+                  activeThreadSlug
+                )
+              : await Workspace.chatHistory(workspace.slug);
+            setChatHistory(history);
+          } else {
+            setChatHistory((prev) =>
+              prev.filter((msg) => msg.type !== "contextCompactPending")
+            );
+            showToast(
+              t(
+                result?.reason === "nothing-to-compact"
+                  ? "chat_window.compact.nothing"
+                  : "chat_window.compact.failed"
+              ),
+              "info",
+              { clear: true }
+            );
+          }
+        } catch {
+          setChatHistory((prev) =>
+            prev.filter((msg) => msg.type !== "contextCompactPending")
+          );
+          showToast(t("chat_window.compact.failed"), "info", { clear: true });
+        }
         setLoadingResponse(false);
-        showToast(t("chat_window.compact.no_session"), "info", {
-          clear: true,
-        });
         return;
       }
 

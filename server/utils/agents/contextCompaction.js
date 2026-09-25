@@ -236,6 +236,35 @@ function isCompactCommand(feedback = "") {
 }
 
 /**
+ * Resolve a provider/model pair for the compaction summarizer without a live
+ * session. Follows the same preference order agent sessions use (explicit
+ * agent provider, then chat provider, then the system provider) but never
+ * the model router - routing needs a live prompt, and a summarizer just
+ * needs any working model. A null model is fine: custom providers resolve
+ * their first enabled model and builtins fall back to env/defaults.
+ * @param {object} [workspace] - workspace record
+ * @returns {{provider: string, model: string|null}|null} Null when nothing is configured.
+ */
+function resolveSummarizerConfig(workspace = {}) {
+  const candidates = [
+    { provider: workspace.agentProvider, model: workspace.agentModel },
+    { provider: workspace.chatProvider, model: workspace.chatModel },
+  ];
+  for (const candidate of candidates) {
+    if (
+      typeof candidate.provider === "string" &&
+      candidate.provider &&
+      candidate.provider !== "anythingllm-router"
+    )
+      return { provider: candidate.provider, model: candidate.model || null };
+  }
+  const systemProvider = process.env.LLM_PROVIDER;
+  if (typeof systemProvider === "string" && systemProvider)
+    return { provider: systemProvider, model: null };
+  return null;
+}
+
+/**
  * Summarize older thread history into a compact summary row, freeing context.
  *
  * What one run does:
@@ -257,7 +286,7 @@ function isCompactCommand(feedback = "") {
  * @param {import("./aibitat")} params.aibitat - live session ( supplies the provider factory + invocation )
  * @param {import("ws").WebSocket|null} [params.socket] - frontend socket for status events
  * @param {"manual"|"auto"} [params.trigger]
- * @returns {Promise<{compacted: boolean, reason?: string}>}
+ * @returns {Promise<{compacted: boolean, reason?: string, summary?: string, compactedMessages?: number, tokensBefore?: number, tokensAfter?: number, keptChatIds?: number[]}>}
  */
 async function maybeCompactAgentContext({
   aibitat,
@@ -267,7 +296,91 @@ async function maybeCompactAgentContext({
   const invocation = aibitat?.handlerProps?.invocation;
   if (!invocation?.workspace_id)
     return { compacted: false, reason: "no-invocation" };
+  return runCompaction({
+    invocation,
+    defaultProvider: {
+      provider: aibitat.defaultProvider?.provider,
+      model: aibitat.defaultProvider?.model,
+    },
+    buildProvider: (config) => aibitat.getProviderForConfig(config),
+    applyLiveBuffer: (rows) => {
+      // Swap the live buffer to the rewritten history so the very next turn
+      // runs on the compacted context (drops in-session tool-call bloat too).
+      aibitat._chats = agentHistoryFromRows(rows);
+    },
+    socket,
+    trigger,
+  });
+}
 
+/**
+ * Compacts a thread (or the workspace-level home thread) with no live agent
+ * session - powers the REST endpoint behind manual /compact on an idle
+ * thread. Same rewrite as the session path (rows -> include=false + one
+ * summary row); there is no live buffer to rebuild, the next session loads
+ * the rewritten rows itself.
+ * @param {Object} params
+ * @param {number} params.workspaceId
+ * @param {number|null} [params.threadId]
+ * @param {number|null} [params.userId]
+ * @param {string} params.provider
+ * @param {string|null} [params.model]
+ * @returns {Promise<{compacted: boolean, reason?: string, summary?: string, compactedMessages?: number, tokensBefore?: number, tokensAfter?: number, keptChatIds?: number[]}>}
+ */
+async function compactThreadHistory({
+  workspaceId,
+  threadId = null,
+  userId = null,
+  provider,
+  model = null,
+}) {
+  if (!workspaceId || !provider)
+    return { compacted: false, reason: "no-invocation" };
+  // Lazy require: this module loads under plugins/websocket.js, which loads
+  // under aibitat/index.js - a top-level require would close a require cycle.
+  const AIbitat = require("./aibitat");
+  const shell = new AIbitat({
+    provider,
+    model,
+    chats: [],
+    handlerProps: {
+      invocation: {
+        workspace_id: workspaceId,
+        thread_id: threadId,
+        user_id: userId,
+      },
+    },
+  });
+  return runCompaction({
+    invocation: shell.handlerProps.invocation,
+    defaultProvider: { provider, model },
+    buildProvider: (config) => shell.getProviderForConfig(config),
+    applyLiveBuffer: null,
+    socket: null,
+    trigger: "manual",
+  });
+}
+
+/**
+ * Shared compaction core for the session path (live buffer + socket events)
+ * and the sessionless REST path.
+ * @param {Object} params
+ * @param {Object} params.invocation - {workspace_id, thread_id, user_id}
+ * @param {{provider: string, model: string|null}} params.defaultProvider - provider config the summarizer is built from
+ * @param {Function} params.buildProvider - (config) => provider instance with .complete()
+ * @param {Function|null} [params.applyLiveBuffer] - (rows) => void; skipped on the sessionless path
+ * @param {import("ws").WebSocket|null} [params.socket] - frontend socket for status events
+ * @param {"manual"|"auto"} [params.trigger]
+ * @returns {Promise<{compacted: boolean, reason?: string, summary?: string, compactedMessages?: number, tokensBefore?: number, tokensAfter?: number, keptChatIds?: number[]}>}
+ */
+async function runCompaction({
+  invocation,
+  defaultProvider,
+  buildProvider,
+  applyLiveBuffer = null,
+  socket = null,
+  trigger = "auto",
+}) {
   const send = (type, content) =>
     socket?.send?.(JSON.stringify({ type, content }));
 
@@ -302,8 +415,8 @@ async function maybeCompactAgentContext({
     );
     if (trigger === "auto") {
       const contextWindow = await resolveContextWindow({
-        provider: aibitat.defaultProvider?.provider,
-        model: aibitat.defaultProvider?.model,
+        provider: defaultProvider?.provider,
+        model: defaultProvider?.model,
       });
       if (
         !shouldAutoCompact({
@@ -319,8 +432,8 @@ async function maybeCompactAgentContext({
     send("contextCompactStart", { trigger });
 
     // Build the summarizer from the same provider config the session uses.
-    const provider = aibitat.getProviderForConfig({
-      ...aibitat.defaultProvider,
+    const provider = buildProvider({
+      ...defaultProvider,
     });
     const completion = await provider.complete(
       [
@@ -361,15 +474,18 @@ async function maybeCompactAgentContext({
     if (!summaryRow)
       throw new Error("Failed to persist the compact summary row.");
 
-    // Swap the live buffer to the rewritten history so the very next turn
-    // runs on the compacted context (drops in-session tool-call bloat too).
+    // Reload the rewritten history for the live buffer (session path) and
+    // the surviving-row ids the client trims to.
     const remainingRows = await loadContextRows({
       workspaceId: invocation.workspace_id,
       threadId: invocation.thread_id || null,
       userId: invocation.user_id || null,
     });
-    aibitat._chats = agentHistoryFromRows(remainingRows);
+    if (typeof applyLiveBuffer === "function") applyLiveBuffer(remainingRows);
 
+    // The client trims its rendered history to these surviving rows so the
+    // live view (and the context ring) matches the reloaded thread.
+    const keptChatIds = remainingRows.map((row) => row.id);
     send("contextCompactEnd", {
       ok: true,
       trigger,
@@ -377,11 +493,16 @@ async function maybeCompactAgentContext({
       compactedMessages: toCompact.length,
       tokensBefore,
       tokensAfter,
-      // The client trims its rendered history to these surviving rows so the
-      // live view (and the context ring) matches the reloaded thread.
-      keptChatIds: remainingRows.map((row) => row.id),
+      keptChatIds,
     });
-    return { compacted: true };
+    return {
+      compacted: true,
+      summary,
+      compactedMessages: toCompact.length,
+      tokensBefore,
+      tokensAfter,
+      keptChatIds,
+    };
   } catch (error) {
     console.error("contextCompaction:", error.message);
     send("contextCompactEnd", { ok: false, trigger, error: error.message });
@@ -402,7 +523,9 @@ module.exports = {
   buildSummaryTranscript,
   agentHistoryFromRows,
   resolveContextWindow,
+  resolveSummarizerConfig,
   isCompactCommand,
   stripReasoning,
   maybeCompactAgentContext,
+  compactThreadHistory,
 };
