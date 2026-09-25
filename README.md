@@ -17,17 +17,74 @@
 
 ## What's inside
 
-- **Chat with anything** — workspaces, documents, embeddings, and all the LLM providers AnythingLLM supports (OpenAI, Anthropic, Ollama, LM Studio, Z AI, and many more). Local OpenAI-compatible servers (llama-server and friends) plug in through the Manage models UI — no ENV editing: base URL, context window, max tokens, and reasoning levels per model, picked per workspace with a reasoning toggle.
-- **MCP client, manageable from the UI** — add and edit stdio/SSE/streamable-http MCP servers (Chrome DevTools, Playwright, Filesystem, Memory…) from Admin → Agents → MCP Servers, with one-click presets. No config-file editing required.
-- **SKILL.md skills** — point CometStream at any folder of Claude/ZCode-style skills (a subfolder with a `SKILL.md`) and they become agent tools with progressive disclosure: the model sees the name/description, loads the full instructions on invoke, and reads support files on demand.
-- **Folder-bound projects** — each workspace can pin to one folder on the machine (created if missing, picked from a click-through folder browser — or the real OS folder dialog in the desktop app — editable in workspace settings). The agent's terminal commands run inside that folder, the file tools treat it as home, and generated files (docx/pdf/xlsx…) are mirrored into it, so every project's chats stay separated by folder — ZCode-style. The binding is jailed to the terminal root and re-validated on every call; it can never escape. A project switcher in the composer jumps between projects (searchable) or back to a project-less home chat.
-- **A real agent harness** — batched tool calls (the model can create 10 files in one reasoned turn, desktop-coding-agent style), a mandatory plan-first todo protocol (3+-step tasks open with a full todo list before any tool runs, updating per step in the panel's Plan tab), an opt-in terminal skill so agents can build, serve, and self-test with shell commands (jailed to a working root, timeout + output caps, host-wrecking command denylist; provably read-only commands auto-approve), background terminal tasks (`terminal-task-start`/`task-output`/`task-stop`) that run without blocking the turn, subagents via `delegate-task`, a per-response tool budget, malformed tool arguments repaired instead of executed, and prompts sent mid-run queue up and dispatch in order when the run settles.
-- **Runs that survive reload** — reopening a thread restores the whole agent run: reasoning blocks, narration notes, file changes with diffs, terminal sessions, and plans, replayed in order above the reply — and the side panel's Plan/Changes/Sessions repopulate from the same replayed trace, so the panel matches the live run even after a reload. Failed runs save their failure instead of a blank turn, and empty threads stay out of the sidebar.
-- **Agent-grade chat UX** — ZCode/Trae-style: live activity chains and run summaries, terminal rows with command-class chips (Search/Run/Install/Write/Fetch…) that expand inline — same-verb runs fold into "N similar runs" groups — file cards for shell-made changes plus live pending rows that tick up `+N` lines while a file write streams in, a left-edge jump rail that scrolls long threads turn-by-turn, and an agent side panel with Plan (the live todo list), Changes, Sessions (terminal + subagent output), Trajectory (per-turn model requests for debugging local models, repeated iterations folded into ranges), Sources, and a VSCode-style file reader. File names in replies render as chips that open that file in the reader, and API routes in prose render as method badges. Per-chat tool permission modes (ask / auto-approve) round it out, and the context-usage ring's popover gains a live-run section while the agent works: rounds with real ↑in/↓out tokens, prefix-cache hit %, last/avg/max tok/s (server-measured when the backend reports them), and a tool-traffic split by kind (terminal / files / MCP / subagent).
-- **Context hygiene on long runs** — every chatty tool result (terminal output, MCP results, oversized scraped pages) is projected to a bounded inline window with the full text spilled to a file the model can page back in; MCP tool calls race a configurable timeout (default 120s) with one restart-and-retry on transport failures; and model-supplied fetch URLs pass an egress guard (no localhost/private/reserved targets).
-- **Context compaction** — `/compact` on demand (live or on an idle thread — no run needed), or automatically when a thread nears the model's context window (per-workspace toggle + threshold in Chat Settings). Folded history collapses into an expandable summary divider at the line where the fold happened, and the live view and context ring update immediately.
-- **Monokai themes** — Monokai Night and Monokai Dark Soda shipped alongside the default, light, and system themes (Settings → Customization).
-- **Runs anywhere** — one Docker command, a fully self-contained portable Windows build, or plain Node.js.
+Everything the AnythingLLM base offers — workspaces, documents, embeddings, multi-user, API — is still here. Below is what the fork adds and reshapes, grouped by theme.
+
+### Models & providers
+
+- **Every provider AnythingLLM supports** — OpenAI, Anthropic, Ollama, LM Studio, Z AI, and many more, picked per workspace.
+- **Local OpenAI-compatible servers** (llama-server and friends) plug in through the Manage models UI — no ENV editing:
+  - base URL, context window, max tokens, and reasoning levels per model
+  - per-workspace choice, with a reasoning toggle
+
+### Agent tools & skills
+
+- **MCP client, manageable from the UI** — add and edit stdio / SSE / streamable-http servers from Admin → Agents → MCP Servers:
+  - one-click presets: Chrome DevTools, Playwright, Filesystem, Memory…
+  - no config-file editing required
+- **SKILL.md skills** — any folder of Claude/ZCode-style skills (a subfolder with a `SKILL.md`) becomes agent tools, with progressive disclosure:
+  - the model sees only the name/description up front
+  - full instructions load on invoke
+  - support files are read on demand
+
+### Folder-bound projects
+
+- **Each workspace pins to one folder on the machine** — ZCode-style:
+  - folder created if missing; picked via a click-through browser or the real OS dialog in the desktop app, editable in workspace settings
+  - terminal commands run inside it, file tools treat it as home, generated files (docx/pdf/xlsx…) mirror into it
+  - jailed to the terminal root and re-validated on every call — it can never escape
+  - a composer project switcher jumps between projects (searchable) or back to a project-less home chat
+
+### The agent harness
+
+- **Batched tool calls** — the model creates 10 files in one reasoned turn, desktop-coding-agent style.
+- **Plan-first protocol** — 3+-step tasks open with a full todo list before any tool runs, updating per step in the panel's Plan tab.
+- **Opt-in terminal skill** — agents build, serve, and self-test with shell commands:
+  - jailed to a working root, with timeout + output caps
+  - host-wrecking command denylist, whole-disk scans refused
+  - provably read-only commands auto-approve
+- **Background tasks** — `terminal-task-start` / `task-output` / `task-stop` run builds and dev servers without blocking the turn.
+- **Subagents** — `delegate-task` fans work out to child agents.
+- **Robust execution** — per-response tool budget; malformed tool arguments get repaired instead of executed; prompts sent mid-run queue up and dispatch in order when the run settles.
+- **Runs survive reload** — reopening a thread replays the whole run (reasoning blocks, narration, file diffs, terminal sessions, plans) above the reply, and the side panel repopulates from the same trace. Failed runs save their failure instead of a blank turn; empty threads stay out of the sidebar.
+
+### Chat experience (ZCode/Trae-style)
+
+- **Live activity** — activity chains and end-of-run summaries, with:
+  - terminal rows with command-class chips (Search/Run/Install/Write/Fetch…) that expand inline; same-verb runs fold into "N similar runs" groups
+  - file cards for shell-made changes, plus pending rows that tick up `+N` lines while a write streams in
+  - a left-edge jump rail that scrolls long threads turn-by-turn
+- **Agent side panel** — Plan (the live todo list), Changes, Sessions (terminal + subagent output), Trajectory (per-turn model requests for debugging local models, repeats folded into ranges), Sources, and a VSCode-style file reader.
+- **Rich replies** — file names render as chips that open the file in the reader; API routes in prose render as method badges.
+- **Tool permission modes** — ask every time or auto-approve, per chat.
+- **Live usage telemetry** — the context ring's popover, while the agent works:
+  - rounds with real ↑in/↓out tokens and prefix-cache hit %
+  - last/avg/max tok/s (server-measured when the backend reports them)
+  - tool traffic split by kind: terminal / files / MCP / subagent
+
+### Context care on long runs
+
+- **Bounded tool output** — terminal output, MCP results, and oversized scraped pages project to a bounded inline window; the full text spills to a file the model can page back in.
+- **MCP timeouts** — every tool call races a configurable timeout (default 120s); transport failures get one restart-and-retry.
+- **Egress guard** — model-supplied fetch URLs must be public targets (localhost/private/reserved refused).
+- **Context compaction** — `/compact` on demand (live or on an idle thread), or automatic near the model's context window:
+  - per-workspace toggle + threshold in Chat Settings
+  - folded history collapses into an expandable summary divider at the line where the fold happened
+  - the live view and context ring update immediately
+
+### Make it yours
+
+- **Monokai themes** — Monokai Night and Monokai Dark Soda alongside the default, light, and system themes (Settings → Customization).
+- **Runs anywhere** — one Docker command, a self-contained portable Windows build, or plain Node.js.
 
 ## Quickstart
 
