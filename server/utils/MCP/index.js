@@ -155,6 +155,68 @@ function projectMCPResult(serverName, toolName, result) {
   return projected.text + pointer;
 }
 
+// Browser-kit interaction hints, appended to tool descriptions at conversion
+// time (never stored in config, so upstream description updates survive
+// underneath). Measured exam behavior: models call navigate, then stop -
+// nothing teaches the snapshot→ref→act→verify loop, and each MCP server
+// owns a SEPARATE browser instance, so mixing kits acts on a blank page.
+// The two shipped kits disagree on mechanics (playwright passes snapshot
+// [ref=eN] refs as `target`; chrome-devtools passes take_snapshot uids as
+// `uid` alongside `pageId`), so the hint is per-signature, detected from
+// the tool list - any third-party browser MCP reusing the same tool names
+// is covered too. Full loop on entry-point tools only (navigate, snapshot);
+// action tools get a one-liner so the ~55 browser tools don't each burn
+// ~100 tokens.
+const BROWSER_KIT_SIGNATURES = [
+  {
+    navigateTools: ["browser_navigate"],
+    snapshotTools: ["browser_snapshot"],
+    refHow:
+      "browser_snapshot lists elements with [ref=eN] refs - pass the ref as `target`",
+  },
+  {
+    navigateTools: ["navigate_page", "new_page"],
+    snapshotTools: ["take_snapshot"],
+    refHow:
+      "take_snapshot lists elements with uids - pass `pageId` plus the element `uid`",
+  },
+];
+
+/**
+ * Detects whether a tool list belongs to a browser-control MCP server.
+ * @param {Array<{name: string}>} tools - Tools advertised by the server.
+ * @returns {Object|null} Matching signature, or null for non-browser servers.
+ */
+function browserKitForTools(tools) {
+  const names = new Set((tools || []).map((t) => t?.name));
+  return (
+    BROWSER_KIT_SIGNATURES.find(
+      (sig) =>
+        sig.navigateTools.some((n) => names.has(n)) &&
+        sig.snapshotTools.some((n) => names.has(n))
+    ) || null
+  );
+}
+
+/**
+ * Appends the interaction hint to a browser-kit tool description.
+ * @param {string} serverName - MCP server name (same-kit warning label).
+ * @param {Object} tool - Tool definition with name/description.
+ * @param {Object|null} kit - Signature from browserKitForTools, or null.
+ * @returns {string} Augmented (or untouched) description.
+ */
+function withBrowserKitHint(serverName, tool, kit) {
+  const base = tool?.description || "";
+  if (!kit) return base;
+  const isEntry = [...kit.navigateTools, ...kit.snapshotTools].includes(
+    tool?.name
+  );
+  const hint = isEntry
+    ? `Browser loop (use ONLY ${serverName} tools - each MCP server owns a SEPARATE browser, other kits see a blank page): navigate, then snapshot to read the page, then act, then snapshot again to verify. ${kit.refHow}. Refs/uids expire on navigation - snapshot again after every page change.`
+    : `Same-kit browser tool: follow the navigate→snapshot→act→verify loop with ${serverName} tools only (separate browsers per MCP server). ${kit.refHow}.`;
+  return base ? `${base}\n${hint}` : hint;
+}
+
 class MCPCompatibilityLayer extends MCPHypervisor {
   static _instance;
 
@@ -211,10 +273,13 @@ class MCPCompatibilityLayer extends MCPHypervisor {
     }
 
     const plugins = [];
+    const browserKit = browserKitForTools(tools);
     for (const tool of tools) {
+      // Browser kits get the interaction loop appended (see BROWSER_KIT_SIGNATURES).
+      const description = withBrowserKitHint(name, tool, browserKit);
       plugins.push({
         name: `${name}-${tool.name}`,
-        description: tool.description,
+        description,
         plugin: function () {
           return {
             name: `${name}-${tool.name}`,
@@ -223,7 +288,7 @@ class MCPCompatibilityLayer extends MCPHypervisor {
                 super: aibitat,
                 name: `${name}-${tool.name}`,
                 controller: new AbortController(),
-                description: tool.description,
+                description,
                 isMCPTool: true,
                 examples: [],
                 parameters: {
@@ -598,6 +663,8 @@ class MCPCompatibilityLayer extends MCPHypervisor {
 // Test hooks (plain statics so the singleton shape is untouched).
 MCPCompatibilityLayer.mcpToolTimeoutMs = mcpToolTimeoutMs;
 MCPCompatibilityLayer.clampMcpTimeout = clampMcpTimeout;
+MCPCompatibilityLayer.browserKitForTools = browserKitForTools;
+MCPCompatibilityLayer.withBrowserKitHint = withBrowserKitHint;
 MCPCompatibilityLayer.MCP_TOOL_TIMEOUT_SETTING_KEY =
   MCP_TOOL_TIMEOUT_SETTING_KEY;
 MCPCompatibilityLayer.DEFAULT_MCP_TOOL_TIMEOUT_MS = DEFAULT_MCP_TOOL_TIMEOUT_MS;

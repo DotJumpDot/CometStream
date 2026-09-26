@@ -80,3 +80,11 @@ Every tool call is hardened so one misbehaving server cannot stall or bloat an a
 - **Per-call timeout** — each execution races a budget (ENV `AGENT_MCP_TOOL_TIMEOUT_MS` or the in-app `mcp_tool_timeout_ms` setting; default 120s, clamped 5s–600s). A timed-out call fails fast with a narrow-your-query message instead of being retried.
 - **One restart + retry** — transport-level failures (`ECONNRESET`, `socket hang up`, closed server…) trigger a single server restart and a single retry before surfacing the error.
 - **Result budget** — results are truncated to ~12k inline characters; the full text is spilled to `<storage>/anythingllm-fs/.tool-outputs/` with a pointer in the result, so the model can page the rest back in with the file tools instead of every verbose tool riding along on all subsequent turns.
+
+## Browser-kit interaction hints
+
+Browser-control servers (Playwright, chrome-devtools, or any third party reusing their tool names) get usage guidance appended to their tool descriptions at conversion time (`browserKitForTools` / `withBrowserKitHint` in `server/utils/MCP/index.js` — in-memory only, never written to config, so upstream description updates survive underneath). Detection is by tool-name signature: a navigate tool (`browser_navigate`, or `navigate_page`/`new_page`) plus a snapshot tool (`browser_snapshot` / `take_snapshot`).
+
+- **Entry tools** (navigate, snapshot) carry the full loop: navigate → snapshot to read the page → act → snapshot again to verify — plus a same-kit-only warning, because **each MCP server owns a separate browser instance** (navigating with Playwright then clicking with chrome-devtools acts on a blank page).
+- **Action tools** get a one-liner pointing back at the loop, keeping the ~55 browser tools from each burning ~100 tokens.
+- **Per-kit mechanics**, because the kits disagree: Playwright snapshot refs (`[ref=eN]`) are passed as `target`; chrome-devtools snapshot uids are passed as `uid` alongside `pageId`. Refs/uids expire on navigation — snapshot again after every page change.

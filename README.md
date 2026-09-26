@@ -30,6 +30,7 @@ Everything the AnythingLLM base offers — workspaces, documents, embeddings, mu
 
 - **MCP client, manageable from the UI** — add and edit stdio / SSE / streamable-http servers from Admin → Agents → MCP Servers:
   - one-click presets: Chrome DevTools, Playwright, Filesystem, Memory…
+  - browser kits ship built-in usage hints: models learn the navigate→snapshot→act→verify loop and that each server drives its own separate browser
   - no config-file editing required
 - **SKILL.md skills** — any folder of Claude/ZCode-style skills (a subfolder with a `SKILL.md`) becomes agent tools, with progressive disclosure:
   - the model sees only the name/description up front
