@@ -8,7 +8,8 @@ import System from "./models/system";
 export const REFETCH_LOGO_EVENT = "refetch-logo";
 
 function isLightMode() {
-  return document.documentElement.getAttribute("data-theme") === "light";
+  const key = document.documentElement.getAttribute("data-theme");
+  return key === "light" || key === "sakura";
 }
 export const LogoContext = createContext();
 

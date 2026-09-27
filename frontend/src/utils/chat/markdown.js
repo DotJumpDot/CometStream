@@ -19,7 +19,7 @@ const markdown = markdownIt({
     const uuid = v4();
     const activeTheme = window.localStorage.getItem("theme");
     const theme =
-      activeTheme === "light"
+      activeTheme === "light" || activeTheme === "sakura"
         ? "github"
         : activeTheme?.startsWith("monokai")
           ? "monokai"
@@ -72,7 +72,7 @@ markdown.renderer.rules.strong_close = () => "</strong>";
  */
 function activeCodeTheme() {
   const activeTheme = window.localStorage.getItem("theme");
-  if (activeTheme === "light") return "github";
+  if (activeTheme === "light" || activeTheme === "sakura") return "github";
   if (activeTheme?.startsWith("monokai")) return "monokai";
   return "github-dark";
 }
@@ -340,10 +340,11 @@ function wrapInlineHtml(text = "") {
 // Prose accents for readability
 //
 // Long model summaries read as a wall of white text, so bare HTTP methods
-// (`POST /api/...`), bare URLs, and “quoted” strings get wrapped in spans
-// here - post-render, on text nodes only (code/pre/link/button contents are
-// skipped) - and styled via .md-method*/.md-url/.md-quote in index.css. Methods
-// require a trailing ` /path` so prose verbs ("you get ...") never match.
+// (`POST /api/...`), bare URLs, `#hex` codes, and “quoted” strings get
+// wrapped in spans here - post-render, on text nodes only (code/pre/link/
+// button contents are skipped) - and styled via .md-method*/.md-url/.md-hex/
+// .md-quote in index.css. Methods require a trailing ` /path` so prose verbs
+// ("you get ...") never match.
 // This runs inside both renderers, so live replies, thoughts and reloaded
 // traces all read the same. Emitted spans carry plain classes, which the
 // DOMPurify step at call sites already preserves (see .inline-code).
@@ -393,6 +394,32 @@ function accentUrl(url) {
 const CODE_CMD_START =
   /^\s*(python3?|node|npm|yarn|pnpm|bun|pip3?|bash|sh|zsh|uvicorn|gunicorn|docker|podman|pytest|jest|vitest|cat|head|tail|less|more|ls|dir|tree|grep|rg|find|sleep|kill|pkill|mkdir|rm|cp|mv|chmod|chown|touch|git|gh|curl|wget|go|cargo|dotnet|java|ruby|php|perl|pwd)\b/i;
 const CODE_PATH_LIKE = /[/\\]|\.[A-Za-z0-9]{1,5}$/;
+const HEX_CHIP = /#[0-9A-Fa-f]{6}\b/;
+
+/**
+ * Readable foreground (near-black or white) for a self-colored hex chip
+ * background, by relative luminance - so `#FFF7F9` gets dark text and
+ * `#4A3B40` gets white text instead of guessing one fixed color.
+ * @param {string} hex - 6-digit hex, with or without leading "#".
+ * @returns {string} Foreground hex color.
+ */
+function hexChipText(hex) {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.slice(0, 2), 16) / 255;
+  const g = parseInt(clean.slice(2, 4), 16) / 255;
+  const b = parseInt(clean.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.55 ? "#1F2937" : "#FFFFFF";
+}
+
+/**
+ * Self-colored hex chip: the background IS the hex, the text flips
+ * white/black for readability. Hex digits need no escaping.
+ * @param {string} hex - matched 6-digit hex including "#".
+ * @returns {string} Accent markup.
+ */
+function accentHex(hex) {
+  return `<span class="md-hex" style="background-color:${hex};color:${hexChipText(hex)}">${hex}</span>`;
+}
 
 /**
  * Accents a non-URL code-chip remainder by kind. Input is raw text; output
@@ -405,6 +432,10 @@ function accentCodeRemainder(text) {
     const [head, tail] = splitUrlTail(text);
     return `<span class="md-url">${HTMLEncode(head)}</span>${HTMLEncode(tail)}`;
   }
+  if (HEX_CHIP.test(text))
+    return HTMLEncode(text).replace(/#[0-9A-Fa-f]{6}\b/g, (hex) =>
+      accentHex(hex)
+    );
   if (CODE_CMD_START.test(text))
     return `<span class="md-code-cmd">${HTMLEncode(text)}</span>`;
   if (CODE_PATH_LIKE.test(text))
@@ -444,6 +475,7 @@ function enhanceProse(html = "") {
           (m) => `<span class="md-method ${METHOD_CLASS[m]}">${m}</span>`
         )
         .replace(URL_REGEX, accentUrl)
+        .replace(/#[0-9A-Fa-f]{6}\b/g, (hex) => accentHex(hex))
         .replace(QUOTE_REGEX, '<span class="md-quote">“$1”</span>');
     })
     .join("");

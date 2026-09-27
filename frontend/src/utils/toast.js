@@ -8,7 +8,7 @@ import { toast } from "react-toastify";
 function resolveTheme() {
   const stored = localStorage?.getItem("theme") || "system";
   if (stored === "default" || stored === "dark") return "dark";
-  if (stored === "light") return "light";
+  if (stored === "light" || stored === "sakura") return "light";
   return window.matchMedia?.("(prefers-color-scheme: light)").matches
     ? "light"
     : "dark";

@@ -123,7 +123,7 @@ export default function AttachItem({
           delayShow={300}
           delayHide={isEmbedding ? 999999 : 800} // Prevent tooltip from hiding during embedding
           arrowColor={
-            theme === "light"
+            theme === "light" || theme === "sakura"
               ? "var(--theme-modal-border)"
               : "var(--theme-bg-primary)"
           }

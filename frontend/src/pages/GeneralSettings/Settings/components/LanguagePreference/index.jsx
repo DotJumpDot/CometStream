@@ -13,16 +13,16 @@ export default function LanguagePreference() {
   return (
     <div className="flex items-center justify-between gap-x-6 py-4">
       <div className="flex flex-col gap-y-0.5">
-        <p className="text-sm leading-6 font-semibold text-white">
+        <p className="text-sm leading-6 font-semibold text-theme-text-primary">
           {t("customization.items.display-language.title")}
         </p>
-        <p className="text-xs text-white/60">
+        <p className="text-xs text-theme-text-secondary">
           {t("customization.items.display-language.description")}
         </p>
       </div>
       <select
         name="userLang"
-        className="border-none bg-theme-settings-input-bg text-white placeholder:text-theme-settings-input-placeholder text-sm rounded-lg focus:outline-primary-button active:outline-primary-button outline-none block w-fit shrink-0 py-2 px-4"
+        className="border-none bg-theme-settings-input-bg text-theme-text-primary placeholder:text-theme-settings-input-placeholder text-sm rounded-lg focus:outline-primary-button active:outline-primary-button outline-none block w-fit shrink-0 py-2 px-4"
         defaultValue={currentLanguage || "en"}
         onChange={(e) => changeLanguage(e.target.value)}
       >

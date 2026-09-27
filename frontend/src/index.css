@@ -424,6 +424,115 @@ body.light code.inline-code.hljs {
 }
 
 /*
+ * Sakura - light pastel theme for Hanami season.
+ * Palette: background #FFF7F9, sakura pink #FFB7C5, deep plum #D4637D,
+ * text #4A3B40, cards #FFFFFF with #FFD9E1 borders, success #7FB069.
+ */
+[data-theme="sakura"] {
+  --theme-loader: #4a3b40;
+  --theme-scrollbar-thumb: rgba(212, 99, 125, 0.25);
+  --theme-scrollbar-thumb-hover: rgba(212, 99, 125, 0.45);
+  --theme-bg-primary: #fff7f9;
+  --theme-bg-secondary: #ffffff;
+  --theme-bg-sidebar: #fdeef3;
+  --theme-bg-container: #fff7f9;
+  --theme-popup-menu-bg: #ffd9e1;
+
+  --theme-bg-chat: #ffffff;
+  --theme-bg-chat-input: #fdeef3;
+  --theme-text-primary: #4a3b40;
+  --theme-text-secondary: #9a7b84;
+  --theme-placeholder: #c4a3ad;
+  --theme-sidebar-item-default: #ffffff;
+  --theme-sidebar-item-selected: #ffe4eb;
+  --theme-sidebar-item-hover: #ffd9e1;
+
+  --theme-sidebar-item-text-inactive: #9a7b84;
+  --theme-sidebar-item-text-active: #d4637d;
+
+  --theme-sidebar-item-workspace-active: #4a3b40;
+  --theme-sidebar-item-workspace-inactive: #9a7b84;
+
+  --theme-sidebar-subitem-default: transparent;
+  --theme-sidebar-subitem-selected: #ffe4eb;
+  --theme-sidebar-thread-selected: #ffffff;
+  --theme-sidebar-subitem-hover: #fdeef3;
+  --theme-sidebar-border: #ffd9e1;
+
+  --theme-sidebar-footer-icon: #ffffff;
+  --theme-sidebar-footer-icon-fill: #d4637d;
+  --theme-sidebar-footer-icon-hover: #ffd9e1;
+
+  --theme-chat-input-border: #ffd9e1;
+  --theme-action-menu-bg: #ffffff;
+  --theme-action-menu-item-hover: rgba(212, 99, 125, 0.1);
+  --theme-settings-input-bg: #fdeef3;
+  --theme-settings-input-placeholder: rgba(74, 59, 64, 0.5);
+  --theme-settings-input-active: rgb(212 99 125 / 0.2);
+  --theme-settings-input-text: #4a3b40;
+  --theme-modal-border: #ffd9e1;
+
+  --theme-button-primary: #ffb7c5;
+  --theme-button-primary-hover: #d4637d;
+
+  --theme-button-cta: #d4637d;
+
+  --theme-file-row-even: #fff7f9;
+  --theme-file-row-odd: #fdeef3;
+  --theme-file-row-selected-even: #ffb7c5;
+  --theme-file-row-selected-odd: #ffb7c5;
+  --theme-file-picker-hover: #ffe4eb;
+
+  --theme-home-text: #4a3b40;
+  --theme-home-text-secondary: #9a7b84;
+  --theme-home-bg-card: #ffffff;
+  --theme-home-bg-button: #fdeef3;
+  --theme-home-border: rgba(212, 99, 125, 0.1);
+  --theme-home-button-primary: #ffb7c5;
+  --theme-home-button-primary-hover: rgba(255, 183, 197, 0.9);
+  --theme-home-button-secondary: #ffe4eb;
+  --theme-home-button-secondary-hover: #ffd9e1;
+  --theme-home-button-secondary-text: #4a3b40;
+  --theme-home-button-secondary-hover-text: #4a3b40;
+  --theme-home-update-card-bg: #ffffff;
+  --theme-home-update-card-hover: #fdeef3;
+  --theme-home-update-source: #d4637d;
+
+  --theme-checklist-item-bg: #ffe4eb;
+  --theme-checklist-item-bg-hover: #ffd9e1;
+  --theme-checklist-item-text: #4a3b40;
+  --theme-checklist-item-completed-bg: #eaf5e4;
+  --theme-checklist-item-completed-text: #7fb069;
+  --theme-checklist-checkbox-fill: #7fb069;
+  --theme-checklist-checkbox-text: #ffffff;
+  --theme-checklist-item-hover: #d4637d;
+  --theme-checklist-checkbox-border: #c4a3ad;
+  --theme-checklist-button-border: #d4637d;
+  --theme-checklist-button-text: #d4637d;
+  --theme-checklist-button-hover-bg: rgba(212, 99, 125, 0.1);
+  --theme-checklist-button-hover-border: rgba(212, 99, 125, 0.8);
+
+  --theme-home-button-secondary-border-hover: #d4637d;
+
+  --theme-attachment-bg: #fdeef3;
+  --theme-attachment-error-bg: rgba(180, 35, 24, 0.3);
+  --theme-attachment-success-bg: #eaf5e4;
+  --theme-attachment-text: #4a3b40;
+  --theme-attachment-text-secondary: rgba(74, 59, 64, 0.8);
+  --theme-attachment-icon: #ffffff;
+  --theme-attachment-icon-spinner: #ffb7c5;
+  --theme-attachment-icon-spinner-bg: #ffffff;
+
+  --theme-button-text: #9a7b84;
+  --theme-button-code-hover-text: #d4637d;
+  --theme-button-code-hover-bg: #ffe4eb;
+  --theme-button-disable-hover-text: #854708;
+  --theme-button-disable-hover-bg: #fef7e6;
+  --theme-button-delete-hover-text: #b42318;
+  --theme-button-delete-hover-bg: #fde8ec;
+}
+
+/*
  * Monokai Night - dark, minimalistic Monokai variant.
  * Palette from fabiospampinato/vscode-monokai-night: grayscale surfaces
  * (#0f0f0f activityBar, #161616 sideBar, #1f1f1f editor, #262626 panel,
@@ -636,6 +745,78 @@ body.light code.inline-code.hljs {
   --theme-button-disable-hover-bg: rgba(255, 238, 153, 0.1);
   --theme-button-delete-hover-text: #f92672;
   --theme-button-delete-hover-bg: rgba(249, 38, 114, 0.12);
+}
+
+[data-theme="sakura"] .bg-theme-bg-secondary {
+  border: 1px solid var(--theme-sidebar-border);
+}
+
+[data-theme="sakura"] .border-white\/10 {
+  border-color: var(--theme-sidebar-border);
+}
+
+/* Sakura surfaces are light, so white text is unreadable on them. These
+ * outrank the generic body.light .text-white mapping (muted secondary) and
+ * pin settings headings, selects and buttons to near-black plum instead. */
+html[data-theme="sakura"] body.light .text-white {
+  color: #4a3b40;
+}
+html[data-theme="sakura"] body.light .text-white\/60 {
+  color: rgba(74, 59, 64, 0.72);
+}
+html[data-theme="sakura"] body.light .text-white\/80 {
+  color: rgba(74, 59, 64, 0.85);
+}
+
+/* Sakura re-tints the hardcoded light-theme surfaces. The chat/sidebar use
+ * `light:` utilities with baked-in light-theme colors (slate/blue), which
+ * would otherwise paint Sakura light-blue under body.light. Each rule below
+ * only exists to remap one such utility onto a Sakura variable — the light
+ * theme itself is untouched. Text colors are deliberately left alone (dark
+ * slate/zinc stays readable on pink). */
+html[data-theme="sakura"] body.light .light\:bg-slate-200,
+html[data-theme="sakura"] body.light .light\:bg-slate-200\/50,
+html[data-theme="sakura"] body.light .light\:bg-slate-200\/60,
+html[data-theme="sakura"] body.light .light\:hover\:bg-slate-200:hover,
+html[data-theme="sakura"] body.light .light\:hover\:bg-slate-200\/60:hover,
+html[data-theme="sakura"] body.light .light\:bg-blue-200,
+html[data-theme="sakura"] body.light .light\:bg-blue-200\/70 {
+  background-color: var(--theme-sidebar-item-selected);
+}
+html[data-theme="sakura"] body.light .light\:hover\:bg-sky-800\/30:hover,
+html[data-theme="sakura"] body.light .light\:hover\:bg-slate-400:hover {
+  background-color: var(--theme-sidebar-item-hover);
+}
+html[data-theme="sakura"] body.light .light\:bg-slate-100,
+html[data-theme="sakura"] body.light .light\:bg-slate-100\/80 {
+  background-color: var(--theme-file-row-odd);
+}
+html[data-theme="sakura"] body.light .light\:bg-slate-50,
+html[data-theme="sakura"] body.light .light\:hover\:bg-slate-50:hover,
+html[data-theme="sakura"] body.light .light\:bg-white,
+html[data-theme="sakura"] body.light .light\:bg-white\/95 {
+  background-color: var(--theme-bg-secondary);
+}
+html[data-theme="sakura"] body.light .light\:bg-slate-400 {
+  background-color: var(--theme-sidebar-border);
+}
+html[data-theme="sakura"] body.light .light\:border-slate-300,
+html[data-theme="sakura"] body.light .light\:border-slate-200,
+html[data-theme="sakura"] body.light .light\:border-slate-200\/50,
+html[data-theme="sakura"] body.light .light\:border-slate-400,
+html[data-theme="sakura"] body.light .light\:border-slate-500,
+html[data-theme="sakura"] body.light .light\:border-black\/10,
+html[data-theme="sakura"] body.light .light\:border-white {
+  border-color: var(--theme-sidebar-border);
+}
+html[data-theme="sakura"] body.light .light\:border-none {
+  border-style: solid;
+  border-width: 2px;
+  border-color: var(--theme-sidebar-border);
+}
+html[data-theme="sakura"] body.light .light\:text-blue-900,
+html[data-theme="sakura"] body.light .light\:text-blue-700 {
+  color: var(--theme-sidebar-item-text-active);
 }
 
 [data-theme="light"] .text-white {
@@ -1297,24 +1478,24 @@ body.light .markdown li::marker {
   background: rgba(255, 255, 255, 0.07);
 }
 body.light .md-method-get {
-  color: #0284c7;
-  background: rgba(2, 132, 199, 0.1);
+  color: var(--mp-get-bg, #0284c7);
+  background: var(--mp-get-tint, rgba(2, 132, 199, 0.1));
 }
 body.light .md-method-post {
-  color: #059669;
-  background: rgba(5, 150, 105, 0.12);
+  color: var(--mp-post-bg, #059669);
+  background: var(--mp-post-tint, rgba(5, 150, 105, 0.12));
 }
 body.light .md-method-put {
-  color: #d97706;
-  background: rgba(217, 119, 6, 0.12);
+  color: var(--mp-put-bg, #d97706);
+  background: var(--mp-put-tint, rgba(217, 119, 6, 0.12));
 }
 body.light .md-method-patch {
-  color: #7c3aed;
-  background: rgba(124, 58, 237, 0.12);
+  color: var(--mp-patch-bg, #7c3aed);
+  background: var(--mp-patch-tint, rgba(124, 58, 237, 0.12));
 }
 body.light .md-method-delete {
-  color: #dc2626;
-  background: rgba(220, 38, 38, 0.1);
+  color: var(--mp-delete-bg, #dc2626);
+  background: var(--mp-delete-tint, rgba(220, 38, 38, 0.1));
 }
 body.light .md-method-head,
 body.light .md-method-options {
@@ -1323,24 +1504,34 @@ body.light .md-method-options {
 }
 
 /* Code-chip content accents (split in code_inline): runnable commands
- * green, paths orange, leftover values soft yellow. */
+ * green, paths orange, leftover values soft yellow. Colors follow the active
+ * method palette; the classic preset sets no variables so legacy rules. */
 .md-code-cmd {
-  color: #6ee7b7;
+  color: var(--mp-code-cmd, #6ee7b7);
 }
 .md-code-path {
-  color: #fb923c;
+  color: var(--mp-code-path, #fb923c);
 }
 .md-code-val {
-  color: #fef08a;
+  color: var(--mp-code-val, #fef08a);
 }
 body.light .md-code-cmd {
-  color: #047857;
+  color: var(--mp-code-cmd, #047857);
 }
 body.light .md-code-path {
-  color: #ea580c;
+  color: var(--mp-code-path, #ea580c);
 }
 body.light .md-code-val {
-  color: #854d0e;
+  color: var(--mp-code-val, #854d0e);
+}
+
+/* Self-colored hex chips (emitted with inline bg/fg by accentHex): the shape
+ * only, so any hex renders legibly on any theme. */
+.md-hex {
+  padding: 0.1em 0.4em;
+  border-radius: 6px;
+  font-size: 0.92em;
+  white-space: nowrap;
 }
 
 /* Flat method accent for `METHOD /path` code chips: per-verb color without
@@ -1353,32 +1544,34 @@ body.light .md-code-val {
 }
 
 /* Bare (unlinked) URLs: Write-violet to match real anchors. No navigation,
- * just the affordance. */
+ * just the affordance. Color follows the method palette link color. */
 .md-url {
-  color: #a78bfa;
+  color: var(--mp-link, #a78bfa);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 body.light .md-url {
-  color: #7c3aed;
+  color: var(--mp-link, #7c3aed);
 }
 
 /* “Quoted” strings in prose (error text, labels): terminal-pink, no italics
- * — they read as cited values instead of blending into the sentence. */
+ * — they read as cited values instead of blending into the sentence. Color
+ * follows the active method palette; the classic preset sets no variable so
+ * this legacy pink rules untouched. */
 .md-quote {
-  color: #f472b6;
+  color: var(--mp-quote, #f472b6);
 }
 body.light .md-quote {
-  color: #db2777;
+  color: var(--mp-quote, #db2777);
 }
 
 .markdown > * a {
-  color: #a78bfa;
+  color: var(--mp-link, #a78bfa);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 body.light .markdown > * a {
-  color: #7c3aed;
+  color: var(--mp-link, #7c3aed);
 }
 
 @media (max-width: 600px) {

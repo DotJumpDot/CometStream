@@ -115,7 +115,7 @@ export default function LLMSelectorAction({ workspaceSlug = null }) {
         delayShow={300} // dont trigger tooltip instantly to not spam the UI
         delayHide={800} // Prevent the travel time from icon to window hiding tooltip
         arrowColor={
-          theme === "light"
+          theme === "light" || theme === "sakura"
             ? "var(--theme-modal-border)"
             : "var(--theme-bg-primary)"
         }

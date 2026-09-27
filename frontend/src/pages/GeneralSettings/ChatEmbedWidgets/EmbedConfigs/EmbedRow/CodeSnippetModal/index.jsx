@@ -53,8 +53,11 @@ const ScriptTag = ({ embed }) => {
     ? "http://localhost:3001"
     : window.location.origin;
   const snippet = createScriptTagSnippet(embed, scriptHost, serverHost);
+  const storedTheme = window.localStorage.getItem("theme");
   const theme =
-    window.localStorage.getItem("theme") === "light" ? "github" : "github-dark";
+    storedTheme === "light" || storedTheme === "sakura"
+      ? "github"
+      : "github-dark";
 
   const handleClick = () => {
     window.navigator.clipboard.writeText(snippet);

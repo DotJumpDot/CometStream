@@ -40,7 +40,7 @@ export default function TextSizeButton() {
         delayShow={300}
         delayHide={800}
         arrowColor={
-          theme === "light"
+          theme === "light" || theme === "sakura"
             ? "var(--theme-modal-border)"
             : "var(--theme-bg-primary)"
         }

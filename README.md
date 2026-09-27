@@ -88,7 +88,8 @@ Everything the AnythingLLM base offers — workspaces, documents, embeddings, mu
 
 ### Make it yours
 
-- **Monokai themes** — Monokai Night and Monokai Dark Soda alongside the default, light, and system themes (Settings → Customization).
+- **Themes** — Monokai Night, Monokai Dark Soda, and the Sakura light pastel theme alongside default, light, and system (Settings → Customization), with a live palette + mini-workspace preview on the Interface page.
+- **Method color palette** — HTTP method badges and chat tokens (commands, paths, values, quotes, session chips) get their own presets (Sakura / Classic / Mono), stored separately from the UI theme so the two never fight.
 - **Runs anywhere** — one Docker command, a self-contained portable Windows build, or plain Node.js.
 
 ## Quickstart

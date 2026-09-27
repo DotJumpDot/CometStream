@@ -3,25 +3,31 @@ import { CaretDown, Robot, Terminal } from "@phosphor-icons/react";
 import { formatDuration } from "@/utils/numbers";
 import { shortCommand, categorizeLabel } from "@/utils/agentActivity";
 
-// Command-class accents for the category chip: the row reads
-// `Search - $ grep …` so terminal use scans by kind at a glance. Each
-// class gets its own hue (Search/Fetch share the blue family by design).
-const CATEGORY_STYLES = {
-  Search: "text-sky-400 light:text-sky-600",
-  Run: "text-emerald-500 light:text-emerald-600",
-  Install: "text-amber-400 light:text-amber-600",
-  Write: "text-violet-400 light:text-violet-600",
-  Fetch: "text-cyan-400 light:text-cyan-600",
-  Kill: "text-red-400 light:text-red-500",
-  Sleep: "text-yellow-300 light:text-yellow-600",
-  Git: "text-blue-400 light:text-blue-500",
-  Test: "text-fuchsia-400 light:text-fuchsia-600",
-  Files: "text-teal-300 light:text-teal-600",
-  Cat: "text-orange-400 light:text-orange-600",
-  List: "text-lime-400 light:text-lime-600",
-  Pwd: "text-stone-400 light:text-stone-500",
-  Bash: "text-indigo-400 light:text-indigo-500",
+// Command-category accents read the active method palette
+// (`--mp-cat-<name>`, applied by useMethodPalette): the row still reads
+// `Search - $ grep …` and scans by kind at a glance, but the hues now follow
+// the picked preset. Fallbacks are the long-standing classic values so the
+// legacy look survives with no variables set.
+const CATEGORY_FALLBACKS = {
+  Search: "#38BDF8",
+  Run: "#10B981",
+  Install: "#FBBF24",
+  Write: "#A78BFA",
+  Fetch: "#22D3EE",
+  Kill: "#F87171",
+  Sleep: "#FDE047",
+  Git: "#60A5FA",
+  Test: "#E879F9",
+  Files: "#2DD4BF",
+  Cat: "#FB923C",
+  List: "#A3E635",
+  Pwd: "#A8A29E",
+  Bash: "#818CF8",
 };
+
+function categoryColor(category) {
+  return `var(--mp-cat-${String(category).toLowerCase()}, ${CATEGORY_FALLBACKS[category] || "#a1a1aa"})`;
+}
 
 /**
  * One terminal/subagent session row in the chat stream: status dot, command
@@ -79,10 +85,11 @@ function SessionCard({ session = {} }) {
       >
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
         <KindIcon className="w-3.5 h-3.5 text-zinc-400 light:text-zinc-500 shrink-0" />
-        {category && CATEGORY_STYLES[category] && (
+        {category && (
           <span className="flex items-baseline gap-x-1 shrink-0">
             <span
-              className={`text-[11px] font-semibold ${CATEGORY_STYLES[category]}`}
+              className="text-[11px] font-semibold"
+              style={{ color: categoryColor(category) }}
             >
               {category}
             </span>
@@ -99,7 +106,10 @@ function SessionCard({ session = {} }) {
           {shortCommand(session.label, 90)}
         </span>
         {Number.isFinite(ms) && ms >= 0 && (
-          <span className="text-[13px] text-pink-400 light:text-pink-600 tabular-nums shrink-0">
+          <span
+            className="text-[13px] tabular-nums shrink-0"
+            style={{ color: "var(--mp-timing, #f472b6)" }}
+          >
             {formatDuration(ms / 1000)}
           </span>
         )}

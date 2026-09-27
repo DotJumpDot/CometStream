@@ -938,6 +938,36 @@ const TRANSLATIONS = {
         title: "Theme",
         description: "Select your preferred color theme for the application.",
       },
+      palette: {
+        title: "Theme palette",
+        description:
+          "Swatches of the active UI theme with a mini workspace preview — both update live as you switch themes above.",
+        background: "Background",
+        accent: "Accent",
+        "sakura-pink": "Sakura pink",
+        "deep-plum": "Deep plum",
+        text: "Text",
+        card: "Card",
+        border: "Border",
+        "card-border": "Card border",
+        success: "Success",
+      },
+      "endpoint-preview": {
+        title: "Endpoint colors",
+        description:
+          "REST lines on the left, chat tokens (commands, paths, values, quotes, links, hex chips, sessions) on the right — each renders in its own color.",
+      },
+      "method-palette": {
+        title: "Method color palette",
+        description:
+          "Pick the badge colors for HTTP methods. Stored separately from the UI theme — changing one never affects the other.",
+        restore: "Restore default",
+        presets: {
+          sakura: "Sakura",
+          classic: "Classic",
+          mono: "Mono",
+        },
+      },
       "show-scrollbar": {
         title: "Show Scrollbar",
         description: "Enable or disable the scrollbar in the chat window.",

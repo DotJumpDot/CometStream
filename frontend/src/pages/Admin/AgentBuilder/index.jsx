@@ -331,7 +331,7 @@ export default function AgentBuilder() {
       <div
         style={{
           backgroundImage:
-            theme === "light"
+            theme === "light" || theme === "sakura"
               ? "radial-gradient(rgba(0, 0, 0, 0.1) 1px, transparent 0)"
               : "radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 0)",
           backgroundSize: "15px 15px",
