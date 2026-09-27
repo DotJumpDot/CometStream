@@ -1051,6 +1051,14 @@ const KEY_MAPPING = {
     checks: [],
   },
 
+  // CometStream: per-provider model curation for built-in providers.
+  // Stored as a JSON map of provider value -> hidden model ids, e.g.
+  // {"openai":["gpt-4"]}. Empty/absent means every discovered model is
+  // visible. Saved through the same system settings form as credentials.
+  HiddenBuiltinModels: {
+    envKey: "HIDDEN_BUILTIN_MODELS",
+    checks: [validHiddenBuiltinModels],
+  },
   // Agent Skill Settings
   AgentSkillMaxToolCalls: {
     envKey: "AGENT_MAX_TOOL_CALLS",
@@ -1097,6 +1105,80 @@ function validFilesystemToolsToggle(input = "") {
   return ["0", "1"].includes(String(input))
     ? null
     : "Filesystem tools toggle must be 0 or 1";
+}
+
+/**
+ * Validate the hidden-built-in-models map: a JSON object of provider value
+ * to arrays of model-id strings. Returns an error string on any garbage so
+ * a corrupt payload fails the whole settings save instead of persisting.
+ * @param {string} [input]
+ * @returns {string|null} Error message or null when valid.
+ */
+function validHiddenBuiltinModels(input = "") {
+  if (input === "" || input === null || input === undefined) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(String(input));
+  } catch {
+    return "Hidden models must be valid JSON.";
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return "Hidden models must be a JSON object.";
+  const providers = Object.keys(parsed);
+  if (providers.length > 50) return "Hidden models map is too large.";
+  for (const provider of providers) {
+    if (typeof provider !== "string" || provider.length > 60)
+      return "Hidden models has an invalid provider key.";
+    const ids = parsed[provider];
+    if (!Array.isArray(ids) || ids.length > 500)
+      return "Hidden models entries must be arrays.";
+    for (const id of ids) {
+      if (typeof id !== "string" || !id.length || id.length > 200)
+        return "Hidden models entries must be model id strings.";
+    }
+  }
+  return null;
+}
+
+/**
+ * Disconnect a built-in LLM provider: delete the given setting keys from the
+ * environment so the provider reads as unconfigured everywhere (settings
+ * page, model picker, agent init). `updateENV` cannot do this because every
+ * credential key carries an `isNotEmpty` check. Keys are allowlisted against
+ * KEY_MAPPING so callers cannot clear unrelated env (auth, ports, ...). When
+ * the disconnected provider is the system default, the default is cleared
+ * too so a stale pointer cannot wedge agent runs - the next run fails with
+ * the standard "no provider set" guidance instead.
+ * @param {string} provider - Provider value, e.g. "openai".
+ * @param {string[]} [keys] - Setting labels to clear, e.g. ["OpenAiKey"].
+ * @returns {{disconnected: string[], resetDefault: boolean}}
+ */
+function disconnectProviderEnv(provider, keys = []) {
+  const validKeys = Array.isArray(keys)
+    ? keys.filter(
+        (key) =>
+          typeof key === "string" &&
+          Object.prototype.hasOwnProperty.call(KEY_MAPPING, key)
+      )
+    : [];
+  if (!provider || validKeys.length === 0)
+    throw new Error(
+      "A provider and at least one known setting key are required."
+    );
+
+  const disconnected = [];
+  for (const key of validKeys) {
+    delete process.env[KEY_MAPPING[key].envKey];
+    disconnected.push(key);
+  }
+
+  let resetDefault = false;
+  if (process.env.LLM_PROVIDER === provider) {
+    delete process.env.LLM_PROVIDER;
+    resetDefault = true;
+  }
+  if (process.env.NODE_ENV === "production") dumpENV();
+  return { disconnected, resetDefault };
 }
 
 function validAnthropicApiKey(input = "") {
@@ -1622,4 +1704,6 @@ function dumpENV() {
 module.exports = {
   dumpENV,
   updateENV,
+  disconnectProviderEnv,
+  validHiddenBuiltinModels,
 };

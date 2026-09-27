@@ -11,7 +11,11 @@ const {
 } = require("../utils/files");
 const { purgeDocument, purgeFolder } = require("../utils/files/purgeDocument");
 const { getVectorDbClass } = require("../utils/helpers");
-const { updateENV, dumpENV } = require("../utils/helpers/updateENV");
+const {
+  updateENV,
+  dumpENV,
+  disconnectProviderEnv,
+} = require("../utils/helpers/updateENV");
 const {
   reqBody,
   makeJWT,
@@ -603,6 +607,28 @@ function systemEndpoints(app) {
       } catch (e) {
         console.error(e.message, e);
         response.sendStatus(500).end();
+      }
+    }
+  );
+
+  app.post(
+    "/system/disconnect-llm-provider",
+    [validatedRequest, flexUserRoleValid([ROLES.admin])],
+    async (request, response) => {
+      try {
+        const { provider = null, keys = [] } = reqBody(request);
+        const { disconnected, resetDefault } = disconnectProviderEnv(
+          provider,
+          keys
+        );
+        response.status(200).json({
+          success: true,
+          error: null,
+          disconnected,
+          resetDefault,
+        });
+      } catch (e) {
+        response.status(400).json({ success: false, error: e.message });
       }
     }
   );

@@ -512,7 +512,11 @@ function workspaceEndpoints(app) {
         const history = multiUserMode(response)
           ? await WorkspaceChats.forWorkspaceByUser(workspace.id, user.id)
           : await WorkspaceChats.forWorkspace(workspace.id);
-        response.status(200).json({ history: convertToChatHistory(history) });
+        response.status(200).json({
+          history: convertToChatHistory(history, {
+            includeInterruptPlaceholders: true,
+          }),
+        });
       } catch (e) {
         console.error(e.message, e);
         response.sendStatus(500).end();

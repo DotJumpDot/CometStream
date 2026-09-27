@@ -136,11 +136,13 @@ const WorkspaceThread = {
    * Threads that actually contain chats, for sidebar-style lists. Thread
    * rows are pre-created before the first message, so aborted/failed runs
    * leave chat-less "Thread" rows behind - opening one shows a blank
-   * greeting view, which reads as a broken conversation. Filtering here
-   * keeps the list to conversations with something to show; the thread
-   * route itself still loads a filtered thread fine (it just renders empty).
+   * greeting view, which reads as a broken conversation. Rows whose chats
+   * were all invalidated (reset/cleared/compacted, or a run that died before
+   * writing its response) are equally blank: the history endpoint only
+   * serves `include: true` rows, so the count here must apply the same
+   * filter or the sidebar lists threads that open to nothing.
    * @param {object} [clause] - where clause for the thread lookup
-   * @returns {Array} Threads with at least one chat each.
+   * @returns {Array} Threads with at least one visible chat each.
    */
   listNonEmpty: async function (clause = {}) {
     try {
@@ -150,7 +152,10 @@ const WorkspaceThread = {
       if (threads.length === 0) return [];
       const counts = await prisma.workspace_chats.groupBy({
         by: ["thread_id"],
-        where: { thread_id: { in: threads.map((thread) => thread.id) } },
+        where: {
+          thread_id: { in: threads.map((thread) => thread.id) },
+          include: true,
+        },
         _count: { thread_id: true },
       });
       const withChats = new Set(

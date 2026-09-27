@@ -200,7 +200,11 @@ function workspaceThreadEndpoints(app) {
           { id: "asc" }
         );
 
-        response.status(200).json({ history: convertToChatHistory(history) });
+        response.status(200).json({
+          history: convertToChatHistory(history, {
+            includeInterruptPlaceholders: true,
+          }),
+        });
       } catch (e) {
         console.error(e.message, e);
         response.sendStatus(500).end();

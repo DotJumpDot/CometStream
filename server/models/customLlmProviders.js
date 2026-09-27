@@ -21,6 +21,9 @@ const PROVIDER_KEY_PREFIX = "custom:";
  * @property {{vision?: boolean, tools?: boolean, imageGeneration?: boolean}} [capabilities]
  * @property {string[]} [reasoningLevels] - Selectable effort levels; empty array = simple on/off.
  * @property {boolean} [enabled] - Disabled models stay configured but hidden from the picker.
+ * @property {number} [temperature] - Sampling temperature 0-2. Omitted = backend default.
+ * @property {number} [topP] - Nucleus sampling 0-1. Omitted = backend default.
+ * @property {number} [timeoutMs] - Per-request timeout in ms (1000-600000). Omitted = SDK default.
  */
 
 const MAX_NAME_LENGTH = 60;
@@ -85,6 +88,28 @@ function sanitizeModelDescriptor(raw = {}) {
         .slice(0, 10)
     : [];
 
+  // Sampling + transport knobs are optional: omitted means "backend default",
+  // so pre-existing rows behave exactly as before.
+  const temperatureRaw = Number(raw.temperature);
+  const temperature =
+    Number.isFinite(temperatureRaw) &&
+    temperatureRaw >= 0 &&
+    temperatureRaw <= 2
+      ? temperatureRaw
+      : undefined;
+
+  const topPRaw = Number(raw.topP);
+  const topP =
+    Number.isFinite(topPRaw) && topPRaw > 0 && topPRaw <= 1
+      ? topPRaw
+      : undefined;
+
+  const timeoutRaw = Number(raw.timeoutMs);
+  const timeoutMs =
+    Number.isFinite(timeoutRaw) && timeoutRaw >= 1000
+      ? Math.min(Math.floor(timeoutRaw), 600_000)
+      : undefined;
+
   return {
     id,
     ...(displayName ? { displayName } : {}),
@@ -92,6 +117,9 @@ function sanitizeModelDescriptor(raw = {}) {
     ...(maxTokens ? { maxTokens } : {}),
     capabilities,
     reasoningLevels,
+    ...(temperature !== undefined ? { temperature } : {}),
+    ...(topP !== undefined ? { topP } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     enabled: raw.enabled !== false,
   };
 }

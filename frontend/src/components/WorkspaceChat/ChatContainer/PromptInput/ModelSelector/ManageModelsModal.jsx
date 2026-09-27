@@ -6,6 +6,7 @@ import {
   CaretRight,
   Eye,
   FloppyDisk,
+  PencilSimple,
   Plus,
   Sparkle,
   Star,
@@ -52,6 +53,7 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
   const [selected, setSelected] = useState(null); // {type:"custom", id} | {type:"builtin", value} | null
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [showAddModel, setShowAddModel] = useState(false);
+  const [editingModel, setEditingModel] = useState(null);
 
   const selectedCustom = useMemo(
     () =>
@@ -102,6 +104,35 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
     }
     showToast(t("manage_models.default_set"), "success");
     reload();
+  };
+
+  const disconnectBuiltIn = async (providerValue) => {
+    const entry = WORKSPACE_LLM_PROVIDERS.find(
+      (provider) => provider.value === providerValue
+    );
+    if (!entry) return;
+    if (
+      !window.confirm(
+        t("manage_models.disconnect_builtin_confirm", { name: entry.name })
+      )
+    )
+      return;
+    const { success, error, resetDefault } = await System.disconnectProvider(
+      providerValue,
+      entry.requiredConfig ?? []
+    );
+    if (!success) {
+      showToast(error || t("manage_models.disconnect_failed"), "error");
+      return;
+    }
+    showToast(
+      resetDefault
+        ? t("manage_models.builtin_disconnected_reset_default")
+        : t("manage_models.builtin_disconnected"),
+      "success"
+    );
+    setSelected(null);
+    afterChange();
   };
 
   if (!isAdmin) return null;
@@ -205,6 +236,7 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
                   onOpenSettings={() =>
                     navigate(paths.settings.llmPreference())
                   }
+                  onDisconnect={() => disconnectBuiltIn(selected.value)}
                 />
               )}
 
@@ -218,6 +250,7 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
                   onSetDefault={() => setSystemDefault(selectedCustom.id)}
                   onSaved={afterChange}
                   onAddModel={() => setShowAddModel(true)}
+                  onEditModel={(model) => setEditingModel(model)}
                   onDeleteModel={async (modelId) => {
                     await CustomLlmProviders.deleteModel(
                       selectedCustom.id,
@@ -285,6 +318,19 @@ export default function ManageModelsModal({ isOpen, closeModal, onChanged }) {
           }}
         />
       )}
+
+      {editingModel && selectedCustom && (
+        <EditModelDialog
+          provider={selectedCustom}
+          model={editingModel}
+          closeModal={() => setEditingModel(null)}
+          onSaved={() => {
+            setEditingModel(null);
+            afterChange();
+            showToast(t("manage_models.model_updated"), "success");
+          }}
+        />
+      )}
     </>
   );
 }
@@ -325,7 +371,7 @@ function ProviderRow({ active, onClick, icon, label, connected, isDefault }) {
   );
 }
 
-function BuiltInPanel({ value, onOpenSettings }) {
+function BuiltInPanel({ value, onOpenSettings, onDisconnect }) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-y-4">
@@ -338,14 +384,25 @@ function BuiltInPanel({ value, onOpenSettings }) {
       <p className="text-xs text-theme-text-secondary leading-relaxed">
         {t("manage_models.builtin_description")}
       </p>
-      <button
-        type="button"
-        onClick={onOpenSettings}
-        className="w-fit flex items-center gap-x-1.5 text-xs text-cta-button hover:underline"
-      >
-        {t("manage_models.open_llm_settings")}
-        <CaretRight size={11} />
-      </button>
+      <div className="flex items-center gap-x-3">
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="w-fit flex items-center gap-x-1.5 text-xs text-cta-button hover:underline"
+        >
+          {t("manage_models.open_llm_settings")}
+          <CaretRight size={11} />
+        </button>
+        {onDisconnect && (
+          <button
+            type="button"
+            onClick={onDisconnect}
+            className="w-fit text-xs text-red-400 hover:bg-red-400/10 px-2 py-1 rounded-lg transition-colors duration-100"
+          >
+            {t("manage_models.disconnect_builtin")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -356,6 +413,7 @@ function CustomProviderPanel({
   onSetDefault,
   onSaved,
   onAddModel,
+  onEditModel,
   onDeleteModel,
   onToggleModel,
   onDeleteProvider,
@@ -498,6 +556,14 @@ function CustomProviderPanel({
             />
             <button
               type="button"
+              onClick={() => onEditModel?.(model)}
+              aria-label={t("manage_models.edit_model")}
+              className="text-theme-text-secondary hover:text-theme-text-primary transition-colors duration-100 shrink-0"
+            >
+              <PencilSimple size={13} />
+            </button>
+            <button
+              type="button"
               onClick={() => onDeleteModel(model.id)}
               aria-label={t("manage_models.remove_model")}
               className="text-theme-text-secondary hover:text-red-400 transition-colors duration-100 shrink-0"
@@ -577,14 +643,80 @@ function AddProviderDialog({ closeModal, onCreated }) {
 
 function AddModelDialog({ provider, closeModal, onAdded }) {
   const { t } = useTranslation();
-  const [modelId, setModelId] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [contextWindow, setContextWindow] = useState("128000");
-  const [maxTokens, setMaxTokens] = useState("");
-  const [vision, setVision] = useState(false);
-  const [tools, setTools] = useState(true);
-  const [reasoningLevels, setReasoningLevels] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  return (
+    <ModelFormDialog
+      provider={provider}
+      initial={null}
+      title={t("manage_models.add_model")}
+      submitLabel={t("manage_models.add")}
+      submittingLabel={t("manage_models.adding")}
+      closeModal={closeModal}
+      onSubmit={async (payload) => {
+        await CustomLlmProviders.addModel(provider.id, payload);
+        onAdded();
+      }}
+    />
+  );
+}
+
+function EditModelDialog({ provider, model, closeModal, onSaved }) {
+  const { t } = useTranslation();
+  return (
+    <ModelFormDialog
+      key={model.id}
+      provider={provider}
+      initial={model}
+      title={t("manage_models.edit_model")}
+      submitLabel={t("manage_models.save_changes")}
+      submittingLabel={t("manage_models.saving")}
+      closeModal={closeModal}
+      onSubmit={async (payload) => {
+        await CustomLlmProviders.updateModel(provider.id, model.id, payload);
+        onSaved();
+      }}
+    />
+  );
+}
+
+/**
+ * Shared add/edit form for one custom model descriptor. Add mode fetches the
+ * endpoint's model list and leaves the ID editable; edit mode locks the ID
+ * (rename via display name) and pre-fills every field including Advanced.
+ */
+function ModelFormDialog({
+  provider,
+  initial,
+  title,
+  submitLabel,
+  submittingLabel,
+  closeModal,
+  onSubmit,
+}) {
+  const { t } = useTranslation();
+  const isEdit = !!initial;
+  const [modelId, setModelId] = useState(initial?.id ?? "");
+  const [displayName, setDisplayName] = useState(initial?.displayName ?? "");
+  const [contextWindow, setContextWindow] = useState(
+    String(initial?.contextWindow ?? "128000")
+  );
+  const [maxTokens, setMaxTokens] = useState(
+    initial?.maxTokens ? String(initial.maxTokens) : ""
+  );
+  const [vision, setVision] = useState(initial?.capabilities?.vision ?? false);
+  const [tools, setTools] = useState(initial?.capabilities?.tools ?? true);
+  const [reasoningLevels, setReasoningLevels] = useState(
+    (initial?.reasoningLevels ?? []).join(", ")
+  );
+  const [temperature, setTemperature] = useState(
+    initial?.temperature !== undefined ? String(initial.temperature) : ""
+  );
+  const [topP, setTopP] = useState(
+    initial?.topP !== undefined ? String(initial.topP) : ""
+  );
+  const [timeoutSeconds, setTimeoutSeconds] = useState(
+    initial?.timeoutMs ? String(Math.round(initial.timeoutMs / 1000)) : ""
+  );
+  const [showAdvanced, setShowAdvanced] = useState(isEdit);
   const [discovered, setDiscovered] = useState(null);
   const [fetching, setFetching] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -604,7 +736,7 @@ function AddModelDialog({ provider, closeModal, onAdded }) {
   const submit = async (event) => {
     event.preventDefault();
     setLoading(true);
-    await CustomLlmProviders.addModel(provider.id, {
+    await onSubmit({
       id: modelId,
       displayName: displayName || undefined,
       contextWindow: Number(contextWindow),
@@ -614,19 +746,23 @@ function AddModelDialog({ provider, closeModal, onAdded }) {
         .split(",")
         .map((level) => level.trim())
         .filter(Boolean),
+      // Empty = backend default; the sanitizer drops out-of-range values.
+      temperature: temperature === "" ? undefined : Number(temperature),
+      topP: topP === "" ? undefined : Number(topP),
+      timeoutMs:
+        timeoutSeconds === "" ? undefined : Number(timeoutSeconds) * 1000,
     })
-      .then(onAdded)
       .catch((e) => showToast(e.message, "error"))
       .finally(() => setLoading(false));
   };
 
   return (
     <Modal isOpen={true} onClose={closeModal} size="md">
-      <ModalHeader title={t("manage_models.add_model")} onClose={closeModal} />
+      <ModalHeader title={title} onClose={closeModal} />
       <form onSubmit={submit}>
         <ModalBody>
           <div className="flex flex-col gap-y-3">
-            {Array.isArray(discovered) && discovered.length > 0 && (
+            {!isEdit && Array.isArray(discovered) && discovered.length > 0 && (
               <div className="flex flex-col gap-y-1 max-h-[140px] overflow-y-auto rounded-lg bg-white/5 p-2">
                 {discovered.map((id) => (
                   <button
@@ -652,20 +788,23 @@ function AddModelDialog({ provider, closeModal, onAdded }) {
                   onChange={(event) => setModelId(event.target.value)}
                   placeholder="glm-4.7"
                   required
+                  disabled={isEdit}
                 />
               </div>
-              <button
-                type="button"
-                onClick={fetchFromApi}
-                disabled={fetching}
-                title={t("manage_models.fetch_models")}
-                className="h-[34px] px-2.5 rounded-lg border border-white/15 text-theme-text-secondary hover:text-theme-text-primary hover:bg-white/5 transition-colors duration-100 disabled:opacity-50"
-              >
-                <ArrowsCounterClockwise
-                  size={14}
-                  className={fetching ? "animate-spin" : ""}
-                />
-              </button>
+              {!isEdit && (
+                <button
+                  type="button"
+                  onClick={fetchFromApi}
+                  disabled={fetching}
+                  title={t("manage_models.fetch_models")}
+                  className="h-[34px] px-2.5 rounded-lg border border-white/15 text-theme-text-secondary hover:text-theme-text-primary hover:bg-white/5 transition-colors duration-100 disabled:opacity-50"
+                >
+                  <ArrowsCounterClockwise
+                    size={14}
+                    className={fetching ? "animate-spin" : ""}
+                  />
+                </button>
+              )}
             </div>
             <ModalInput
               label={t("manage_models.field_display_name")}
@@ -727,6 +866,45 @@ function AddModelDialog({ provider, closeModal, onAdded }) {
                 <ModalHint>
                   {t("manage_models.reasoning_levels_hint")}
                 </ModalHint>
+                <div className="flex gap-x-3">
+                  <div className="flex-1">
+                    <ModalInput
+                      label={t("manage_models.field_temperature")}
+                      optional
+                      type="number"
+                      min={0}
+                      max={2}
+                      step={0.1}
+                      value={temperature}
+                      onChange={(event) => setTemperature(event.target.value)}
+                      placeholder="0.7"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <ModalInput
+                      label={t("manage_models.field_top_p")}
+                      optional
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={topP}
+                      onChange={(event) => setTopP(event.target.value)}
+                      placeholder="0.9"
+                    />
+                  </div>
+                </div>
+                <ModalHint>{t("manage_models.temperature_hint")}</ModalHint>
+                <ModalInput
+                  label={t("manage_models.field_timeout")}
+                  optional
+                  type="number"
+                  min={1}
+                  value={timeoutSeconds}
+                  onChange={(event) => setTimeoutSeconds(event.target.value)}
+                  placeholder="120"
+                />
+                <ModalHint>{t("manage_models.timeout_hint")}</ModalHint>
               </div>
             )}
           </div>
@@ -737,7 +915,7 @@ function AddModelDialog({ provider, closeModal, onAdded }) {
             disabled={loading || !modelId}
             className="px-3 py-2 rounded-lg bg-cta-button text-black text-xs font-medium hover:opacity-90 transition-opacity duration-100 disabled:opacity-50"
           >
-            {loading ? t("manage_models.adding") : t("manage_models.add")}
+            {loading ? submittingLabel : submitLabel}
           </button>
         </ModalFooter>
       </form>

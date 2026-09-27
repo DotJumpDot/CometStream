@@ -55,6 +55,33 @@ export function hasMissingCredentials(settings, provider) {
   return false;
 }
 
+/**
+ * Parse the hidden-built-in-models map from system settings
+ * (`HiddenBuiltinModels`, a JSON string of provider value -> hidden model
+ * ids). Corrupt payloads read as "hide nothing" so one bad edit can never
+ * wipe every picker list.
+ * @param {object|null} settings - System.keys() result.
+ * @returns {Record<string, string[]>}
+ */
+export function parseHiddenBuiltinModels(settings) {
+  const raw = settings?.HiddenBuiltinModels;
+  if (!raw || typeof raw !== "string") return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return {};
+    const clean = {};
+    for (const [provider, ids] of Object.entries(parsed)) {
+      if (!Array.isArray(ids)) continue;
+      const list = ids.filter((id) => typeof id === "string" && id.length);
+      if (list.length) clean[provider] = list;
+    }
+    return clean;
+  } catch {
+    return {};
+  }
+}
+
 export const WORKSPACE_LLM_PROVIDERS = ALL_LLM_PROVIDERS.filter(
   (provider) => !DISABLED_PROVIDERS.includes(provider.value)
 );

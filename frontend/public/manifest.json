@@ -1,6 +1,6 @@
 {
-  "name": "AnythingLLM",
-  "short_name": "AnythingLLM",
+  "name": "CometStream",
+  "short_name": "CometStream",
   "display": "standalone",
   "orientation": "portrait",
   "start_url": "/",

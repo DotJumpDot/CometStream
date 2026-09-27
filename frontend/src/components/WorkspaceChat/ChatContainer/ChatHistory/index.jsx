@@ -8,6 +8,7 @@ import FileChangeCard from "./FileChangeCard";
 import FileDownloadCard from "./FileDownloadCard";
 import SessionCard from "./SessionCard";
 import ContextCompactCard from "./ContextCompactCard";
+import InterruptedResponseCard from "./InterruptedResponseCard";
 import PlanCard from "./PlanCard";
 import AgentRunSummary from "./AgentRunSummary";
 import JumpRail, { isJumpTurn } from "./JumpRail";
@@ -362,6 +363,20 @@ function buildMessages({
           tokensBefore={props.tokensBefore ?? metrics.tokensBefore ?? null}
           tokensAfter={props.tokensAfter ?? metrics.tokensAfter ?? null}
           failure={props.failure ?? null}
+        />
+      );
+      return acc;
+    }
+
+    // Placeholder for an assistant turn that never produced output
+    // (persisted `type: "interrupted"` rows from killed/aborted runs). Ends
+    // the activity chain like any visible message so surrounding statuses
+    // stay chronological.
+    if (props.type === "interrupted" && props.role === "assistant") {
+      chainRef.chain = null;
+      acc.push(
+        <InterruptedResponseCard
+          key={`interrupted-${props.chatId ?? props.uuid ?? index}`}
         />
       );
       return acc;

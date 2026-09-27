@@ -21,9 +21,10 @@ Everything the AnythingLLM base offers — workspaces, documents, embeddings, mu
 
 ### Models & providers
 
-- **Every provider AnythingLLM supports** — OpenAI, Anthropic, Ollama, LM Studio, Z AI, and many more, picked per workspace.
+- **Every provider AnythingLLM supports** — OpenAI, Anthropic, Ollama, LM Studio, Z AI, and many more, picked per workspace — now managed from a searchable provider page with configured-status badges, a one-click **Disconnect** (clears saved credentials; resets the system default if it pointed there), and per-provider model curation (hide models from the picker without uninstalling anything).
 - **Local OpenAI-compatible servers** (llama-server and friends) plug in through the Manage models UI — no ENV editing:
   - base URL, context window, max tokens, and reasoning levels per model
+  - per-model sampling controls: temperature, top-p, and a request timeout
   - per-workspace choice, with a reasoning toggle
 
 ### Agent tools & skills
@@ -60,7 +61,7 @@ Everything the AnythingLLM base offers — workspaces, documents, embeddings, mu
 - **Background tasks** — `terminal-task-start` / `task-output` / `task-stop` run builds and dev servers without blocking the turn.
 - **Subagents** — `delegate-task` fans work out to child agents.
 - **Robust execution** — per-response tool budget; malformed tool arguments get repaired instead of executed; prompts sent mid-run queue up and dispatch in order when the run settles.
-- **Runs survive reload** — reopening a thread replays the whole run (reasoning blocks, narration, file diffs, terminal sessions, plans) above the reply, and the side panel repopulates from the same trace. Failed runs save their failure instead of a blank turn; empty threads stay out of the sidebar.
+- **Runs survive reload** — reopening a thread replays the whole run (reasoning blocks, narration, file diffs, terminal sessions, plans) above the reply, and the side panel repopulates from the same trace. Failed runs save their failure; turns that died before writing anything (killed server, aborted stream) show an interrupted-turn placeholder instead of a blank thread; empty threads stay out of the sidebar.
 
 ### Chat experience (ZCode/Trae-style)
 

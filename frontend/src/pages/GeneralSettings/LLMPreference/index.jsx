@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Sidebar from "@/components/SettingsSidebar";
 import { isMobile } from "react-device-detect";
 import System from "@/models/system";
 import showToast from "@/utils/toast";
-import AnythingLLMIcon from "@/media/logo/anything-llm-icon.png";
+import CometStreamIcon from "@/media/logo/cometstream.svg";
 import OpenAiLogo from "@/media/llmprovider/openai.png";
 import GenericOpenAiLogo from "@/media/llmprovider/generic-openai.png";
 import AzureOpenAiLogo from "@/media/llmprovider/azure.png";
@@ -84,15 +84,16 @@ import LemonadeOptions from "@/components/LLMSelection/LemonadeOptions";
 import MinimaxOptions from "@/components/LLMSelection/MinimaxOptions";
 import CerebrasLLMOptions from "@/components/LLMSelection/CerebrasLLMOptions";
 
-import LLMItem from "@/components/LLMSelection/LLMItem";
-import { CaretUpDown, MagnifyingGlass, X } from "@phosphor-icons/react";
+import { MagnifyingGlass, X } from "@phosphor-icons/react";
 import CTAButton from "@/components/lib/CTAButton";
 import OMLXOptions from "@/components/LLMSelection/OMLXOptions";
+import { hasMissingCredentials } from "@/components/WorkspaceChat/ChatContainer/PromptInput/LLMSelector/utils";
+import { parseHiddenBuiltinModels } from "@/components/WorkspaceChat/ChatContainer/PromptInput/LLMSelector/utils";
 
 export const MODEL_ROUTER_PROVIDER = {
   name: "Model Router",
   value: "anythingllm-router",
-  logo: AnythingLLMIcon,
+  logo: CometStreamIcon,
   options: (settings) => <ModelRouterOptions settings={settings} />,
   description:
     "Route messages to different LLM providers based on rules you define.",
@@ -452,8 +453,9 @@ export default function GeneralLLMPreference() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredLLMs, setFilteredLLMs] = useState([]);
   const [selectedLLM, setSelectedLLM] = useState(null);
-  const [searchMenuOpen, setSearchMenuOpen] = useState(false);
-  const searchInputRef = useRef(null);
+  const [hiddenMap, setHiddenMap] = useState({});
+  const [providerModels, setProviderModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const { t } = useTranslation();
 
   const handleSubmit = async (e) => {
@@ -476,19 +478,8 @@ export default function GeneralLLMPreference() {
   };
 
   const updateLLMChoice = (selection) => {
-    setSearchQuery("");
     setSelectedLLM(selection);
-    setSearchMenuOpen(false);
     setHasChanges(true);
-  };
-
-  const handleXButton = () => {
-    if (searchQuery.length > 0) {
-      setSearchQuery("");
-      if (searchInputRef.current) searchInputRef.current.value = "";
-    } else {
-      setSearchMenuOpen(!searchMenuOpen);
-    }
   };
 
   useEffect(() => {
@@ -496,11 +487,87 @@ export default function GeneralLLMPreference() {
       const _settings = await System.keys();
       setSettings(_settings);
       setSelectedLLM(_settings?.LLMProvider);
+      setHiddenMap(parseHiddenBuiltinModels(_settings));
       setLoading(false);
     }
     fetchKeys();
   }, []);
 
+  // Discovered models for the selected provider (drives the Models
+  // curation list). Uses stored credentials; a bad key still resolves the
+  // static fallback list so curation never depends on a live endpoint.
+  useEffect(() => {
+    if (!selectedLLM) {
+      setProviderModels([]);
+      return;
+    }
+    let cancelled = false;
+    setModelsLoading(true);
+    System.customModels(selectedLLM)
+      .then(({ models }) => {
+        if (cancelled) return;
+        setProviderModels(
+          (models ?? [])
+            .map((model) =>
+              typeof model === "string"
+                ? { id: model, name: model }
+                : model?.id
+                  ? { id: model.id, name: model.name || model.id }
+                  : null
+            )
+            .filter(Boolean)
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setProviderModels([]);
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLLM]);
+
+  const toggleModelHidden = (modelId, hidden) => {
+    setHiddenMap((prev) => {
+      const next = { ...prev };
+      const list = new Set(next[selectedLLM] ?? []);
+      if (hidden) list.add(modelId);
+      else list.delete(modelId);
+      if (list.size) next[selectedLLM] = [...list];
+      else delete next[selectedLLM];
+      return next;
+    });
+    setHasChanges(true);
+  };
+
+  const disconnectSelected = async () => {
+    if (!selectedLLMObject) return;
+    if (
+      !window.confirm(
+        t("llm.disconnect_confirm", { name: selectedLLMObject.name })
+      )
+    )
+      return;
+    const { success, error, resetDefault } = await System.disconnectProvider(
+      selectedLLM,
+      selectedLLMObject.requiredConfig ?? []
+    );
+    if (!success) {
+      showToast(error || t("llm.disconnect_failed"), "error");
+      return;
+    }
+    showToast(
+      resetDefault
+        ? t("llm.disconnected_reset_default")
+        : t("llm.disconnected"),
+      "success"
+    );
+    const fresh = await System.keys();
+    setSettings(fresh);
+    setHasChanges(false);
+  };
   // Some more complex LLM options do not bubble up the change event, so we need to listen to the custom event
   // we can emit from the LLM options component using window.dispatchEvent(new Event(LLM_PREFERENCE_CHANGED_EVENT));
   useEffect(() => {
@@ -565,104 +632,210 @@ export default function GeneralLLMPreference() {
                   </CTAButton>
                 )}
               </div>
-              <div className="text-base font-bold text-white mt-6 mb-4">
-                {t("llm.provider")}
-              </div>
-              <div className="relative">
-                {searchMenuOpen && (
-                  <div
-                    className="fixed top-0 left-0 w-full h-full bg-black bg-opacity-70 backdrop-blur-sm z-10"
-                    onClick={() => setSearchMenuOpen(false)}
-                  />
-                )}
-                {searchMenuOpen ? (
-                  <div className="absolute top-0 left-0 w-full max-w-[640px] max-h-[310px] min-h-[64px] bg-theme-settings-input-bg rounded-lg flex flex-col justify-between cursor-pointer border-2 border-primary-button z-20">
-                    <div className="w-full flex flex-col gap-y-1">
-                      <div className="flex items-center sticky top-0 z-10 border-b border-[#9CA3AF] mx-4 bg-theme-settings-input-bg">
-                        <MagnifyingGlass
-                          size={20}
-                          weight="bold"
-                          className="absolute left-4 z-30 text-theme-text-primary -ml-4 my-2"
-                        />
-                        <input
-                          type="text"
-                          name="llm-search"
-                          autoComplete="off"
-                          placeholder="Search all LLM providers"
-                          className="border-none -ml-4 my-2 bg-transparent z-20 pl-12 h-[38px] w-full px-4 py-1 text-sm outline-none text-theme-text-primary placeholder:text-theme-text-primary placeholder:font-medium"
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          ref={searchInputRef}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") e.preventDefault();
-                          }}
-                        />
-                        <X
-                          size={20}
-                          weight="bold"
-                          className="cursor-pointer text-white hover:text-x-button"
-                          onClick={handleXButton}
-                        />
-                      </div>
-                      <div className="flex-1 pl-4 pr-2 flex flex-col gap-y-1 overflow-y-auto white-scrollbar pb-4 max-h-[245px]">
-                        {filteredLLMs.map((llm) => {
-                          return (
-                            <LLMItem
-                              key={llm.name}
-                              name={llm.name}
-                              value={llm.value}
-                              image={llm.logo}
-                              description={llm.description}
-                              checked={selectedLLM === llm.value}
-                              onClick={() => updateLLMChoice(llm.value)}
-                            />
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    className="w-full max-w-[640px] h-[64px] bg-theme-settings-input-bg rounded-lg flex items-center p-[14px] justify-between cursor-pointer border-2 border-transparent hover:border-primary-button transition-all duration-300"
-                    type="button"
-                    onClick={() => setSearchMenuOpen(true)}
-                  >
-                    <div className="flex gap-x-4 items-center">
-                      <img
-                        src={selectedLLMObject?.logo || AnythingLLMIcon}
-                        alt={`${selectedLLMObject?.name} logo`}
-                        className="w-10 h-10 rounded-md"
-                      />
-                      <div className="flex flex-col text-left">
-                        <div className="text-sm font-semibold text-white">
-                          {selectedLLMObject?.name || "None selected"}
-                        </div>
-                        <div className="mt-1 text-xs text-description">
-                          {selectedLLMObject?.description ||
-                            "You need to select an LLM"}
-                        </div>
-                      </div>
-                    </div>
-                    <CaretUpDown
-                      size={24}
-                      weight="bold"
-                      className="text-white"
+              <div className="flex gap-x-4 mt-6 min-h-[480px]">
+                {/* Provider rail */}
+                <div className="w-[260px] shrink-0 flex flex-col gap-y-2">
+                  <div className="relative flex items-center">
+                    <MagnifyingGlass
+                      size={15}
+                      className="absolute left-2.5 text-theme-text-secondary pointer-events-none"
                     />
-                  </button>
-                )}
-              </div>
-              <div
-                onChange={() => setHasChanges(true)}
-                className="mt-4 flex flex-col gap-y-1"
-              >
-                {selectedLLM &&
-                  AVAILABLE_LLM_PROVIDERS.find(
-                    (llm) => llm.value === selectedLLM
-                  )?.options?.(settings)}
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      autoComplete="off"
+                      placeholder={t("llm.search_placeholder")}
+                      className="w-full h-[34px] rounded-lg bg-theme-settings-input-bg pl-8 pr-8 text-xs outline-none text-theme-text-primary placeholder:text-theme-text-secondary border border-transparent focus:border-primary-button transition-colors duration-150"
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.preventDefault();
+                      }}
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        aria-label="Clear search"
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-2 text-theme-text-secondary hover:text-theme-text-primary transition-colors duration-100"
+                      >
+                        <X size={14} weight="bold" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex-1 overflow-y-auto flex flex-col gap-y-0.5 pr-1 min-h-[200px] max-h-[560px]">
+                    {filteredLLMs.map((llm) => {
+                      const active = selectedLLM === llm.value;
+                      const configured = !hasMissingCredentials(
+                        settings,
+                        llm.value
+                      );
+                      return (
+                        <button
+                          key={llm.value}
+                          type="button"
+                          onClick={() => updateLLMChoice(llm.value)}
+                          className={`w-full flex items-center gap-x-2 px-2 py-1.5 rounded-lg text-left transition-colors duration-100 ${
+                            active ? "bg-white/10" : "hover:bg-white/5"
+                          }`}
+                        >
+                          <img
+                            src={llm.logo}
+                            alt=""
+                            className="w-5 h-5 rounded shrink-0"
+                          />
+                          <span className="text-xs text-theme-text-primary truncate flex-1">
+                            {llm.name}
+                          </span>
+                          <span
+                            title={
+                              configured
+                                ? t("llm.configured")
+                                : t("llm.not_configured")
+                            }
+                            className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                              configured
+                                ? "bg-emerald-400/80"
+                                : "bg-zinc-500/70"
+                            }`}
+                          />
+                        </button>
+                      );
+                    })}
+                    {filteredLLMs.length === 0 && (
+                      <div className="px-2 py-1 text-[11px] text-theme-text-secondary">
+                        {t("llm.no_results")}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[11px] leading-4 text-theme-text-secondary px-1">
+                    {t("llm.custom_hint")}
+                  </p>
+                </div>
+                {/* Config panel */}
+                <div
+                  onChange={() => setHasChanges(true)}
+                  className="flex-1 min-w-0 border-l border-white/10 pl-4"
+                >
+                  {selectedLLMObject ? (
+                    <>
+                      <input
+                        type="hidden"
+                        name="HiddenBuiltinModels"
+                        value={JSON.stringify(hiddenMap)}
+                      />
+                      <div className="flex gap-x-3 items-center mb-4">
+                        <img
+                          src={selectedLLMObject.logo || CometStreamIcon}
+                          alt=""
+                          className="w-8 h-8 rounded-md"
+                        />
+                        <div className="flex flex-col flex-1 min-w-0">
+                          <div className="text-sm font-semibold text-white">
+                            {selectedLLMObject.name}
+                          </div>
+                          <div className="text-xs text-description">
+                            {selectedLLMObject.description}
+                          </div>
+                        </div>
+                        {!hasMissingCredentials(settings, selectedLLM) && (
+                          <button
+                            type="button"
+                            onClick={disconnectSelected}
+                            className="shrink-0 px-2.5 py-1.5 rounded-lg text-xs text-red-400 hover:bg-red-400/10 transition-colors duration-100"
+                          >
+                            {t("llm.disconnect")}
+                          </button>
+                        )}
+                      </div>
+                      {selectedLLM &&
+                        AVAILABLE_LLM_PROVIDERS.find(
+                          (llm) => llm.value === selectedLLM
+                        )?.options?.(settings)}
+                      <ProviderModelCuration
+                        models={providerModels}
+                        loading={modelsLoading}
+                        hidden={new Set(hiddenMap[selectedLLM] ?? [])}
+                        onToggle={toggleModelHidden}
+                      />
+                    </>
+                  ) : (
+                    <div className="h-full min-h-[200px] flex items-center justify-center text-xs text-theme-text-secondary">
+                      {t("llm.select_provider")}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </form>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Per-provider model curation: checkboxes decide which discovered models
+ * stay visible in the chat model picker. State lives in the page's hidden
+ * form input, so curation saves with the normal Save button.
+ */
+function ProviderModelCuration({ models, loading, hidden, onToggle }) {
+  const { t } = useTranslation();
+  if (loading) {
+    return (
+      <div className="mt-4 text-[11px] text-theme-text-secondary">
+        {t("llm.models_loading")}
+      </div>
+    );
+  }
+  if (models.length === 0) return null;
+  return (
+    <div className="mt-5">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-medium text-theme-text-primary">
+          {t("llm.models_title")}
+        </span>
+        {hidden.size > 0 && (
+          <span className="text-[11px] text-theme-text-secondary">
+            {t("llm.models_hidden_count", { count: hidden.size })}
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] leading-4 text-theme-text-secondary mb-2">
+        {t("llm.models_description")}
+      </p>
+      <div className="flex flex-col gap-y-0.5 max-h-[220px] overflow-y-auto rounded-lg bg-white/5 p-1.5">
+        {models.map((model) => {
+          const isHidden = hidden.has(model.id);
+          return (
+            <button
+              key={model.id}
+              type="button"
+              onClick={() => onToggle(model.id, !isHidden)}
+              className={`w-full flex items-center gap-x-2 px-2 py-1.5 rounded-md text-left transition-colors duration-100 ${
+                isHidden ? "opacity-50 hover:bg-white/5" : "hover:bg-white/10"
+              }`}
+            >
+              <span
+                className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 text-[10px] ${
+                  isHidden
+                    ? "border-white/20 text-transparent"
+                    : "border-cta-button bg-cta-button text-black"
+                }`}
+              >
+                ✓
+              </span>
+              <span className="text-xs text-theme-text-primary truncate flex-1">
+                {model.name}
+              </span>
+              {model.name !== model.id && (
+                <span className="text-[10px] text-theme-text-secondary truncate max-w-[180px]">
+                  {model.id}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

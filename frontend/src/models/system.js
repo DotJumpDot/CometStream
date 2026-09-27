@@ -227,6 +227,18 @@ const System = {
         return { newValues: null, error: e.message };
       });
   },
+  disconnectProvider: async (provider, keys = []) => {
+    return await fetch(`${API_BASE}/system/disconnect-llm-provider`, {
+      method: "POST",
+      headers: baseHeaders(),
+      body: JSON.stringify({ provider, keys }),
+    })
+      .then((res) => res.json())
+      .catch((e) => {
+        console.error(e);
+        return { success: false, error: e.message };
+      });
+  },
   updateSystemPassword: async (data) => {
     return await fetch(`${API_BASE}/system/update-password`, {
       method: "POST",

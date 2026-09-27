@@ -3,8 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import useRedirectToHomeOnOnboardingComplete from "@/hooks/useOnboardingComplete";
 import { OnboardingLogoSVG } from "./components/OnboardingLogoSVG";
-import Wordmark from "./wordmark.svg";
-import WordmarkLight from "./wordmark-light.svg";
+import CometStreamLogo from "@/media/logo/cometstream.svg";
 
 export default function OnboardingHome() {
   const navigate = useNavigate();
@@ -31,16 +30,16 @@ export default function OnboardingHome() {
       />
 
       <div className="relative z-10 flex justify-center pt-[58px]">
-        <img
-          src={Wordmark}
-          alt="AnythingLLM"
-          className="h-[28px] w-auto light:hidden"
-        />
-        <img
-          src={WordmarkLight}
-          alt="AnythingLLM"
-          className="hidden h-[28px] w-auto light:block"
-        />
+        <div className="flex items-center gap-x-2.5">
+          <img
+            src={CometStreamLogo}
+            alt="CometStream"
+            className="h-[28px] w-auto rounded-[7px]"
+          />
+          <span className="text-[22px] font-semibold tracking-tight text-white light:text-slate-800">
+            CometStream
+          </span>
+        </div>
       </div>
 
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center -mt-8">

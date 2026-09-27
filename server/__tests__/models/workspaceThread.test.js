@@ -33,9 +33,23 @@ describe("WorkspaceThread.listNonEmpty", () => {
     expect(threads.map((t) => t.id)).toEqual([1, 3]);
     expect(prisma.workspace_chats.groupBy).toHaveBeenCalledWith({
       by: ["thread_id"],
-      where: { thread_id: { in: [1, 2, 3] } },
+      where: { thread_id: { in: [1, 2, 3] }, include: true },
       _count: { thread_id: true },
     });
+  });
+
+  it("excludes threads whose chats were all invalidated (reset/cleared)", async () => {
+    prisma.workspace_threads.findMany.mockResolvedValue([
+      { id: 1, slug: "a" },
+      { id: 2, slug: "b" },
+    ]);
+    // Thread 2 has a chat row, but it is include:false (reset run) so the
+    // groupBy - filtered to visible rows like the history endpoint - omits it.
+    prisma.workspace_chats.groupBy.mockResolvedValue([
+      { thread_id: 1, _count: { thread_id: 1 } },
+    ]);
+    const threads = await WorkspaceThread.listNonEmpty({ workspace_id: 7 });
+    expect(threads.map((t) => t.id)).toEqual([1]);
   });
 
   it("returns [] without querying chats when there are no threads", async () => {

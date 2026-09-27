@@ -1101,6 +1101,9 @@ const SystemSettings = {
       OMLXLLMApiKey: !!process.env.OMLX_LLM_API_KEY,
       OMLXLLMModelPref: process.env.OMLX_LLM_MODEL_PREF,
       OMLXLLMTokenLimit: process.env.OMLX_LLM_TOKEN_LIMIT,
+
+      // CometStream: hidden built-in models map (JSON) for picker curation.
+      HiddenBuiltinModels: process.env.HIDDEN_BUILTIN_MODELS || null,
     };
   },
 

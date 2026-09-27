@@ -218,6 +218,84 @@ describe("service_tier forwarding from the tooled serviceTier option", () => {
   });
 });
 
+describe("temperature/top_p forwarding from the tooled options", () => {
+  const messages = [{ role: "user", content: "hi" }];
+
+  function fakeClient({ stream = false } = {}) {
+    const create = jest.fn(async () => {
+      if (!stream) {
+        return {
+          choices: [{ message: { role: "assistant", content: "ok" } }],
+          usage: null,
+        };
+      }
+      return (async function* () {
+        yield { choices: [{ delta: { content: "ok" } }] };
+      })();
+    });
+    return { client: { chat: { completions: { create } } }, create };
+  }
+
+  it.each([[0], [0.7], [2]])(
+    "forwards temperature %s on complete and stream",
+    async (temperature) => {
+      const complete = fakeClient();
+      await tooledComplete(complete.client, "m", messages, [], () => 0, {
+        provider: {},
+        temperature,
+      });
+      expect(complete.create.mock.calls[0][0].temperature).toBe(temperature);
+
+      const streamed = fakeClient({ stream: true });
+      await tooledStream(streamed.client, "m", messages, [], null, {
+        provider: {},
+        temperature,
+      });
+      expect(streamed.create.mock.calls[0][0].temperature).toBe(temperature);
+    }
+  );
+
+  it.each([[0.1], [1]])(
+    "forwards topP %s as top_p on complete and stream",
+    async (topP) => {
+      const complete = fakeClient();
+      await tooledComplete(complete.client, "m", messages, [], () => 0, {
+        provider: {},
+        topP,
+      });
+      expect(complete.create.mock.calls[0][0].top_p).toBe(topP);
+
+      const streamed = fakeClient({ stream: true });
+      await tooledStream(streamed.client, "m", messages, [], null, {
+        provider: {},
+        topP,
+      });
+      expect(streamed.create.mock.calls[0][0].top_p).toBe(topP);
+    }
+  );
+
+  it.each([
+    ["unset", undefined, undefined],
+    ["out of range", 5, 0],
+    ["negative topP", 0.7, -1],
+  ])(
+    "omits temperature/top_p for %s",
+    async (_label, temperature, topP) => {
+      const complete = fakeClient();
+      await tooledComplete(complete.client, "m", messages, [], () => 0, {
+        provider: {},
+        temperature,
+        topP,
+      });
+      const body = complete.create.mock.calls[0][0];
+      if (temperature === undefined || temperature > 2)
+        expect(body).not.toHaveProperty("temperature");
+      if (topP === undefined || topP <= 0)
+        expect(body).not.toHaveProperty("top_p");
+    }
+  );
+});
+
 describe("batched tool calls (functionCalls)", () => {
   function streamingClient(chunks) {
     const create = jest.fn(async () =>

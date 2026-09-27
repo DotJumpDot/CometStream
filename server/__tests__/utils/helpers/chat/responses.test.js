@@ -6,7 +6,9 @@ jest.mock("../../../../utils/files", () => ({
   generatedImageAttachments: () => [],
 }));
 
-const { convertToChatHistory } = require("../../../../utils/helpers/chat/responses");
+const {
+  convertToChatHistory,
+} = require("../../../../utils/helpers/chat/responses");
 
 describe("convertToChatHistory", () => {
   test("maps well-formed rows to user/assistant pairs", () => {
@@ -117,5 +119,70 @@ describe("convertToChatHistory", () => {
       "assistant",
     ]);
     expect(history[2]).toMatchObject({ type: "compact", content: "fold" });
+  });
+});
+
+describe("convertToChatHistory interrupt placeholders", () => {
+  const killedRow = (id, prompt) => ({
+    id,
+    prompt,
+    response: "{}",
+    createdAt: new Date("2026-09-20T10:00:00Z"),
+    feedbackScore: null,
+  });
+
+  test("skips response-less rows by default (agent context stays clean)", () => {
+    expect(convertToChatHistory([killedRow(1, "hello")])).toEqual([]);
+  });
+
+  test("emits a user prompt + interrupted assistant pair when opted in", () => {
+    const history = convertToChatHistory([killedRow(7, "hello again")], {
+      includeInterruptPlaceholders: true,
+    });
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({
+      role: "user",
+      content: "hello again",
+      chatId: 7,
+    });
+    expect(history[1]).toMatchObject({
+      type: "interrupted",
+      role: "assistant",
+      content: "",
+      chatId: 7,
+    });
+  });
+
+  test("still skips rows with a non-string prompt even when opted in", () => {
+    expect(
+      convertToChatHistory(
+        [{ id: 1, prompt: 42, response: "{}" }],
+        { includeInterruptPlaceholders: true }
+      )
+    ).toEqual([]);
+  });
+
+  test("mixes placeholders and normal pairs in order", () => {
+    const history = convertToChatHistory(
+      [
+        killedRow(1, "first (killed)"),
+        {
+          id: 2,
+          prompt: "second",
+          response: JSON.stringify({ text: "answer" }),
+          createdAt: new Date("2026-09-20T10:01:00Z"),
+          feedbackScore: null,
+        },
+      ],
+      { includeInterruptPlaceholders: true }
+    );
+    expect(history.map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    expect(history[1].type).toBe("interrupted");
+    expect(history[3].content).toBe("answer");
   });
 });

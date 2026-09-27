@@ -195,7 +195,8 @@ function handleDefaultStreamResponseV2(response, stream, responseProps) {
   });
 }
 
-function convertToChatHistory(history = []) {
+function convertToChatHistory(history = [], options = {}) {
+  const { includeInterruptPlaceholders = false } = options;
   const formattedHistory = [];
   for (const record of history) {
     const { prompt, response, createdAt, feedbackScore = null, id } = record;
@@ -211,9 +212,38 @@ function convertToChatHistory(history = []) {
       );
       continue;
     } else if (typeof data?.text !== "string") {
-      console.log(
-        `[convertToChatHistory] ChatHistory #${record.id} response.text property is not a string - skipping record.`
-      );
+      // Response-less rows are placeholders of runs that died before writing
+      // (killed server, aborted stream): nothing renderable was stored. The
+      // UI history endpoints opt into an explicit interrupted placeholder so
+      // such threads read as history with a failed turn instead of a blank
+      // new-chat page. Every other consumer (agent context, API, exports,
+      // telegram) keeps skipping them - a fake assistant message must never
+      // leak into prompts or transcripts.
+      if (includeInterruptPlaceholders) {
+        formattedHistory.push([
+          {
+            role: "user",
+            content: prompt,
+            sentAt: moment(createdAt).unix(),
+            attachments: [],
+            chatId: id,
+          },
+          {
+            type: "interrupted",
+            role: "assistant",
+            content: "",
+            sources: [],
+            chatId: id,
+            sentAt: moment(createdAt).unix(),
+            feedbackScore,
+            metrics: {},
+          },
+        ]);
+      } else {
+        console.log(
+          `[convertToChatHistory] ChatHistory #${record.id} response.text property is not a string - skipping record.`
+        );
+      }
       continue;
     }
 

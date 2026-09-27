@@ -52,9 +52,21 @@ class CustomOpenAiProvider extends InheritMultiple([Provider, UnTooled]) {
     this._resolved = resolved;
     this.model = resolved.model.id;
     this.maxTokens = toValidNumber(resolved.model.maxTokens, 1024);
+    // Sampling knobs are per-model and optional: omitted keeps today's
+    // behavior (no temperature/top_p on tooled requests, 0 on the Untooled
+    // chat path below). Timeout only overrides the SDK default when set.
+    this.temperature = toValidNumber(resolved.model.temperature, null);
+    if (this.temperature !== null)
+      this.temperature = Math.min(Math.max(this.temperature, 0), 2);
+    const topP = Number(resolved.model.topP);
+    this.topP = Number.isFinite(topP) && topP > 0 && topP <= 1 ? topP : null;
+    const timeoutMs = Number(resolved.model.timeoutMs);
     this._client = new OpenAI({
       baseURL: resolved.provider.baseUrl,
       apiKey: resolved.provider.apiKey ?? null,
+      ...(Number.isFinite(timeoutMs) && timeoutMs >= 1000
+        ? { timeout: Math.min(Math.floor(timeoutMs), 600_000) }
+        : {}),
       defaultHeaders: {
         "User-Agent": getAnythingLLMUserAgent(),
       },
@@ -116,7 +128,8 @@ class CustomOpenAiProvider extends InheritMultiple([Provider, UnTooled]) {
     return await this.client.chat.completions
       .create({
         model: this.model,
-        temperature: 0,
+        temperature: this.temperature ?? 0,
+        ...(this.topP !== null ? { top_p: this.topP } : {}),
         messages,
         max_tokens: this.maxTokens,
       })
@@ -136,6 +149,8 @@ class CustomOpenAiProvider extends InheritMultiple([Provider, UnTooled]) {
     return await this.client.chat.completions.create({
       model: this.model,
       stream: true,
+      ...(this.temperature !== null ? { temperature: this.temperature } : {}),
+      ...(this.topP !== null ? { top_p: this.topP } : {}),
       messages,
       max_tokens: this.maxTokens,
     });
@@ -170,7 +185,14 @@ class CustomOpenAiProvider extends InheritMultiple([Provider, UnTooled]) {
         messages,
         functions,
         eventHandler,
-        { provider: this, maxTokens: this.maxTokens }
+        {
+          provider: this,
+          maxTokens: this.maxTokens,
+          ...(this.temperature !== null
+            ? { temperature: this.temperature }
+            : {}),
+          ...(this.topP !== null ? { topP: this.topP } : {}),
+        }
       );
     } catch (error) {
       console.error(error.message, error);
@@ -210,7 +232,14 @@ class CustomOpenAiProvider extends InheritMultiple([Provider, UnTooled]) {
         messages,
         functions,
         this.getCost.bind(this),
-        { provider: this, maxTokens: this.maxTokens }
+        {
+          provider: this,
+          maxTokens: this.maxTokens,
+          ...(this.temperature !== null
+            ? { temperature: this.temperature }
+            : {}),
+          ...(this.topP !== null ? { topP: this.topP } : {}),
+        }
       );
 
       if (result.retryWithError) {

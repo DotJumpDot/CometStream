@@ -24,6 +24,7 @@ import {
 import {
   WORKSPACE_LLM_PROVIDERS,
   hasMissingCredentials,
+  parseHiddenBuiltinModels,
 } from "../LLMSelector/utils";
 
 /**
@@ -141,6 +142,10 @@ export default function ModelSelector({ workspace, chatHistory = [] }) {
 
       // Built-in providers: only those with credentials configured, and the
       // model list endpoint is admin-only so non-admins get a label-only view.
+      // Curated hides (llm-preference "Models") filter the discovered list -
+      // an explicitly selected hidden model keeps working, it just leaves
+      // the picker.
+      const hiddenModels = parseHiddenBuiltinModels(settings);
       const builtInGroups = [];
       if (isAdmin && settings) {
         const configured = WORKSPACE_LLM_PROVIDERS.filter(
@@ -154,6 +159,7 @@ export default function ModelSelector({ workspace, chatHistory = [] }) {
               () => ({ models: [] })
             );
             if (cancelled) return;
+            const hidden = new Set(hiddenModels[provider.value] ?? []);
             builtInGroups.push({
               key: provider.value,
               name: provider.name,
@@ -161,6 +167,7 @@ export default function ModelSelector({ workspace, chatHistory = [] }) {
               models: (models ?? [])
                 .map(normalizeModel)
                 .filter(Boolean)
+                .filter((model) => !hidden.has(model.id))
                 .map((model) => ({ ...model, meta: null })),
             });
           })
