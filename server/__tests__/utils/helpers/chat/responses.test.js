@@ -123,22 +123,24 @@ describe("convertToChatHistory", () => {
 });
 
 describe("convertToChatHistory interrupt placeholders", () => {
-  const killedRow = (id, prompt) => ({
+  const OLD = new Date("2026-09-20T10:00:00Z");
+  const killedRow = (id, prompt, ts = OLD) => ({
     id,
     prompt,
     response: "{}",
-    createdAt: new Date("2026-09-20T10:00:00Z"),
+    createdAt: ts,
+    lastUpdatedAt: ts,
+    include: false,
     feedbackScore: null,
   });
+  const OPTS = { includeInterruptPlaceholders: true };
 
   test("skips response-less rows by default (agent context stays clean)", () => {
     expect(convertToChatHistory([killedRow(1, "hello")])).toEqual([]);
   });
 
   test("emits a user prompt + interrupted assistant pair when opted in", () => {
-    const history = convertToChatHistory([killedRow(7, "hello again")], {
-      includeInterruptPlaceholders: true,
-    });
+    const history = convertToChatHistory([killedRow(7, "hello again")], OPTS);
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({
       role: "user",
@@ -153,13 +155,81 @@ describe("convertToChatHistory interrupt placeholders", () => {
     });
   });
 
+  test("hides fresh pre-registrations that may still be live", () => {
+    const now = new Date();
+    const history = convertToChatHistory([killedRow(7, "live?", now)], OPTS);
+    expect(history).toEqual([]);
+  });
+
+  test("keeps cleared threads cleared even with dead rows in them", () => {
+    const cleared = {
+      id: 1,
+      prompt: "was answered",
+      response: JSON.stringify({ text: "answer" }),
+      createdAt: OLD,
+      lastUpdatedAt: OLD,
+      include: false,
+      feedbackScore: null,
+    };
+    expect(convertToChatHistory([cleared, killedRow(2, "dead")], OPTS)).toEqual(
+      []
+    );
+  });
+
   test("still skips rows with a non-string prompt even when opted in", () => {
     expect(
-      convertToChatHistory(
-        [{ id: 1, prompt: 42, response: "{}" }],
-        { includeInterruptPlaceholders: true }
-      )
+      convertToChatHistory([{ id: 1, prompt: 42, response: "{}" }], OPTS)
     ).toEqual([]);
+  });
+
+  test("splices checkpoint trace cards before the interrupted marker", () => {
+    const trace = [
+      { type: "todoListCard", content: { items: [] } }, // panel-only, skipped
+      {
+        type: "sessionCard",
+        content: { id: "s1", status: "done", output: "ok" },
+      },
+      { type: "statusResponse", content: "working" },
+      { type: "planCard", content: {} }, // no plan, skipped
+      {
+        type: "planCard",
+        content: { plan: "# design", status: "proposed" },
+      },
+    ];
+    const history = convertToChatHistory(
+      [
+        {
+          ...killedRow(9, "long run"),
+          response: JSON.stringify({ text: "", trace }),
+        },
+      ],
+      OPTS
+    );
+    expect(history.map((m) => m.type || m.role)).toEqual([
+      "user",
+      "sessionCard",
+      "statusResponse",
+      "planCard",
+      "interrupted",
+    ]);
+    expect(history[4]).toMatchObject({ chatId: 9, trace });
+    expect(history[3]).toMatchObject({ plan: "# design", chatId: 9 });
+  });
+
+  test("renders completed pure-think replies normally, not as interrupted", () => {
+    const history = convertToChatHistory(
+      [
+        {
+          ...killedRow(3, "thinker"),
+          include: true,
+          response: JSON.stringify({ text: "" }),
+        },
+      ],
+      OPTS
+    );
+    expect(history).toHaveLength(2);
+    expect(history[1]).toMatchObject({ role: "assistant", content: "" });
+    expect(history[1].type).not.toBe("interrupted");
   });
 
   test("mixes placeholders and normal pairs in order", () => {
@@ -170,11 +240,13 @@ describe("convertToChatHistory interrupt placeholders", () => {
           id: 2,
           prompt: "second",
           response: JSON.stringify({ text: "answer" }),
-          createdAt: new Date("2026-09-20T10:01:00Z"),
+          createdAt: OLD,
+          lastUpdatedAt: OLD,
+          include: true,
           feedbackScore: null,
         },
       ],
-      { includeInterruptPlaceholders: true }
+      OPTS
     );
     expect(history.map((m) => m.role)).toEqual([
       "user",

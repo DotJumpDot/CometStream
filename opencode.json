@@ -25,6 +25,14 @@
           "mcp-server-sqlite-npx",
           "C:/Code/CometStream/server/storage/anythingllm.db"
         ]
+      },
+      "rea": {
+        "type": "local",
+        "command": [
+          "C:\\Program Files\\nodejs\\node.exe",
+          "C:\\Users\\jamej\\AppData\\Roaming\\npm\\node_modules\\rea-agents\\scripts\\rea.mjs",
+          "mcp"
+        ]
       }
     }
   }

@@ -18,7 +18,8 @@ module.exports.FilesystemReadTextFile = {
             "If you don't know where a file is located, use 'filesystem-search-files' first " +
             "to find it (e.g., search for '*.csv' or the filename). " +
             "Use the 'head' parameter to read only the first N lines, or 'tail' for the last N lines (text files only). " +
-            "Only works within allowed directories.",
+            "Relative paths resolve inside the allowed directories; an explicit absolute path anywhere on disk is also readable " +
+            "(outside reads are inspection-only - writes stay inside the workspace, and credential files like .env or private keys are refused).",
           examples: [
             {
               prompt: "Read the contents of config.json",
@@ -44,7 +45,7 @@ module.exports.FilesystemReadTextFile = {
               path: {
                 type: "string",
                 description:
-                  "The path to the file to read. Can be relative to the allowed directory or absolute within allowed directories.",
+                  "The path to the file to read. Can be relative to the allowed directory, or an absolute path anywhere on disk (outside reads are inspection-only; credential files like .env are refused).",
               },
               head: {
                 type: "number",
@@ -76,7 +77,9 @@ module.exports.FilesystemReadTextFile = {
                 this.super.handlerProps
               );
               const allowedExtras = extraDirs ? [extraDirs] : [];
-              const validPath = await filesystem.validatePath(
+              // Read-only: absolute paths outside the jail are inspection-
+              // readable (validateReadPath); writes keep validatePath.
+              const validPath = await filesystem.validateReadPath(
                 filePath,
                 allowedExtras
               );

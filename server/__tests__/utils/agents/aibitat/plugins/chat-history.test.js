@@ -36,11 +36,14 @@ function mockAibitat(overrides = {}) {
 }
 
 function setup(aibitat) {
+  const plugin = chatHistory.plugin();
   chatHistory.plugin().setup.call(
     {
       _autoRenameThread: jest.fn(),
       _store: jest.fn(),
       _storeSpecial: jest.fn(),
+      _checkpointTrace: plugin._checkpointTrace.bind(plugin),
+      _serializedRowSave: plugin._serializedRowSave.bind(plugin),
     },
     aibitat
   );
@@ -49,6 +52,85 @@ function setup(aibitat) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+});
+
+describe("chat-history trace checkpoints", () => {
+  const plugin = chatHistory.plugin();
+  let timers;
+
+  function setupWithRealCheckpoint(aibitat) {
+    chatHistory.plugin().setup.call(
+      {
+        _autoRenameThread: jest.fn(),
+        _store: jest.fn(),
+        _storeSpecial: jest.fn(),
+        _checkpointTrace: plugin._checkpointTrace.bind(plugin),
+        _serializedRowSave: plugin._serializedRowSave.bind(plugin),
+      },
+      aibitat
+    );
+  }
+
+  beforeEach(() => {
+    timers = jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  function runningAibitat(trace = [{ type: "statusResponse", content: "hi" }]) {
+    return mockAibitat({
+      _failedPrompt: "do things",
+      _pendingTrace: trace,
+      clearTrackedChatId: jest.fn(),
+      clearCitations: jest.fn(),
+    });
+  }
+
+  it("persists the trace so far onto the pre-registered row", async () => {
+    const aibitat = runningAibitat();
+    setupWithRealCheckpoint(aibitat);
+    await timers.advanceTimersByTimeAsync(30_000);
+    expect(WorkspaceChats.upsert).toHaveBeenCalledTimes(1);
+    const [chatId, payload] = WorkspaceChats.upsert.mock.calls[0];
+    expect(chatId).toBe(42);
+    expect(payload.include).toBe(false);
+    expect(payload.prompt).toBe("do things");
+    expect(payload.response.text).toBe("");
+    expect(payload.response.trace).toHaveLength(1);
+  });
+
+  it("does not checkpoint an empty trace", async () => {
+    setupWithRealCheckpoint(runningAibitat([]));
+    await timers.advanceTimersByTimeAsync(120_000);
+    expect(WorkspaceChats.upsert).not.toHaveBeenCalled();
+  });
+
+  it("stops checkpointing after the reply is saved or aborted", async () => {
+    const saved = runningAibitat();
+    saved._replySaved = true;
+    setupWithRealCheckpoint(saved);
+    const aborted = runningAibitat();
+    setupWithRealCheckpoint(aborted);
+    aborted._aborted = true;
+    await timers.advanceTimersByTimeAsync(120_000);
+    expect(WorkspaceChats.upsert).not.toHaveBeenCalled();
+  });
+
+  it("serializes checkpoint and completion saves in order", async () => {
+    const order = [];
+    WorkspaceChats.upsert.mockImplementation(async () => {
+      order.push("upsert");
+    });
+    const aibitat = runningAibitat();
+    setupWithRealCheckpoint(aibitat);
+    // Let the tick queue its save first, then a completion save chains after.
+    await timers.advanceTimersByTimeAsync(30_000);
+    await plugin._serializedRowSave.bind(plugin)(aibitat, async () => {
+      order.push("second");
+    });
+    expect(order).toEqual(["upsert", "second"]);
+  });
 });
 
 describe("chat-history onError fallback", () => {

@@ -188,13 +188,15 @@ function workspaceThreadEndpoints(app) {
         const user = await userFromSession(request, response);
         const workspace = response.locals.workspace;
         const thread = response.locals.thread;
+        // Unfiltered by include: the converter hides cleared content but
+        // resurrects response-less dead turns as interrupted placeholders.
+        // Every other history consumer keeps its own include:true filter.
         const history = await WorkspaceChats.where(
           {
             workspaceId: workspace.id,
             user_id: user?.id || null,
             thread_id: thread.id,
             api_session_id: null, // Do not include API session chats.
-            include: true,
           },
           null,
           { id: "asc" }

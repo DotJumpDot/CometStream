@@ -509,9 +509,17 @@ function workspaceEndpoints(app) {
           return;
         }
 
+        // Unfiltered by include (see thread chats endpoint): the converter
+        // hides cleared content but resurrects dead turns as placeholders.
         const history = multiUserMode(response)
-          ? await WorkspaceChats.forWorkspaceByUser(workspace.id, user.id)
-          : await WorkspaceChats.forWorkspace(workspace.id);
+          ? await WorkspaceChats.forWorkspaceByUser(
+              workspace.id,
+              user.id,
+              null,
+              null,
+              true
+            )
+          : await WorkspaceChats.forWorkspace(workspace.id, null, null, true);
         response.status(200).json({
           history: convertToChatHistory(history, {
             includeInterruptPlaceholders: true,

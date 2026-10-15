@@ -17,7 +17,8 @@ module.exports.FilesystemListDirectory = {
             "Results clearly distinguish between files and directories with [FILE] and [DIR] " +
             "prefixes. Optionally includes file sizes and can sort by name or size. " +
             "This tool is essential for understanding directory structure and " +
-            "finding specific files within a directory. Only works within allowed directories.",
+            "finding specific files within a directory. Relative paths resolve inside the allowed directories; " +
+            "an explicit absolute path anywhere on disk is also listable (inspection-only, non-recursive).",
           examples: [
             {
               prompt: "List all files in the current folder",
@@ -74,7 +75,9 @@ module.exports.FilesystemListDirectory = {
                 this.super.handlerProps
               );
               const allowedExtras = extraDirs ? [extraDirs] : [];
-              const validPath = await filesystem.validatePath(
+              // Read-only listing: absolute outside paths are listable
+              // (inspection-only); writes keep validatePath.
+              const validPath = await filesystem.validateReadPath(
                 dirPath,
                 allowedExtras
               );

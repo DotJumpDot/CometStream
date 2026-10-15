@@ -195,14 +195,146 @@ function handleDefaultStreamResponseV2(response, stream, responseProps) {
   });
 }
 
+// A pre-registered or checkpointed row counts as "possibly live" while its
+// last write is fresh - rendering it as interrupted then would lie about a
+// running turn (and double the live socket stream on refresh). Past this age
+// the run is dead: checkpoints stopped with it. Generous on purpose - live
+// runs checkpoint every CHECKPOINT_MS, so only a truly stalled turn trips it.
+const INTERRUPTED_STALE_MS = 5 * 60 * 1000;
+
+// Persisted trace event types with a native chat renderer (see
+// ChatHistory/buildMessages). Others (todoListCard via the side panel,
+// agentNote/thoughtChain) stay panel-side only.
+const SPLICEABLE_TRACE_TYPES = new Set([
+  "statusResponse",
+  "sessionCard",
+  "fileChangeCard",
+  "fileDownloadCard",
+  "planCard",
+]);
+
+/**
+ * Whether a response-less row is a dead turn (show it) as opposed to a live
+ * turn mid-flight, a completed pure-think reply, or residue in a deliberately
+ * cleared thread (hide it).
+ * @param {object} record - Raw workspace_chats row.
+ * @param {string|null} text - Parsed response text ("" or null here).
+ * @param {boolean} hasClearedContent - Batch holds invalidated completed rows.
+ * @returns {boolean}
+ */
+function isDeadTurn(record, text, hasClearedContent) {
+  // Completed pure-think replies (empty text, visible flag) are real turns.
+  if (text === "" && record?.include !== false) return false;
+  // A deliberately cleared thread stays cleared.
+  if (record?.include === false && hasClearedContent) return false;
+  // Otherwise response-less = died before writing - unless the write is
+  // fresh, in which case the turn may still be live.
+  return isStaleTurn(record);
+}
+
+/**
+ * A pre-registered or checkpointed row counts as "possibly live" while its
+ * last write is fresh - rendering it as interrupted then would lie about a
+ * running turn (and double the live socket stream on refresh). Past this age
+ * the run is dead: checkpoints stopped with it. Rows without timestamps fail
+ * open toward visibility.
+ * @param {object} record - Raw workspace_chats row.
+ * @returns {boolean}
+ */
+function isStaleTurn(record) {
+  const ts = new Date(
+    record?.lastUpdatedAt ?? record?.createdAt ?? 0
+  ).getTime();
+  if (!Number.isFinite(ts) || ts <= 0) return true;
+  return Date.now() - ts > INTERRUPTED_STALE_MS;
+}
+
+/**
+ * Rebuild a dead turn for display: the user prompt, the checkpointed trace
+ * events that have native chat renderers, and the interrupted marker last.
+ * @param {object} record - Raw workspace_chats row.
+ * @param {string} prompt - User prompt.
+ * @param {object|null} data - Parsed response envelope (trace carrier).
+ * @returns {Array} Flat message entries (the caller flattens one level).
+ */
+function interruptPlaceholder(record, prompt, data) {
+  const sentAt = moment(record?.createdAt).unix();
+  const trace = Array.isArray(data?.trace) ? data.trace : [];
+  const entries = [
+    {
+      role: "user",
+      content: prompt,
+      sentAt,
+      attachments: [],
+      chatId: record?.id,
+    },
+  ];
+  for (const event of trace) {
+    const item = spliceTraceItem(event, record?.id, sentAt);
+    if (item) entries.push(item);
+  }
+  entries.push({
+    type: "interrupted",
+    role: "assistant",
+    content: "",
+    sources: [],
+    chatId: record?.id,
+    sentAt,
+    feedbackScore: record?.feedbackScore ?? null,
+    metrics: {},
+    ...(trace.length > 0 ? { trace } : {}),
+  });
+  return entries;
+}
+
+/**
+ * Adapt one persisted trace event to the message shape its chat renderer
+ * expects (same contract as the live socket payloads in buildMessages).
+ * @param {any} event - Persisted {type, content} trace event.
+ * @param {number} chatId - Owning chat row id.
+ * @param {number} sentAt - Unix timestamp shared by the turn.
+ * @returns {object|null} Renderable message, or null when it has no renderer.
+ */
+function spliceTraceItem(event, chatId, sentAt) {
+  if (!event || typeof event !== "object") return null;
+  const { type, content } = event;
+  if (!SPLICEABLE_TRACE_TYPES.has(type)) return null;
+  if (type === "planCard") {
+    // The renderer reads plan/status off the message itself, not content.
+    if (!content || typeof content.plan !== "string") return null;
+    return { type, ...content, chatId, sentAt };
+  }
+  if (!content) return null;
+  return { type, content, chatId, sentAt };
+}
+
 function convertToChatHistory(history = [], options = {}) {
   const { includeInterruptPlaceholders = false } = options;
+  const rows = Array.isArray(history) ? history : [];
+  // A deliberately cleared thread (reset/compacted/cleared: completed rows
+  // flipped to include:false) must stay cleared - only resurrect dead turns
+  // where nothing renderable was ever invalidated.
+  const hasClearedContent =
+    includeInterruptPlaceholders &&
+    rows.some(
+      (row) =>
+        row?.include === false &&
+        typeof safeJsonParse(row.response, null)?.text === "string" &&
+        safeJsonParse(row.response, null).text.length > 0
+    );
   const formattedHistory = [];
-  for (const record of history) {
-    const { prompt, response, createdAt, feedbackScore = null, id } = record;
+  for (const record of rows) {
+    const {
+      prompt,
+      response,
+      createdAt,
+      feedbackScore = null,
+      id,
+    } = record ?? {};
     // A corrupt/unparseable response row must not 500 the whole thread
     // history - skip it like the other bad-record cases below.
     const data = safeJsonParse(response, null);
+    const text = typeof data?.text === "string" ? data.text : null;
 
     // In the event that a bad response was stored - we should skip its entire record
     // because it was likely an error and cannot be used in chats and will fail to render on UI.
@@ -211,39 +343,40 @@ function convertToChatHistory(history = [], options = {}) {
         `[convertToChatHistory] ChatHistory #${record.id} prompt property is not a string - skipping record.`
       );
       continue;
-    } else if (typeof data?.text !== "string") {
-      // Response-less rows are placeholders of runs that died before writing
-      // (killed server, aborted stream): nothing renderable was stored. The
-      // UI history endpoints opt into an explicit interrupted placeholder so
-      // such threads read as history with a failed turn instead of a blank
-      // new-chat page. Every other consumer (agent context, API, exports,
-      // telegram) keeps skipping them - a fake assistant message must never
-      // leak into prompts or transcripts.
-      if (includeInterruptPlaceholders) {
-        formattedHistory.push([
-          {
-            role: "user",
-            content: prompt,
-            sentAt: moment(createdAt).unix(),
-            attachments: [],
-            chatId: id,
-          },
-          {
-            type: "interrupted",
-            role: "assistant",
-            content: "",
-            sources: [],
-            chatId: id,
-            sentAt: moment(createdAt).unix(),
-            feedbackScore,
-            metrics: {},
-          },
-        ]);
-      } else {
+    }
+
+    const hasText = text !== null && text.length > 0;
+    if (hasText) {
+      // Completed rows render, cleared rows stay hidden - even for UI
+      // callers, which now fetch unfiltered and let the converter decide.
+      if (record?.include === false) {
         console.log(
-          `[convertToChatHistory] ChatHistory #${record.id} response.text property is not a string - skipping record.`
+          `[convertToChatHistory] ChatHistory #${record.id} is marked not-included - skipping record.`
         );
+        continue;
       }
+    } else if (text === "" && record?.include !== false) {
+      // Completed pure-think reply (visible flag, empty text): a real turn,
+      // render it normally - the renderer skips the empty assistant side.
+    } else if (
+      includeInterruptPlaceholders &&
+      isDeadTurn(record, text, hasClearedContent)
+    ) {
+      // Response-less rows are turns that died before writing (killed
+      // server, aborted run): the prompt plus whatever trace checkpoints
+      // survived, closed by an interrupted marker. Every other consumer
+      // (agent context, API, exports, telegram) keeps skipping them - a
+      // reconstructed turn must never leak into prompts or transcripts.
+      formattedHistory.push(interruptPlaceholder(record, prompt, data));
+      continue;
+    } else if (text === null) {
+      console.log(
+        `[convertToChatHistory] ChatHistory #${record.id} response.text property is not a string - skipping record.`
+      );
+      continue;
+    } else {
+      // Empty-text rows that are not dead turns (a live run's fresh
+      // pre-registration, or a cleared checkpoint): stay hidden.
       continue;
     }
 

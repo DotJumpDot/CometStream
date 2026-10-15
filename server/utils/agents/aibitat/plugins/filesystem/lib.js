@@ -46,6 +46,29 @@ function capUnifiedDiffLines(diffText, maxLines = 500) {
  * Manages filesystem operations with security constraints.
  * Ensures all file operations stay within allowed directories.
  */
+
+// Credential files refused for reads OUTSIDE the jail (see validateReadPath).
+// Reading code/config anywhere matches the terminal, whose `cat <absolute>`
+// already reads any path - but the app's own secrets must never land in
+// model context or chat history through the file tools.
+const OUTSIDE_READ_DENIED_PATTERNS = [
+  /^\.env(\..+)?$/i, // .env, .env.local, .env.production
+  /\.(pem|key|ppk)$/i,
+  /^id_(rsa|ed25519|ecdsa|dsa)(\.\d+)?$/i,
+];
+
+/**
+ * Whether an absolute path names a credential file (checked on both the
+ * requested basename and the post-realpath basename, so a symlink like
+ * notes.txt -> ~/.ssh/id_rsa is caught too).
+ * @param {string} absolutePath
+ * @returns {boolean}
+ */
+function isDeniedOutsideRead(absolutePath) {
+  const base = path.basename(String(absolutePath)).toLowerCase();
+  return OUTSIDE_READ_DENIED_PATTERNS.some((pattern) => pattern.test(base));
+}
+
 class FilesystemManager {
   static FILE_READ_CHUNK_SIZE = 1024;
   static CONTEXT_RESERVE_RATIO = 0.25;
@@ -558,6 +581,71 @@ class FilesystemManager {
         }
       }
       throw error;
+    }
+  }
+
+  /**
+   * Validates a path for READ-ONLY tools (read/list/info). Writes stay
+   * jailed to the sandbox + project folder via `validatePath`; reads
+   * additionally accept any explicit ABSOLUTE path outside the jail, so the
+   * agent can inspect files it did not create - parity with the terminal,
+   * whose `cat <absolute>` already reads anywhere. Relative paths keep
+   * resolving inside the jail (an outside read must be an explicit absolute
+   * path), and a small credential denylist (.env, private keys) keeps the
+   * app's own secrets out of model context. Unlike writes, an outside read
+   * target must already exist (realpath), since there is nothing to create.
+   * @param {string} requestedPath - The path to validate
+   * @param {string[]} [extraDirs] - Extra per-call allowed directories
+   * @returns {Promise<string>} The validated absolute path
+   * @throws {Error} If denied (credential file) or the target does not exist
+   */
+  async validateReadPath(requestedPath, extraDirs = []) {
+    await this.ensureInitialized();
+    const expandedPath = this.#expandHome(requestedPath);
+    if (!path.isAbsolute(expandedPath)) {
+      // Relative paths stay jailed - identical rules to writes.
+      return this.validatePath(expandedPath, extraDirs);
+    }
+    const effectiveDirs = [
+      ...new Set([...(extraDirs || []), ...this.#allowedDirectories]),
+    ];
+    const absolute = path.resolve(expandedPath);
+    if (
+      this.#isPathWithinAllowedDirectories(
+        this.#normalizePath(absolute),
+        effectiveDirs
+      )
+    ) {
+      // Inside the jail: the stricter standard validation (symlink and
+      // missing-parent handling identical to the write path).
+      return this.validatePath(expandedPath, extraDirs);
+    }
+
+    // Outside read: deny credential files by requested AND resolved name,
+    // then require the target to exist.
+    if (isDeniedOutsideRead(absolute)) {
+      console.log(
+        `[validateReadPath] Access denied - credential file outside the workspace: ${absolute}`
+      );
+      throw new Error(
+        "Access denied - credential files (.env, private keys) cannot be read outside the workspace."
+      );
+    }
+    try {
+      const realPath = await fs.realpath(absolute);
+      if (isDeniedOutsideRead(realPath)) {
+        console.log(
+          `[validateReadPath] Access denied - symlink resolves to a credential file: ${realPath}`
+        );
+        throw new Error(
+          "Access denied - credential files (.env, private keys) cannot be read outside the workspace."
+        );
+      }
+      return realPath;
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Access denied"))
+        throw error;
+      throw new Error(`File or directory not found: ${absolute}`);
     }
   }
 

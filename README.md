@@ -42,7 +42,7 @@ Everything the AnythingLLM base offers — workspaces, documents, embeddings, mu
 
 - **Each workspace pins to one folder on the machine** — ZCode-style:
   - folder created if missing; picked via a click-through browser or the real OS dialog in the desktop app, editable in workspace settings
-  - terminal commands run inside it, file tools treat it as home, generated files (docx/pdf/xlsx…) mirror into it
+  - terminal commands run inside it, file writes treat it as home, and the read tools can additionally inspect any absolute path on disk (credential files like `.env` are refused), generated files (docx/pdf/xlsx…) mirror into it
   - jailed to the terminal root and re-validated on every call — it can never escape
   - a composer project switcher jumps between projects (searchable) or back to a project-less home chat
 

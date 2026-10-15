@@ -7,6 +7,10 @@ const {
   extractThoughts,
 } = require("./trace.js");
 
+// Checkpoint cadence: bounds both staleness of a killed run's partial
+// history and write load (one small upsert per active run per interval).
+const CHECKPOINT_MS = 30_000;
+
 /**
  * Plugin to save chat history to AnythingLLM DB.
  */
@@ -25,18 +29,53 @@ const chatHistory = {
         // the thread restores the run, not just the final reply.
         ensureTrace(aibitat);
 
+        // Periodic trace checkpoints: a run that dies (killed server, lost
+        // model connection, operator stop) would otherwise leave only the
+        // pre-registered prompt row. Every tick persists the trace so far
+        // onto that row - a killed run reloads its prompt, partial cards,
+        // and an interrupted marker at the end. Unref'd + self-clearing so
+        // it can neither hold the process open nor outlive its turn;
+        // completion/error/abort paths clear it explicitly.
+        if (aibitat._checkpointTimer) clearInterval(aibitat._checkpointTimer);
+        const checkpointTimer = setInterval(() => {
+          try {
+            if (
+              !aibitat.trackedChatId ||
+              aibitat._replySaved ||
+              aibitat._aborted ||
+              !Array.isArray(aibitat._pendingTrace) ||
+              aibitat._pendingTrace.length === 0
+            ) {
+              clearInterval(checkpointTimer);
+              return;
+            }
+            // Unawaited by design (interval cadence, not completion); the
+            // promise is caught so a failed tick can never surface as an
+            // unhandled rejection and disturb the run.
+            this._checkpointTrace(aibitat).catch(() => {});
+          } catch {}
+        }, CHECKPOINT_MS);
+        if (typeof checkpointTimer.unref === "function")
+          checkpointTimer.unref();
+        aibitat._checkpointTimer = checkpointTimer;
+
         // If the agent is aborted (e.g. user sent /reset mid-response), skip
         // the pending save so a completing in-flight response doesn't reappear.
         aibitat.onAbort(() => {
           aibitat._aborted = true;
+          if (aibitat._checkpointTimer) {
+            clearInterval(aibitat._checkpointTimer);
+            aibitat._checkpointTimer = null;
+          }
         });
 
         // A run that dies before any reply (dead model connection, startup
-        // crash) would otherwise leave the pre-registered prompt row with an
-        // empty response - a thread that opens showing the question and
-        // nothing else. Fill it with the failure so the thread reads
-        // honestly. Guarded by _replySaved so a late error can never
-        // overwrite a completed reply.
+        // crash) leaves the pre-registered prompt row response-less: with
+        // checkpoints it still carries the partial trace, otherwise just the
+        // prompt. Either way the history endpoints render it as an
+        // interrupted turn. Fill graceful deaths with the failure text so the
+        // thread reads honestly. Guarded by _replySaved so a late error can
+        // never overwrite a completed reply.
         aibitat.onError(async (error) => {
           try {
             if (!aibitat.trackedChatId || aibitat._replySaved) return;
@@ -45,21 +84,23 @@ const chatHistory = {
             const message =
               error?.message || "An error occurred while running the agent.";
             const trace = takeTrace(aibitat);
-            await WorkspaceChats.upsert(aibitat.trackedChatId, {
-              workspaceId: Number(invocation.workspace_id),
-              prompt: aibitat._failedPrompt ?? "",
-              response: {
-                text: `This run failed before producing a reply: ${message}`,
-                sources: [],
-                type: "chat",
-                attachments: [],
-                metrics: {},
-                ...(trace.length > 0 ? { trace } : {}),
-              },
-              user: { id: invocation?.user_id || null },
-              threadId: invocation?.thread_id || null,
-              include: true,
-            });
+            await this._serializedRowSave(aibitat, () =>
+              WorkspaceChats.upsert(aibitat.trackedChatId, {
+                workspaceId: Number(invocation.workspace_id),
+                prompt: aibitat._failedPrompt ?? "",
+                response: {
+                  text: `This run failed before producing a reply: ${message}`,
+                  sources: [],
+                  type: "chat",
+                  attachments: [],
+                  metrics: {},
+                  ...(trace.length > 0 ? { trace } : {}),
+                },
+                user: { id: invocation?.user_id || null },
+                threadId: invocation?.thread_id || null,
+                include: true,
+              })
+            );
           } catch {}
         });
 
@@ -168,25 +209,30 @@ const chatHistory = {
         // now live in the trace - otherwise the final thought renders twice.
         const trace = takeTrace(aibitat);
         const { cleanText } = extractThoughts(response);
-        await WorkspaceChats.upsert(aibitat.trackedChatId, {
-          workspaceId: Number(invocation.workspace_id),
-          prompt,
-          response: {
-            text: cleanText,
-            sources: citations,
-            type: "chat",
-            attachments,
-            metrics,
-            ...(outputs.length > 0 ? { outputs } : {}),
-            ...(clarifyingQuestions.length > 0 ? { clarifyingQuestions } : {}),
-            ...(trace.length > 0 ? { trace } : {}),
-          },
-          user: { id: invocation?.user_id || null },
-          threadId: invocation?.thread_id || null,
-          include: true,
-        });
-        // A completed save wins over any late error fallback.
+        // Flag first: a checkpoint tick already inside its save must not land
+        // after this write and bury a finished reply under trace-only content.
         aibitat._replySaved = true;
+        await this._serializedRowSave(aibitat, () =>
+          WorkspaceChats.upsert(aibitat.trackedChatId, {
+            workspaceId: Number(invocation.workspace_id),
+            prompt,
+            response: {
+              text: cleanText,
+              sources: citations,
+              type: "chat",
+              attachments,
+              metrics,
+              ...(outputs.length > 0 ? { outputs } : {}),
+              ...(clarifyingQuestions.length > 0
+                ? { clarifyingQuestions }
+                : {}),
+              ...(trace.length > 0 ? { trace } : {}),
+            },
+            user: { id: invocation?.user_id || null },
+            threadId: invocation?.thread_id || null,
+            include: true,
+          })
+        );
 
         if (!aibitat._threadRenamed) {
           aibitat._threadRenamed = await this._autoRenameThread(
@@ -213,25 +259,32 @@ const chatHistory = {
         // See _store: thoughts live in the trace, not the saved reply.
         const trace = takeTrace(aibitat);
         const { cleanText } = extractThoughts(storedText);
-        await WorkspaceChats.upsert(aibitat.trackedChatId, {
-          workspaceId: Number(invocation.workspace_id),
-          prompt,
-          response: {
-            sources: [...existingSources, ...citations],
-            // when we have a _storeSpecial called the options param can include a storedResponse() function
-            // that will override the text property to store extra information in, depending on the special type of chat.
-            text: cleanText,
-            type: options?.saveAsType ?? "chat",
-            attachments,
-            metrics,
-            ...(outputs.length > 0 ? { outputs } : {}),
-            ...(clarifyingQuestions.length > 0 ? { clarifyingQuestions } : {}),
-            ...(trace.length > 0 ? { trace } : {}),
-          },
-          user: { id: invocation?.user_id || null },
-          threadId: invocation?.thread_id || null,
-          include: true,
-        });
+        // Flag first (see _store): serialize after it so a checkpoint tick
+        // can never land last over a finished save.
+        aibitat._replySaved = true;
+        await this._serializedRowSave(aibitat, () =>
+          WorkspaceChats.upsert(aibitat.trackedChatId, {
+            workspaceId: Number(invocation.workspace_id),
+            prompt,
+            response: {
+              sources: [...existingSources, ...citations],
+              // when we have a _storeSpecial called the options param can include a storedResponse() function
+              // that will override the text property to store extra information in, depending on the special type of chat.
+              text: cleanText,
+              type: options?.saveAsType ?? "chat",
+              attachments,
+              metrics,
+              ...(outputs.length > 0 ? { outputs } : {}),
+              ...(clarifyingQuestions.length > 0
+                ? { clarifyingQuestions }
+                : {}),
+              ...(trace.length > 0 ? { trace } : {}),
+            },
+            user: { id: invocation?.user_id || null },
+            threadId: invocation?.thread_id || null,
+            include: true,
+          })
+        );
 
         if (!aibitat._threadRenamed) {
           aibitat._threadRenamed = await this._autoRenameThread(
@@ -240,9 +293,45 @@ const chatHistory = {
           );
         }
         options?.postSave();
-        // See _store: a completed save wins over any late error fallback.
-        aibitat._replySaved = true;
         this._cleanup(aibitat);
+      },
+
+      /**
+       * Serialize one turn's row writes (checkpoints, completion, error
+       * fallback) per instance. Async ticks and turn-end saves otherwise race
+       * on the same row: whichever lands last wins, so an unlucky checkpoint
+       * could bury a finished reply. Chained per instance; a rejected link
+       * never breaks the chain for the next writer.
+       */
+      _serializedRowSave: async function (aibitat, saveFn) {
+        const run = (aibitat._saveChain || Promise.resolve()).then(saveFn);
+        aibitat._saveChain = run.catch(() => {});
+        return run;
+      },
+
+      /**
+       * Persist the trace accumulated so far onto the pre-registered row.
+       * Keeps include:false + empty text: the turn still reads as in-flight
+       * until the completion save flips it, so a mid-run reload behaves
+       * exactly like today (prompt hidden, live socket streams) while a
+       * killed run keeps everything up to the last tick.
+       */
+      _checkpointTrace: async function (aibitat) {
+        if (!aibitat.trackedChatId || aibitat._replySaved || aibitat._aborted)
+          return;
+        const invocation = aibitat.handlerProps.invocation;
+        const trace = takeTrace(aibitat);
+        if (trace.length === 0) return;
+        await this._serializedRowSave(aibitat, () =>
+          WorkspaceChats.upsert(aibitat.trackedChatId, {
+            workspaceId: Number(invocation.workspace_id),
+            prompt: aibitat._failedPrompt ?? "",
+            response: { text: "", trace },
+            user: { id: invocation?.user_id || null },
+            threadId: invocation?.thread_id || null,
+            include: false,
+          })
+        );
       },
 
       _autoRenameThread: async function (aibitat, prompt) {
@@ -277,6 +366,10 @@ const chatHistory = {
         aibitat.clearClarifyingQuestionSurveys?.();
         clearTrace(aibitat);
         aibitat.clearTrackedChatId();
+        if (aibitat._checkpointTimer) {
+          clearInterval(aibitat._checkpointTimer);
+          aibitat._checkpointTimer = null;
+        }
         // _replySaved intentionally survives cleanup: the instance is
         // per-run, and a late error after a completed save must stay a
         // no-op. Only the prompt scratch resets.

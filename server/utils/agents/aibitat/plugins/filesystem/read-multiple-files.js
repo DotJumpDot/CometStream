@@ -44,7 +44,7 @@ module.exports.FilesystemReadMultipleFiles = {
                 items: { type: "string" },
                 minItems: 1,
                 description:
-                  "Array of file paths to read. Each path must be a string pointing to a valid file within allowed directories.",
+                  "Array of file paths to read. Each can be relative to the allowed directory or an absolute path anywhere on disk (outside reads are inspection-only; credential files like .env are refused).",
               },
             },
             required: ["paths"],
@@ -72,7 +72,9 @@ module.exports.FilesystemReadMultipleFiles = {
               const results = await Promise.all(
                 paths.map(async (filePath) => {
                   try {
-                    const validPath = await filesystem.validatePath(
+                    // Read-only: absolute outside paths are inspection-
+                    // readable (validateReadPath); writes keep validatePath.
+                    const validPath = await filesystem.validateReadPath(
                       filePath,
                       allowedExtras
                     );

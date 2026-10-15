@@ -34,7 +34,8 @@ const WorkspaceChats = {
     workspaceId = null,
     userId = null,
     limit = null,
-    orderBy = null
+    orderBy = null,
+    includeHidden = false
   ) {
     if (!workspaceId || !userId) return [];
     try {
@@ -44,7 +45,10 @@ const WorkspaceChats = {
           user_id: userId,
           thread_id: null, // this function is now only used for the default thread on workspaces and users
           api_session_id: null, // do not include api-session chats in the frontend for anyone.
-          include: true,
+          // includeHidden lets the UI history endpoint resurrect dead turns
+          // as interrupted placeholders; every other caller keeps cleared
+          // rows filtered out.
+          ...(includeHidden ? {} : { include: true }),
         },
         ...(limit !== null ? { take: limit } : {}),
         ...(orderBy !== null ? { orderBy } : { orderBy: { id: "asc" } }),
@@ -85,7 +89,8 @@ const WorkspaceChats = {
   forWorkspace: async function (
     workspaceId = null,
     limit = null,
-    orderBy = null
+    orderBy = null,
+    includeHidden = false
   ) {
     if (!workspaceId) return [];
     try {
@@ -94,7 +99,8 @@ const WorkspaceChats = {
           workspaceId,
           thread_id: null, // this function is now only used for the default thread on workspaces
           api_session_id: null, // do not include api-session chats in the frontend for anyone.
-          include: true,
+          // See forWorkspaceByUser: UI history resurrection vs filtering.
+          ...(includeHidden ? {} : { include: true }),
         },
         ...(limit !== null ? { take: limit } : {}),
         ...(orderBy !== null ? { orderBy } : { orderBy: { id: "asc" } }),

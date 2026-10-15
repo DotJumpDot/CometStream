@@ -13,7 +13,8 @@ module.exports.FilesystemGetFileInfo = {
             "Retrieve detailed metadata about a file or directory. Returns comprehensive " +
             "information including size, creation time, last modified time, permissions, " +
             "and type. This tool is perfect for understanding file characteristics " +
-            "without reading the actual content. Only works within allowed directories.",
+            "without reading the actual content. Relative paths resolve inside the allowed directories; " +
+            "an explicit absolute path anywhere on disk also works (inspection-only).",
           examples: [
             {
               prompt: "What's the size of the database file?",
@@ -48,7 +49,9 @@ module.exports.FilesystemGetFileInfo = {
                 this.super.handlerProps
               );
               const allowedExtras = extraDirs ? [extraDirs] : [];
-              const validPath = await filesystem.validatePath(
+              // Read-only metadata: absolute outside paths work
+              // (inspection-only); writes keep validatePath.
+              const validPath = await filesystem.validateReadPath(
                 filePath,
                 allowedExtras
               );
