@@ -20,3 +20,7 @@ yarn.lock
 # Electron desktop build output
 desktop/dist/
 desktop/dist2/
+desktop/dist-release/
+
+# Release staging tree for Setup/portable builds (gitignored, rebuilt per release)
+.release-stage/

@@ -1,0 +1,31 @@
+# Release build config: produces BOTH shippable artifacts in one run —
+#   dist-release/win-unpacked/            the complete portable bundle
+#   dist-release/CometStream-Setup-x.y.z.exe   one-click NSIS installer
+#
+# The staged bundle (server/, collector/, runtime/, launchers — see
+# docs/PORTABLE-BUILD.md "Release builds") is pulled in via extraFiles so it
+# lands NEXT TO the exe. The desktop shell resolves its siblings relative to
+# process.execPath, so the installed layout equals the portable layout and the
+# same exe works for both artifacts.
+appId: app.cometstream.desktop
+productName: CometStream
+directories:
+  output: dist-release
+  buildResources: build
+files:
+  - src/**/*
+extraFiles:
+  - from: ../.release-stage/bundle
+    to: .
+win:
+  icon: build/icon.ico
+  target:
+    - dir
+    - nsis
+  signExecutable: false
+nsis:
+  # One-click per-user install (no admin): lands in %LocalAppData%\Programs,
+  # which stays writable so the server can create server/storage in place.
+  oneClick: true
+  perMachine: false
+  artifactName: CometStream-Setup-${version}.${ext}

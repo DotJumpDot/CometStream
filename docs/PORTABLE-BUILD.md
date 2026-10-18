@@ -77,6 +77,44 @@ Then (optionally) seed branding so the app presents as CometStream out of the bo
 - `Stop-CometStream.bat` — kills node processes whose command line references the bundle folder. Match with a **substring** (`-like '*<root>*'`): command lines created via `start` begin with a quote, so prefix matches silently fail.
 - Zip with Windows bsdtar (GNU tar in Git Bash cannot write zip): `C:/Windows/System32/tar.exe -a -c -f CometStream-portable-win64.zip CometStream`
 
+## Release builds (Setup installer + portable zip)
+
+Both shippable artifacts come out of **one** electron-builder run against a
+staging bundle. The staging bundle layout equals the portable layout, and the
+desktop shell resolves its siblings relative to `process.execPath`, so the
+installed layout equals the portable layout — the same `CometStream.exe` works
+for both.
+
+1. Stage the bundle at `<repo>/.release-stage/bundle/` following steps 1–5
+   above (`server/`, `collector/`, `runtime/node.exe`, fresh pre-migrated DB,
+   **no** `.env`/`comkey`). Copy the launchers and readme from
+   `desktop/release-extras/` into the bundle root, plus the repo `LICENSE`.
+2. From `desktop/`, run:
+
+   ```bash
+   npx electron-builder --win --config builder-release.yml
+   ```
+
+   `desktop/builder-release.yml` pulls the staging tree in via `extraFiles`
+   and produces, in `desktop/dist-release/`:
+   - `win-unpacked/` — the complete portable bundle (exe + everything)
+   - `CometStream-Setup-<version>.exe` — one-click NSIS installer
+     (per-user, no admin; installs to `%LocalAppData%\Programs\CometStream`)
+3. Zip the pristine `win-unpacked` as `CometStream-<version>-win64-portable.zip`
+   with Windows bsdtar (zip **before** any smoke test — first boot writes
+   `.env`/onboarding state into `server/storage`).
+4. Smoke-test the installer silently (`CometStream-Setup-<version>.exe /S
+   /D=<path>`, `/D` last and unquoted), launch the installed exe, and check
+   `http://localhost:3001/api/ping`.
+
+Notes:
+- The installer is unsigned (`signExecutable: false`), so Windows SmartScreen
+  will warn on first run — expected for a personal build.
+- Uninstalling removes the install directory including `server/storage` —
+  back up data before uninstalling.
+- Puppeteer's Chromium is never bundled; `Install-Scrape-Browser.bat` restores
+  it on demand in either artifact.
+
 ## Operational notes
 
 - **Ports**: 3001 (app, `SERVER_PORT`) and 8888 (collector, `COLLECTOR_PORT`). Windows Firewall may prompt on first boot.

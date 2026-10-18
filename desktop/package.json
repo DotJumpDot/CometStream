@@ -1,6 +1,6 @@
 {
   "name": "cometstream-desktop",
-  "version": "1.16.1",
+  "version": "1.0.0",
   "description": "CometStream desktop shell - Electron window around the local server + collector",
   "main": "src/main.js",
   "author": "CometStream",
